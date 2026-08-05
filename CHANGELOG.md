@@ -1,10 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 — public preview
 
 - Fixed the main window never appearing when the renderer paints before `loadURL` resolves; the `ready-to-show` listener is now attached before loading.
 - Added RTS-style edge panning (off by default; enable in Settings): the camera drifts while the pointer rests near a viewport edge over empty canvas and pauses over interactive surfaces.
 - Added Settings controls for edge panning (toggle and speed) and wheel zoom sensitivity.
+- Reorganized Settings into General, Appearance, and Controls sections.
+- Added explicit Off, Single click, and Double click modes for terminal focus/zoom; automatic click focus is off by default.
+- Added remappable application shortcuts with `Home` for the Home zone and `F2` for inline terminal-window rename, plus an optional live shortcut hint.
+- Preserved PTY state and scrollback while changing palettes, patterns, settings, and custom window titles.
+- Improved terminal clipboard shortcuts, edge resizing, semantic-zoom interaction, and multilingual documentation.
 
 ## 0.8.2 — public preview
 

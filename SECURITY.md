@@ -2,7 +2,7 @@
 
 ## Supported version
 
-CanvasTTY `0.8.x` is the current public preview line. It is pre-1.0 software and its unsigned cross-platform packages require additional platform warnings to be acknowledged.
+CanvasTTY `0.9.x` is the current public preview line. It is pre-1.0 software and its unsigned cross-platform packages require additional platform warnings to be acknowledged.
 
 ## Reporting a vulnerability
 

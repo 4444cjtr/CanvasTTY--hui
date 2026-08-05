@@ -29,7 +29,7 @@
 
 ## Установка
 
-Скачайте публичный превью-релиз `0.8.x` из [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases): AppImage/deb для Linux x86_64, установщик и portable-версию для Windows x64, dmg/zip для macOS на Apple Silicon. Пакеты пока не имеют цифровой подписи и не заверены Apple (notarization); сборки для Intel Mac ещё нет. Сначала прочитайте про [установку и локальные данные](docs/installing-and-security.ru.md).
+Скачайте публичный превью-релиз `0.9.x` из [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases): AppImage/deb для Linux x86_64, установщик и portable-версию для Windows x64, dmg/zip для macOS на Apple Silicon. Пакеты пока не имеют цифровой подписи и не заверены Apple (notarization); сборки для Intel Mac ещё нет. Сначала прочитайте про [установку и локальные данные](docs/installing-and-security.ru.md).
 
 Или запустите из исходников:
 

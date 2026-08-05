@@ -29,7 +29,7 @@
 
 ## 安装
 
-从 [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) 下载 `0.8.x` 公开预览版：Linux x86_64 提供 AppImage/deb，Windows x64 提供安装程序/便携版，Apple Silicon macOS 提供 dmg/zip。软件包尚未进行代码签名或公证，目前也不包含 Intel Mac 构建；请先阅读[安装与本地数据安全](docs/installing-and-security.zh-CN.md)。
+从 [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) 下载 `0.9.x` 公开预览版：Linux x86_64 提供 AppImage/deb，Windows x64 提供安装程序/便携版，Apple Silicon macOS 提供 dmg/zip。软件包尚未进行代码签名或公证，目前也不包含 Intel Mac 构建；请先阅读[安装与本地数据安全](docs/installing-and-security.zh-CN.md)。
 
 也可以从源码运行：
 
