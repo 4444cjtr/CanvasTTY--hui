@@ -33,13 +33,14 @@ async function createWindow(): Promise<BrowserWindow> {
     if (currentUrl && url !== currentUrl) event.preventDefault();
   });
 
+  window.once("ready-to-show", () => window.show());
+
   if (process.env.ELECTRON_RENDERER_URL) {
     await window.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
     await window.loadFile(join(__dirname, "../renderer/index.html"));
   }
 
-  window.once("ready-to-show", () => window.show());
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
   });

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed the main window never appearing when the renderer paints before `loadURL` resolves; the `ready-to-show` listener is now attached before loading.
+
 ## 0.8.2 — public preview
 
 - Publish only end-user installers from release jobs, excluding unpacked build directories.
