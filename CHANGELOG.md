@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Fixed the main window never appearing when the renderer paints before `loadURL` resolves; the `ready-to-show` listener is now attached before loading.
+- Added RTS-style edge panning: the camera drifts while the pointer rests near a viewport edge over empty canvas and pauses over interactive surfaces.
 
 ## 0.8.2 — public preview
 

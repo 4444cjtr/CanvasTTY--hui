@@ -29,6 +29,7 @@ This contract preserves the approved MVP concept and prevents feature ownership 
 - Every terminal edge and corner is a resize target. The minimum card size is `420 × 260`; resizing updates the xterm viewport and preserves the opposite edge.
 - With window snapping enabled, drag and resize use a hidden `10px` grid and a `10px` magnetic threshold for neighboring edges, centers, and a consistent `20px` gap.
 - Wheel input belongs to the surface under the pointer when that surface actually scrolls or consumes wheel input. The session list and terminal/card surfaces never zoom the camera. Passive Home widgets — limits, clock, media, and launcher tiles — still allow camera zoom so Home does not shrink the usable zoom area.
+- The canvas edge-pans RTS-style while the pointer rests within `56px` of a viewport edge over empty canvas; speed ramps linearly up to `900px/s` at the edge itself. Motion pauses over interactive surfaces (terminal cards, Home, controls) and while drag-panning.
 - Dialog close actions stay inside their own header/control row with a consistent inset; they never overlap a field, outline, or panel boundary.
 
 ## Acceptance checks
