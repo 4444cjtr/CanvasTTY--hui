@@ -5,6 +5,7 @@ import type {
   LocaleId,
   PaletteId,
   Point,
+  FocusActivation,
   SessionBounds,
   SessionSnapshot
 } from "../../../../shared/contracts";
@@ -26,8 +27,14 @@ interface TerminalCardProps {
   palette: PaletteId;
   zoom: number;
   snapEnabled: boolean;
+  focusActivation: FocusActivation;
+  selected: boolean;
+  renaming: boolean;
   snapTargets: readonly SessionBounds[];
   onActivate(session: SessionSnapshot): void;
+  onSelect(id: string): void;
+  onRename(id: string, title: string): Promise<void>;
+  onRenameEnd(): void;
   onBoundsChange(id: string, bounds: SessionBounds): void;
   onDispose(id: string): void;
 }
@@ -50,17 +57,26 @@ export function TerminalCard({
   palette,
   zoom,
   snapEnabled,
+  focusActivation,
+  selected,
+  renaming,
   snapTargets,
   onActivate,
+  onSelect,
+  onRename,
+  onRenameEnd,
   onBoundsChange,
   onDispose
 }: TerminalCardProps): React.JSX.Element {
   const terminalHost = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
+  const renameInput = useRef<HTMLInputElement>(null);
+  const renameInFlight = useRef(false);
   const dragState = useRef<DragState | null>(null);
   const resizeState = useRef<ResizeState | null>(null);
   const [position, setPosition] = useState(session.position);
   const [size, setSize] = useState(session.size);
+  const [renameDraft, setRenameDraft] = useState(session.title);
   const liveBounds = useRef<SessionBounds>({ position: session.position, size: session.size });
   const summaryMode = zoom < 0.5;
   const summaryScale = summaryMode ? Math.min(1.8, Math.max(1, 0.5 / zoom)) : 1;
@@ -134,8 +150,17 @@ export function TerminalCard({
     if (terminal) terminal.options.theme = terminalTheme(palette);
   }, [palette]);
 
+  useEffect(() => {
+    if (!renaming) return;
+    setRenameDraft(session.title);
+    requestAnimationFrame(() => {
+      renameInput.current?.focus({ preventScroll: true });
+      renameInput.current?.select();
+    });
+  }, [renaming, session.title]);
+
   const startDrag = (event: React.PointerEvent<HTMLElement>): void => {
-    if ((event.target as HTMLElement).closest("button")) return;
+    if ((event.target as HTMLElement).closest("button, input")) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragState.current = {
       pointerId: event.pointerId,
@@ -214,16 +239,49 @@ export function TerminalCard({
   };
 
   const activateSummary = (event: React.MouseEvent<HTMLButtonElement>): void => {
+    event.stopPropagation();
     event.currentTarget.closest<HTMLElement>(".terminal-card")?.focus({ preventScroll: true });
+    onSelect(session.id);
+    if (focusActivation === "single") onActivate(session);
+  };
+
+  const activateSummaryDouble = (event: React.MouseEvent<HTMLButtonElement>): void => {
+    event.stopPropagation();
+    if (focusActivation === "double") onActivate(session);
+  };
+
+  const activateCard = (event: React.MouseEvent<HTMLElement>): void => {
+    if (focusActivation !== "single" || isCardControl(event.target)) return;
     onActivate(session);
+  };
+
+  const activateCardDouble = (event: React.MouseEvent<HTMLElement>): void => {
+    if (focusActivation !== "double" || isCardControl(event.target)) return;
+    onActivate(session);
+  };
+
+  const commitRename = async (): Promise<void> => {
+    if (renameInFlight.current) return;
+    const title = renameDraft.trim();
+    if (!title) {
+      onRenameEnd();
+      return;
+    }
+    renameInFlight.current = true;
+    await onRename(session.id, title);
+    renameInFlight.current = false;
+    onRenameEnd();
   };
 
   return (
     <article
-      className={`terminal-card ${summaryMode ? "terminal-card--summary" : ""}`}
+      className={`terminal-card ${summaryMode ? "terminal-card--summary" : ""} ${selected ? "terminal-card--selected" : ""}`}
       data-interactive="true"
       data-wheel-owner={summaryMode ? undefined : "local"}
       tabIndex={-1}
+      onPointerDownCapture={() => onSelect(session.id)}
+      onClick={activateCard}
+      onDoubleClick={activateCardDouble}
       style={{
         width: size.width,
         height: size.height,
@@ -241,7 +299,33 @@ export function TerminalCard({
       >
         <div className="terminal-card__identity">
           <ProviderIcon provider={session.provider} size="small" />
-          <strong title={session.cwd}>{compactPath(session.cwd)}</strong>
+          {renaming ? (
+            <input
+              ref={renameInput}
+              className="terminal-card__rename"
+              data-terminal-rename="true"
+              value={renameDraft}
+              maxLength={80}
+              aria-label={t(locale, "renameWindow")}
+              onChange={(event) => setRenameDraft(event.target.value)}
+              onPointerDown={(event) => event.stopPropagation()}
+              onBlur={() => void commitRename()}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void commitRename();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  onRenameEnd();
+                }
+              }}
+            />
+          ) : (
+            <strong title={session.titleCustomized ? session.title : session.cwd}>
+              {session.titleCustomized ? session.title : compactPath(session.cwd)}
+            </strong>
+          )}
         </div>
         <div className="terminal-card__actions">
           <button className="terminal-card__action terminal-card__action--close" type="button" onClick={() => onDispose(session.id)} title={t(locale, "close")} aria-label={t(locale, "close")}><UiIcon name="close" size={16} /></button>
@@ -252,8 +336,10 @@ export function TerminalCard({
         className="terminal-card__summary"
         type="button"
         onClick={activateSummary}
-        title={`${t(locale, "focus")}: ${session.title}`}
-        aria-label={`${t(locale, "focus")}: ${session.title}`}
+        onDoubleClick={activateSummaryDouble}
+        title={session.title}
+        aria-label={session.title}
+        data-focus-activation={focusActivation}
       >
         <div className="terminal-card__summary-content">
           <ProviderIcon provider={session.provider} size="large" />
@@ -290,4 +376,8 @@ function compactPath(path: string): string {
   if (!path.startsWith(home)) return path;
   const parts = path.split("/").filter(Boolean);
   return parts.length > 2 ? `~/${parts.slice(2).join("/")}` : path;
+}
+
+function isCardControl(target: EventTarget): boolean {
+  return target instanceof Element && Boolean(target.closest("button, input, .terminal-card__resize-handle"));
 }

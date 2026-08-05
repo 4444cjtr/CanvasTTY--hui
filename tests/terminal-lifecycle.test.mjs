@@ -34,6 +34,16 @@ test("terminal viewport keeps the palette background after row-sized fits", asyn
   assert.match(styles, /\.terminal-card__surface \.xterm-viewport \{ background-color: var\(--terminal-background, #202430\); \}/);
 });
 
+test("renaming is inline and does not join the xterm mount dependencies", async () => {
+  const source = await readFile(terminalCardPath, "utf8");
+  const mountDependencies = effectDependenciesContaining(source, "new Terminal({");
+
+  assert.equal(mountDependencies, "session.id");
+  assert.match(source, /window\.canvasTTY\.terminal\.rename|onRename\(session\.id, title\)/);
+  assert.match(source, /data-terminal-rename="true"/);
+  assert.match(source, /session\.titleCustomized \? session\.title : compactPath\(session\.cwd\)/);
+});
+
 function effectDependenciesContaining(source, marker) {
   const markerIndex = source.indexOf(marker);
   assert.notEqual(markerIndex, -1, `Could not find ${marker}`);

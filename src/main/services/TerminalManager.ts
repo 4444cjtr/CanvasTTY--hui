@@ -58,6 +58,7 @@ export class TerminalManager {
       provider: request.provider,
       profile: request.profile,
       title: request.title?.trim() || defaultTitle(request.provider, request.cwd),
+      titleCustomized: Boolean(request.title?.trim()),
       cwd: request.cwd,
       position: request.position,
       size: DEFAULT_TERMINAL_SIZE,
@@ -120,6 +121,19 @@ export class TerminalManager {
       height: clamp(bounds.size.height, MIN_TERMINAL_SIZE.height, MAX_TERMINAL_SIZE.height)
     };
     this.emitSession(session.metadata);
+  }
+
+  rename(id: string, title: string): SessionMetadata {
+    const session = this.sessions.get(id);
+    if (!session) throw new Error("Terminal session does not exist.");
+    if (typeof title !== "string") throw new Error("Window title is invalid.");
+
+    const nextTitle = title.trim();
+    if (nextTitle.length === 0) throw new Error("Window title cannot be empty.");
+    session.metadata.title = nextTitle.slice(0, 80);
+    session.metadata.titleCustomized = true;
+    this.emitSession(session.metadata);
+    return structuredClone(session.metadata);
   }
 
   applyProviderSignal(id: string, signal: ProviderLifecycleSignal): void {

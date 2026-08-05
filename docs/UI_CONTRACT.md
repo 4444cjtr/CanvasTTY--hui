@@ -14,7 +14,10 @@ This contract preserves the approved MVP concept and prevents feature ownership 
 
 - Clicking a provider opens a Focus Card for that provider. The provider is fixed; there is no second provider selector.
 - The Focus Card contains only the provider mark, project folder, Normal/YOLO profile, launch action, and contextual danger confirmation.
-- Settings contains language, palette, background pattern, window snapping, edge panning (off by default; toggle plus slow/normal/fast speed), and zoom sensitivity (slow/normal/fast). Media controls never appear there. Snapping is enabled by default and can be disabled without changing existing window bounds.
+- Settings uses a top section strip: General, Appearance, and Controls. General owns language. Appearance owns palette, background pattern, and the shortcut-hint toggle. Controls owns click focus, window snapping, edge panning, zoom sensitivity, and keyboard shortcuts. Media controls never appear there.
+- Click focus has three explicit modes: Off, Single click, and Double click. It is off by default. Selection and its visible outline still work when camera focus is off; a double-click mode never jumps the camera on the first click.
+- Keyboard shortcuts are user-remappable and persisted locally. Defaults are `Home` for focusing the Home zone and `F2` for renaming the selected terminal window. Rename is an inline header edit and does not recreate the PTY. A compact passive hint in the canvas bottom-right reflects the persisted bindings immediately and can be hidden from Appearance.
+- Snapping is enabled by default and can be disabled without changing existing window bounds. Edge panning remains off by default and exposes slow/normal/fast speed.
 ## Visual system
 
 - Flat, large, pastel tiles; strong dark/light contrast; restrained shadows; no ornamental micro-controls or explanatory microcopy around self-evident controls.
@@ -22,9 +25,9 @@ This contract preserves the approved MVP concept and prevents feature ownership 
 - System actions use locally vendored SVGs from the official Lucide repository. Do not hand-draw system icons in TSX and do not add an icon runtime package.
 - Provider marks use unmodified vendor assets. Do not redraw, recolor, filter, or approximate them. Kimi's raster mark must not render above its native `48px` size.
 - Dots and grid are CSS patterns. Waves use the seamless SVG tile in `assets/patterns/waves.svg`; do not emulate waves with radial gradients.
-- Terminal cards keep a `54px` header. At normal scale the header shows the provider mark and terminal working directory only. Close is the only window action and stays visible at the far right; canvas cards do not expose maximize/fullscreen. There is no lifecycle dot in terminal chrome.
+- Terminal cards keep a `54px` header. At normal scale the header shows the provider mark and terminal working directory until the user explicitly renames the window; a custom title then replaces the path. Close is the only window action and stays visible at the far right; canvas cards do not expose maximize/fullscreen. There is no lifecycle dot in terminal chrome.
 - Terminal cards switch to semantic summary mode below `0.5×`. Summary typography counter-scales as the camera moves farther out so identical cards keep the same readable hierarchy instead of exposing tiny xterm text.
-- In semantic summary mode a card is a canvas navigation target: wheel input zooms the camera around it, and clicking the summary focuses that terminal with a visible card outline. At normal scale the live terminal regains wheel ownership.
+- In semantic summary mode a card is a canvas navigation target: wheel input zooms the camera around it, and clicking the summary always selects it with a visible card outline. Camera focus follows only the configured Off/Single click/Double click mode. At normal scale the live terminal regains wheel ownership.
 - Every terminal edge and corner is a resize target. The minimum card size is `420 × 260`; resizing updates the xterm viewport and preserves the opposite edge.
 - With window snapping enabled, drag and resize use a hidden `10px` grid and a `10px` magnetic threshold for neighboring edges, centers, and a consistent `20px` gap.
 - Wheel input belongs to the surface under the pointer when that surface actually scrolls or consumes wheel input. The session list and terminal/card surfaces never zoom the camera. Passive Home widgets — limits, clock, media, and launcher tiles — still allow camera zoom so Home does not shrink the usable zoom area.

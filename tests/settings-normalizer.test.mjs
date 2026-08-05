@@ -13,6 +13,9 @@ const fallback = {
   edgePan: true,
   edgePanSpeed: "normal",
   zoomSensitivity: "normal",
+  focusActivation: "off",
+  showShortcutHints: true,
+  shortcuts: { home: "Home", renameWindow: "F2" },
   mediaPath: null,
   mediaFit: "cover",
   lastDirectory: "/",
@@ -37,6 +40,9 @@ test("falls back when edge pan and zoom values are garbage", () => {
   assert.equal(normalized.edgePan, fallback.edgePan);
   assert.equal(normalized.edgePanSpeed, fallback.edgePanSpeed);
   assert.equal(normalized.zoomSensitivity, fallback.zoomSensitivity);
+  assert.equal(normalized.focusActivation, fallback.focusActivation);
+  assert.equal(normalized.showShortcutHints, fallback.showShortcutHints);
+  assert.deepEqual(normalized.shortcuts, fallback.shortcuts);
 });
 
 test("older settings files without the new keys inherit defaults", () => {
@@ -53,7 +59,7 @@ test("a non-object candidate yields the fallback wholesale", () => {
   assert.equal(normalizeSettings("settings", fallback), fallback);
 });
 
-test("edge panning is off by default for fresh installs", async () => {
+test("fresh installs keep optional navigation automation off", async () => {
   const dir = await mkdtemp(join(tmpdir(), "canvastty-settings-"));
   try {
     const store = new SettingsStore(dir, "en");
@@ -61,9 +67,34 @@ test("edge panning is off by default for fresh installs", async () => {
     assert.equal(store.get().edgePan, false);
     assert.equal(store.get().edgePanSpeed, "normal");
     assert.equal(store.get().zoomSensitivity, "normal");
+    assert.equal(store.get().focusActivation, "off");
+    assert.equal(store.get().showShortcutHints, true);
+    assert.deepEqual(store.get().shortcuts, { home: "Home", renameWindow: "F2" });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("valid custom shortcuts survive normalization", () => {
+  const normalized = normalizeSettings({
+    focusActivation: "double",
+    showShortcutHints: false,
+    shortcuts: { home: "Ctrl+H", renameWindow: "Ctrl+Shift+R" }
+  }, fallback);
+  assert.equal(normalized.focusActivation, "double");
+  assert.equal(normalized.showShortcutHints, false);
+  assert.deepEqual(normalized.shortcuts, { home: "Ctrl+H", renameWindow: "Ctrl+Shift+R" });
+});
+
+test("conflicting or malformed shortcuts fall back together", () => {
+  assert.deepEqual(
+    normalizeSettings({ shortcuts: { home: "F2", renameWindow: "F2" } }, fallback).shortcuts,
+    fallback.shortcuts
+  );
+  assert.deepEqual(
+    normalizeSettings({ shortcuts: { home: "???", renameWindow: "F2" } }, fallback).shortcuts,
+    fallback.shortcuts
+  );
 });
 
 test("a saved edge pan preference survives normalization", () => {

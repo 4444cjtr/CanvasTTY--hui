@@ -82,6 +82,7 @@ export function registerIpc({ settings, terminals, limits }: Dependencies): void
     terminals.resize(id, cols, rows);
   });
   ipcMain.on(IPC.terminalBounds, (_event, id: string, bounds: SessionBounds) => terminals.setBounds(id, bounds));
+  ipcMain.handle(IPC.terminalRename, (_event, id: string, title: string) => terminals.rename(id, title));
   ipcMain.handle(IPC.terminalDispose, (_event, id: string) => terminals.dispose(id));
 
   ipcMain.on(IPC.windowMinimize, (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());

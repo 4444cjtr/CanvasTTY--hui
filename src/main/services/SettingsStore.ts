@@ -6,9 +6,11 @@ import type {
   AppSettings,
   CanvasPatternId,
   EdgePanSpeed,
+  FocusActivation,
   LocaleId,
   MediaFit,
   PaletteId,
+  ShortcutBindings,
   ZoomSensitivity
 } from "../../shared/contracts";
 
@@ -19,6 +21,9 @@ const MEDIA_FITS = new Set<MediaFit>(["cover", "contain"]);
 const AGENT_PROVIDERS = new Set<AgentProviderId>(["codex", "claude", "kimi"]);
 const EDGE_PAN_SPEEDS = new Set<EdgePanSpeed>(["slow", "normal", "fast"]);
 const ZOOM_SENSITIVITIES = new Set<ZoomSensitivity>(["slow", "normal", "fast"]);
+const FOCUS_ACTIVATIONS = new Set<FocusActivation>(["off", "single", "double"]);
+const SHORTCUT_MODIFIERS = new Set(["Ctrl", "Alt", "Shift", "Meta"]);
+const DEFAULT_SHORTCUTS: ShortcutBindings = { home: "Home", renameWindow: "F2" };
 
 export class SettingsStore {
   private readonly filePath: string;
@@ -78,6 +83,9 @@ function createDefaults(systemLocale: string): AppSettings {
     edgePan: false,
     edgePanSpeed: "normal",
     zoomSensitivity: "normal",
+    focusActivation: "off",
+    showShortcutHints: true,
+    shortcuts: { ...DEFAULT_SHORTCUTS },
     mediaPath: null,
     mediaFit: "cover",
     lastDirectory: homedir(),
@@ -99,6 +107,7 @@ export function normalizeSettings(candidate: unknown, fallback: AppSettings): Ap
       (provider): provider is AgentProviderId => AGENT_PROVIDERS.has(provider as AgentProviderId)
     )
     : fallback.acknowledgedDangerousProfiles;
+  const shortcuts = normalizeShortcuts(source.shortcuts, fallback.shortcuts);
 
   return {
     locale: LOCALES.has(source.locale as LocaleId) ? source.locale as LocaleId : fallback.locale,
@@ -114,6 +123,13 @@ export function normalizeSettings(candidate: unknown, fallback: AppSettings): Ap
     zoomSensitivity: ZOOM_SENSITIVITIES.has(source.zoomSensitivity as ZoomSensitivity)
       ? source.zoomSensitivity as ZoomSensitivity
       : fallback.zoomSensitivity,
+    focusActivation: FOCUS_ACTIVATIONS.has(source.focusActivation as FocusActivation)
+      ? source.focusActivation as FocusActivation
+      : fallback.focusActivation,
+    showShortcutHints: typeof source.showShortcutHints === "boolean"
+      ? source.showShortcutHints
+      : fallback.showShortcutHints,
+    shortcuts,
     mediaPath,
     mediaFit: MEDIA_FITS.has(source.mediaFit as MediaFit) ? source.mediaFit as MediaFit : fallback.mediaFit,
     lastDirectory: typeof source.lastDirectory === "string" && source.lastDirectory.length > 0
@@ -121,6 +137,35 @@ export function normalizeSettings(candidate: unknown, fallback: AppSettings): Ap
       : fallback.lastDirectory,
     acknowledgedDangerousProfiles: [...new Set(acknowledged)]
   };
+}
+
+function normalizeShortcuts(candidate: unknown, fallback: ShortcutBindings): ShortcutBindings {
+  const source = candidate && typeof candidate === "object"
+    ? candidate as Partial<ShortcutBindings>
+    : {};
+  const shortcuts = {
+    home: isValidShortcut(source.home) ? source.home : fallback.home,
+    renameWindow: isValidShortcut(source.renameWindow) ? source.renameWindow : fallback.renameWindow
+  };
+
+  if (shortcuts.home.toLowerCase() === shortcuts.renameWindow.toLowerCase()) {
+    return { ...fallback };
+  }
+  return shortcuts;
+}
+
+function isValidShortcut(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 40) return false;
+  const parts = value.split("+");
+  if (parts.some((part) => part.length === 0) || new Set(parts).size !== parts.length) return false;
+  const key = parts.at(-1);
+  if (!key || parts.slice(0, -1).some((part) => !SHORTCUT_MODIFIERS.has(part))) return false;
+  return /^[A-Z0-9]$/i.test(key)
+    || /^F(?:[1-9]|1\d|2[0-4])$/.test(key)
+    || new Set([
+      "Home", "End", "PageUp", "PageDown", "Space", "Enter", "Escape", "Tab",
+      "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Delete", "Insert", "Backspace"
+    ]).has(key);
 }
 
 function isMissingFile(error: unknown): boolean {

@@ -35,9 +35,9 @@ App
 │   ├── HomeZone           fixed dashboard composition
 │   │   ├── homeModel      pure derivation of limit/active-session rows
 │   │   └── HomeMediaWidget independent pick/replace/remove control
-│   └── TerminalCard       one live xterm view, drag, resize, and snap behavior
+│   └── TerminalCard       one live xterm view, selection, rename, drag, resize, and snap behavior
 ├── AgentLaunchDialog      fixed provider + folder + profile + launch
-└── SettingsPanel          locale + palette + canvas pattern only
+└── SettingsPanel          General, Appearance, and Controls preferences
 ```
 
 Keep domain decisions in pure selectors such as `homeModel.ts`, orchestration in `App.tsx`, and rendering/local interaction in feature components. IPC calls belong in `App.tsx` or a feature that exclusively owns that capability.
@@ -52,7 +52,9 @@ Keep domain decisions in pure selectors such as `homeModel.ts`, orchestration in
 
 `SessionMetadata` owns both world-space position and card size. `App` reconciles those bounds, while `TerminalCard` may hold transient pointer-move geometry until pointer-up. The main process validates and clamps committed sizes before emitting a session snapshot. Camera wheel handling is limited to empty canvas; interactive surfaces keep their native scroll/input ownership.
 
-A live `TerminalCard` owns one xterm instance for the lifetime of its session ID. Palette changes update `terminal.options.theme` in place; settings changes must never dispose the terminal or its renderer-side scrollback.
+A live `TerminalCard` owns one xterm instance for the lifetime of its session ID. Palette changes update `terminal.options.theme` in place; title and settings changes must never dispose the terminal or its renderer-side scrollback. Window titles are updated as session metadata through `terminal:rename`.
+
+Application shortcuts are normalized in `SettingsStore`, matched in `App`, and rendered from the same persisted bindings in the canvas hint. `App` owns the selected session used by window actions such as rename; `TerminalCard` owns only the inline editor.
 
 Session counters, progress bars, and statuses must always derive from actual `SessionSnapshot` values. The UI must not synthesize telemetry.
 
@@ -67,7 +69,7 @@ Session counters, progress bars, and statuses must always derive from actual `Se
 ## Extension points
 
 - Add a provider in `ProviderId`, `providers.ts`, `TerminalManager.resolveLaunch`, the official provider asset map, and an optional safe limit adapter.
-- Add a persisted setting to `AppSettings`, defaults/normalization in `SettingsStore`, and the owning feature only. Window snapping is the one workspace-behavior setting owned by Settings; its geometry remains a pure renderer concern.
+- Add a persisted setting to `AppSettings`, defaults/normalization in `SettingsStore`, and the owning feature only. Settings owns user-facing canvas controls and shortcuts; camera math and snapping geometry remain pure renderer concerns.
 - Add a canvas entity as a separate feature component with an explicit position and callbacks; keep camera ownership in `WorkspaceCanvas`.
 
 Every extension should pass `npm run typecheck`, `npm run build`, and a real Electron interaction check.

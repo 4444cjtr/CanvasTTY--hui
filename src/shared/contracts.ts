@@ -8,6 +8,18 @@ export type LocaleId = "ru" | "en";
 export type MediaFit = "cover" | "contain";
 export type EdgePanSpeed = "slow" | "normal" | "fast";
 export type ZoomSensitivity = "slow" | "normal" | "fast";
+export type FocusActivation = "off" | "single" | "double";
+export type ShortcutAction = "home" | "renameWindow";
+
+export interface ShortcutBindings {
+  home: string;
+  renameWindow: string;
+}
+
+export const DEFAULT_SHORTCUTS: ShortcutBindings = {
+  home: "Home",
+  renameWindow: "F2"
+};
 
 export interface Point {
   x: number;
@@ -36,6 +48,9 @@ export interface AppSettings {
   edgePan: boolean;
   edgePanSpeed: EdgePanSpeed;
   zoomSensitivity: ZoomSensitivity;
+  focusActivation: FocusActivation;
+  showShortcutHints: boolean;
+  shortcuts: ShortcutBindings;
   mediaPath: string | null;
   mediaFit: MediaFit;
   lastDirectory: string;
@@ -55,6 +70,7 @@ export interface SessionMetadata {
   provider: ProviderId;
   profile: LaunchProfileId;
   title: string;
+  titleCustomized: boolean;
   cwd: string;
   position: Point;
   size: Size;
@@ -165,6 +181,7 @@ export interface CanvasTTYApi {
     input(id: string, data: string): void;
     resize(id: string, cols: number, rows: number): void;
     setBounds(id: string, bounds: SessionBounds): void;
+    rename(id: string, title: string): Promise<SessionMetadata>;
     dispose(id: string): Promise<void>;
     onData(listener: (event: TerminalDataEvent) => void): () => void;
     onSession(listener: (event: SessionEvent) => void): () => void;
@@ -191,6 +208,7 @@ export const IPC = {
   terminalInput: "terminal:input",
   terminalResize: "terminal:resize",
   terminalBounds: "terminal:bounds",
+  terminalRename: "terminal:rename",
   terminalDispose: "terminal:dispose",
   terminalData: "terminal:data",
   terminalSession: "terminal:session",

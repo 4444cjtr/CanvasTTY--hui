@@ -11,6 +11,7 @@ import type {
   SessionMetadata,
   SessionSnapshot
 } from "../../shared/contracts";
+import { DEFAULT_SHORTCUTS } from "../../shared/contracts";
 import { TitleBar } from "./components/TitleBar";
 import { Toast } from "./components/Toast";
 import { AgentLaunchDialog } from "./features/launcher/AgentLaunchDialog";
@@ -18,6 +19,7 @@ import { SettingsPanel } from "./features/settings/SettingsPanel";
 import { WorkspaceCanvas } from "./features/workspace/WorkspaceCanvas";
 import type { LimitsLoadState } from "./features/home/homeModel";
 import { t } from "./lib/i18n";
+import { isRenameInputTarget, isShortcutCaptureTarget, matchesShortcut } from "./lib/shortcuts";
 
 const FALLBACK_SETTINGS: AppSettings = {
   locale: "ru",
@@ -27,6 +29,9 @@ const FALLBACK_SETTINGS: AppSettings = {
   edgePan: false,
   edgePanSpeed: "normal",
   zoomSensitivity: "normal",
+  focusActivation: "off",
+  showShortcutHints: true,
+  shortcuts: { ...DEFAULT_SHORTCUTS },
   mediaPath: null,
   mediaFit: "cover",
   lastDirectory: "/",
@@ -43,6 +48,8 @@ export function App(): React.JSX.Element {
   const isHomeCamera = useRef(true);
   const [launchProvider, setLaunchProvider] = useState<AgentProviderId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -60,7 +67,10 @@ export function App(): React.JSX.Element {
       if (active) setSessions((current) => upsertSession(current, session));
     });
     const unsubscribeRemoved = window.canvasTTY.terminal.onRemoved(({ id }) => {
-      if (active) setSessions((current) => current.filter((session) => session.id !== id));
+      if (!active) return;
+      setSessions((current) => current.filter((session) => session.id !== id));
+      setActiveSessionId((current) => current === id ? null : current);
+      setRenamingSessionId((current) => current === id ? null : current);
     });
 
     void Promise.all([window.canvasTTY.settings.get(), window.canvasTTY.terminal.list()])
@@ -140,6 +150,7 @@ export function App(): React.JSX.Element {
     const position = nextSessionPosition(sessions.length);
     const session = await window.canvasTTY.terminal.create({ provider, profile, cwd, position });
     setSessions((current) => upsertSnapshot(current, session));
+    setActiveSessionId(session.id);
     await saveSettings({ lastDirectory: cwd });
     isHomeCamera.current = false;
     setCamera(focusCamera(position, session.size));
@@ -204,12 +215,24 @@ export function App(): React.JSX.Element {
   const disposeSession = useCallback((id: string): void => {
     void window.canvasTTY.terminal.dispose(id);
     setSessions((current) => current.filter((session) => session.id !== id));
+    setActiveSessionId((current) => current === id ? null : current);
+    setRenamingSessionId((current) => current === id ? null : current);
   }, []);
 
   const focusSession = useCallback((session: SessionSnapshot): void => {
+    setActiveSessionId(session.id);
     isHomeCamera.current = false;
     setCamera(focusCamera(session.position, session.size));
   }, []);
+
+  const renameSession = useCallback(async (id: string, title: string): Promise<void> => {
+    try {
+      const metadata = await window.canvasTTY.terminal.rename(id, title);
+      setSessions((current) => upsertSession(current, metadata));
+    } catch {
+      showToast(t(settings.locale, "renameFailed"));
+    }
+  }, [settings.locale, showToast]);
 
   const changeCamera = useCallback((nextCamera: CameraState): void => {
     isHomeCamera.current = false;
@@ -220,6 +243,30 @@ export function App(): React.JSX.Element {
     isHomeCamera.current = true;
     setCamera(homeCamera());
   }, []);
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent): void => {
+      if (event.repeat || isShortcutCaptureTarget(event.target) || isRenameInputTarget(event.target)) return;
+      if (matchesShortcut(event, settings.shortcuts.home)) {
+        event.preventDefault();
+        event.stopPropagation();
+        goHome();
+        return;
+      }
+      if (matchesShortcut(event, settings.shortcuts.renameWindow)) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!activeSessionId) {
+          showToast(t(settings.locale, "selectWindowToRename"));
+          return;
+        }
+        setRenamingSessionId(activeSessionId);
+      }
+    };
+
+    window.addEventListener("keydown", handleShortcut, true);
+    return () => window.removeEventListener("keydown", handleShortcut, true);
+  }, [activeSessionId, goHome, settings.locale, settings.shortcuts, showToast]);
 
   const rootClasses = useMemo(
     () => `app app--${settings.palette}`,
@@ -246,6 +293,11 @@ export function App(): React.JSX.Element {
           onRequestMedia={requestMedia}
           onRemoveMedia={removeMedia}
           onFocusSession={focusSession}
+          activeSessionId={activeSessionId}
+          renamingSessionId={renamingSessionId}
+          onSelectSession={setActiveSessionId}
+          onRenameSession={renameSession}
+          onRenameEnd={() => setRenamingSessionId(null)}
           onSessionBoundsChange={changeSessionBounds}
           onDisposeSession={disposeSession}
         />

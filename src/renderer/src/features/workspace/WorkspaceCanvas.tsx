@@ -29,6 +29,11 @@ interface WorkspaceCanvasProps {
   onOpenAgent(provider: AgentProviderId): void;
   onOpenTerminal(): void;
   onFocusSession(session: SessionSnapshot): void;
+  activeSessionId: string | null;
+  renamingSessionId: string | null;
+  onSelectSession(id: string): void;
+  onRenameSession(id: string, title: string): Promise<void>;
+  onRenameEnd(): void;
   onRequestMedia(): Promise<void>;
   onRemoveMedia(): Promise<void>;
   onSessionBoundsChange(id: string, bounds: SessionBounds): void;
@@ -54,6 +59,11 @@ export function WorkspaceCanvas({
   onOpenAgent,
   onOpenTerminal,
   onFocusSession,
+  activeSessionId,
+  renamingSessionId,
+  onSelectSession,
+  onRenameSession,
+  onRenameEnd,
   onRequestMedia,
   onRemoveMedia,
   onSessionBoundsChange,
@@ -198,6 +208,9 @@ export function WorkspaceCanvas({
             palette={settings.palette}
             zoom={camera.zoom}
             snapEnabled={settings.snapToGrid}
+            focusActivation={settings.focusActivation}
+            selected={activeSessionId === session.id}
+            renaming={renamingSessionId === session.id}
             snapTargets={[
               HOME_BOUNDS,
               ...sessions
@@ -205,6 +218,9 @@ export function WorkspaceCanvas({
                 .map((candidate) => ({ position: candidate.position, size: candidate.size }))
             ]}
             onActivate={onFocusSession}
+            onSelect={onSelectSession}
+            onRename={onRenameSession}
+            onRenameEnd={onRenameEnd}
             onBoundsChange={onSessionBoundsChange}
             onDispose={onDisposeSession}
           />
@@ -216,6 +232,12 @@ export function WorkspaceCanvas({
         <button type="button" onClick={() => zoomBy(0.82)} title={t(settings.locale, "zoomOut")}><UiIcon name="zoom-out" size={17} /></button>
         <button type="button" onClick={() => zoomBy(1.22)} title={t(settings.locale, "zoomIn")}><UiIcon name="zoom-in" size={17} /></button>
       </div>
+      {settings.showShortcutHints && (
+        <aside className="shortcut-hints" aria-label={t(settings.locale, "keyboardShortcuts")}>
+          <div><kbd>{settings.shortcuts.home}</kbd><span>{t(settings.locale, "homeShortcut")}</span></div>
+          <div><kbd>{settings.shortcuts.renameWindow}</kbd><span>{t(settings.locale, "renameWindow")}</span></div>
+        </aside>
+      )}
     </div>
   );
 }
