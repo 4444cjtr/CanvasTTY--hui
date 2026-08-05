@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.1 — public preview
+
+- Made repository and documentation security checks portable across LF/CRLF checkouts and Windows drive paths.
+- No application behavior changed from the `0.8.0` preview candidate.
+
 ## 0.8.0 — public preview
 
 - Spatial canvas for live local PTY and AI-agent CLI sessions.

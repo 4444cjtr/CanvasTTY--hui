@@ -43,6 +43,14 @@ test("packaged app uses an explicit production allowlist", async () => {
   }
 });
 
+test("package manifest and lockfile publish the same version", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  const lockfile = JSON.parse(await readFile(new URL("../package-lock.json", import.meta.url), "utf8"));
+
+  assert.equal(lockfile.version, manifest.version);
+  assert.equal(lockfile.packages[""].version, manifest.version);
+});
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
