@@ -10,7 +10,7 @@ Each `v*` tag starts native GitHub-hosted builds for all three operating systems
 |:--|:--|:--|
 | Linux x86_64 | AppImage, deb | AppImage runs without installation; deb integrates with Debian-family desktops |
 | Windows x64 | NSIS installer, portable executable | The installer allows choosing a directory and creates Start Menu/Desktop shortcuts |
-| macOS arm64 (Apple Silicon) | dmg, zip | Both contain the graphical `.app` bundle; `0.9.1` does not include an Intel/x64 build |
+| macOS arm64 (Apple Silicon) | dmg, zip | Both contain the graphical `.app` bundle; `0.9.2` does not include an Intel/x64 build |
 
 Download artifacts only from the repository's [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) page. The `0.9.x` line is a public preview and currently has no commercial code-signing certificates or Apple notarization. Windows SmartScreen and macOS Gatekeeper may therefore warn about an unknown developer. Verify the release tag and artifact name before acknowledging any warning.
 

@@ -189,7 +189,7 @@ async function readClaudeUsage(): Promise<unknown> {
 
   return fetchUsageJson(CLAUDE_USAGE_URL, accessToken, {
     "anthropic-beta": "oauth-2025-04-20",
-    "user-agent": "canvastty/0.9.1"
+    "user-agent": "canvastty/0.9.2"
   });
 }
 

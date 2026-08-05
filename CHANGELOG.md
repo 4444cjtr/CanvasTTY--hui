@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.1 — public preview
+## 0.9.2 — public preview
 
 - Restored provider CLI discovery for graphical AppImage launches by supplementing the desktop-session `PATH` with existing per-user CLI directories, including Kimi's `~/.kimi-code/bin`.
 - Prevented late terminal input and resize events from crashing the Electron main process when they race with PTY exit (`EBADFD`).
