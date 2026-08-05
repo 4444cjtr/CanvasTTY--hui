@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.2 — public preview
+
+- Publish only end-user installers from release jobs, excluding unpacked build directories.
+- Give Windows NSIS and portable executables distinct artifact names.
+
 ## 0.8.1 — public preview
 
 - Made repository and documentation security checks portable across LF/CRLF checkouts and Windows drive paths.

@@ -51,6 +51,22 @@ test("package manifest and lockfile publish the same version", async () => {
   assert.equal(lockfile.packages[""].version, manifest.version);
 });
 
+test("release workflow uploads installers only and keeps Windows targets distinct", async () => {
+  const config = normalizeLineEndings(
+    await readFile(new URL("../electron-builder.yml", import.meta.url), "utf8")
+  );
+  const workflow = normalizeLineEndings(
+    await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8")
+  );
+
+  assert.match(config, /^  artifactName: .*windows-\$\{arch\}-setup\.\$\{ext\}$/m);
+  assert.match(config, /^  artifactName: .*windows-\$\{arch\}-portable\.\$\{ext\}$/m);
+  assert.doesNotMatch(workflow, /^\s+release\/\*$/m);
+  for (const extension of ["AppImage", "deb", "exe", "dmg", "zip"]) {
+    assert.match(workflow, new RegExp(`^\\s+release/\\*\\.${extension}$`, "m"));
+  }
+});
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
