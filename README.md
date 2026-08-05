@@ -12,7 +12,7 @@
   <tr>
     <td>
       <strong>Your terminals are places, not tabs.</strong><br>
-      CanvasTTY is an Electron spatial desktop for real local PTYs and AI-agent CLI sessions. Keep a fixed Home zone, arrange live terminals on an infinite canvas, and see provider limits without fabricated telemetry.
+      CanvasTTY is an Electron spatial desktop for real local PTYs and AI-agent CLI sessions. Keep a fixed Home zone, arrange live terminals on an infinite canvas, and see provider limits backed by real data sources.
     </td>
   </tr>
 </table>

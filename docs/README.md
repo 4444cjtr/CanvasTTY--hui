@@ -22,7 +22,7 @@ CanvasTTY is a spatial Electron desktop for real local terminals and AI-agent CL
 
 ## Current extension model
 
-CanvasTTY does not yet load third-party runtime plugins. A custom widget is a source-level contribution compiled with the app. This is intentional for the MVP: Electron capabilities remain allow-listed, shared data remains typed, and provider credentials never cross into the renderer.
+CanvasTTY treats a custom widget as a source-level contribution compiled with the app rather than a third-party runtime plugin. This is intentional for the MVP: Electron capabilities remain allow-listed, shared data remains typed, and provider credentials never cross into the renderer.
 
 When a runtime plugin API is introduced, this documentation must be revised around an explicit permission model rather than treating current source-level examples as a stable public ABI.
 

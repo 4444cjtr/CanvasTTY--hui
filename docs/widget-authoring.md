@@ -2,7 +2,7 @@
 
 [English](widget-authoring.md) · [Русский](widget-authoring.ru.md) · [简体中文](widget-authoring.zh-CN.md) · [Docs home](README.md)
 
-CanvasTTY widgets are currently source-level extensions, not runtime plugins. This guide shows how to add one without weakening Electron isolation, fabricating telemetry, or drifting away from the visual system.
+CanvasTTY widgets are currently source-level extensions, not runtime plugins. This guide shows how to add one while preserving Electron isolation, source-backed telemetry, and the visual system.
 
 ## Choose the smallest extension shape
 

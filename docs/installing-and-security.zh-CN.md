@@ -16,7 +16,7 @@
 
 ## 分发包包含什么
 
-`electron-builder.yml` 采用显式的白名单（allowlist）：只打包 `out/` 下的 production bundle、`package.json` 和必需的 production dependencies。文档源文件、`.env`、本地的 agent/planning 目录、日志、设置、凭据以及发布工作目录中的文件都不会被复制进应用包。
+`electron-builder.yml` 采用显式的白名单（allowlist）：只打包 `out/` 下的 production bundle、`package.json` 和必需的 production dependencies。文档源文件、`.env`、本地的智能体/planning 目录、日志、设置、凭据以及发布工作目录中的文件都不会被复制进应用包。
 
 `node-pty` 会在对应平台的 GitHub runner 上重新构建，因此 Linux、Windows 和 macOS 的包使用的都是各自平台的原生模块。一个系统的包绝不会被换个名字冒充另一个系统的构建。
 
@@ -26,7 +26,7 @@
 |:--|:--|
 | CanvasTTY 设置 | Electron 的每用户 `userData` 目录（典型 Linux 桌面为 `~/.config/canvastty`，Windows 为 `%APPDATA%\canvastty`，macOS 为 `~/Library/Application Support/canvastty`） |
 | 服务商凭据 | 由已安装的 Codex、Claude 或 Kimi CLI 自己管理的本地凭据存储，CanvasTTY 不会复制它 |
-| PTY scrollback | 应用会话存续期间主进程中的有界内存，不会写入仓库 |
+| PTY 滚动缓冲区 | 应用会话存续期间主进程中的有界内存，不会写入仓库 |
 | Home 媒体 | 用户磁盘上的原始本地文件，设置中只保存它的本地路径 |
 | 日志 | 仅本地的 stdout/stderr；CanvasTTY 没有远程日志收集器，也没有项目自营的遥测端点 |
 
@@ -34,9 +34,9 @@
 
 ## 凭据边界
 
-只有当基于真实数据源的配额请求需要凭据时，可信的主进程才会读取它们。凭据只会发送到对应服务商的端点，不写入日志，不由 CanvasTTY 持久化，也绝不经过类型化的 preload 桥接。Kimi 的 loopback 用量令牌（token）只保留在进程内存中，其子进程的 stderr 会被丢弃。
+只有当基于数据源的配额请求需要凭据时，可信的主进程才会读取它们。凭据只会发送到对应服务商的端点，不写入日志，不由 CanvasTTY 持久化，也绝不经过类型化的 preload 桥接。Kimi 的 loopback 用量令牌（token）只保留在进程内存中，其子进程的 stderr 会被丢弃。
 
-清洗后的百分比、窗口元数据、时间戳以及明确的不可用原因可以通过 IPC 传递。原始的服务商响应、bearer 请求头、cookie 和凭据文件则不允许。
+脱敏后的百分比、窗口元数据、时间戳以及明确的不可用原因可以通过 IPC 传递。原始的服务商响应、bearer 请求头、cookie 和凭据文件则不允许。
 
 ## 仓库防护
 
@@ -45,9 +45,9 @@ npm run audit:secrets
 npm test
 ```
 
-审计会检查高置信度的 provider/云服务令牌格式、私钥块、硬编码的密钥赋值、敏感文件名以及个人 home 目录的绝对路径。`.gitignore` 排除了本地 agent 上下文、planning 数据、env 文件、凭据、日志、设置、dependencies 和生成的软件包。CI 会在构建前运行审计，每个 release job 在打包前也会再运行一次。
+审计会检查高置信度的服务商/云服务令牌格式、私钥块、硬编码的密钥赋值、敏感文件名以及个人 home 目录的绝对路径。`.gitignore` 排除了本地智能体上下文、planning 数据、env 文件、凭据、日志、设置、dependencies 和生成的软件包。CI 会在构建前运行审计，每个 release job 在打包前也会再运行一次。
 
-没有扫描器是万无一失的。永远不要"临时"提交真实密钥。如果密钥已经进入了 Git 历史，先吊销它，再清理历史记录，然后才公开仓库。
+没有扫描器是万无一失的。永远不要“临时”提交真实密钥。如果密钥已经进入了 Git 历史，先吊销它，再清理历史记录，然后才公开仓库。
 
 ## 本地构建软件包
 
