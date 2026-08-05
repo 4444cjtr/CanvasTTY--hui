@@ -8,7 +8,9 @@ test("publishable repository files contain no high-confidence secrets or persona
 });
 
 test("gitignore excludes local credentials, logs, builds, and agent context", async () => {
-  const gitignore = await readFile(new URL("../.gitignore", import.meta.url), "utf8");
+  const gitignore = normalizeLineEndings(
+    await readFile(new URL("../.gitignore", import.meta.url), "utf8")
+  );
   const requiredEntries = [
     ".env",
     ".env.*",
@@ -29,7 +31,9 @@ test("gitignore excludes local credentials, logs, builds, and agent context", as
 });
 
 test("packaged app uses an explicit production allowlist", async () => {
-  const config = await readFile(new URL("../electron-builder.yml", import.meta.url), "utf8");
+  const config = normalizeLineEndings(
+    await readFile(new URL("../electron-builder.yml", import.meta.url), "utf8")
+  );
 
   assert.match(config, /^files:\n(?:[\s\S]*?)^  - out\/\*\*\/\*$/m);
   assert.match(config, /^  - package\.json$/m);
@@ -41,4 +45,8 @@ test("packaged app uses an explicit production allowlist", async () => {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeLineEndings(value) {
+  return value.replaceAll("\r\n", "\n");
 }
