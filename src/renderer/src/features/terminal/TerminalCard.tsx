@@ -12,6 +12,7 @@ import { ProviderIcon } from "../../components/ProviderIcon";
 import { UiIcon } from "../../components/UiIcon";
 import { t } from "../../lib/i18n";
 import { sessionStatusLabel } from "../../lib/sessionStatus";
+import { shouldCopyTerminalSelection } from "./terminalShortcuts";
 import {
   constrainResize,
   snapMove,
@@ -63,6 +64,7 @@ export function TerminalCard({
   const liveBounds = useRef<SessionBounds>({ position: session.position, size: session.size });
   const summaryMode = zoom < 0.5;
   const summaryScale = summaryMode ? Math.min(1.8, Math.max(1, 0.5 / zoom)) : 1;
+  const terminalBackground = terminalTheme(palette).background;
 
   useEffect(() => {
     const bounds = { position: session.position, size: session.size };
@@ -88,6 +90,14 @@ export function TerminalCard({
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(host);
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (!shouldCopyTerminalSelection(event, terminal.hasSelection())) return true;
+
+      event.preventDefault();
+      event.stopPropagation();
+      window.canvasTTY.clipboard.writeText(terminal.getSelection());
+      return false;
+    });
     terminalRef.current = terminal;
     if (session.buffer) terminal.write(session.buffer);
 
@@ -218,7 +228,8 @@ export function TerminalCard({
         width: size.width,
         height: size.height,
         transform: `translate(${position.x}px, ${position.y}px)`,
-        "--summary-scale": summaryScale
+        "--summary-scale": summaryScale,
+        "--terminal-background": terminalBackground
       } as React.CSSProperties}
     >
       <header

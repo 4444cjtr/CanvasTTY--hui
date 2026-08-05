@@ -137,6 +137,9 @@ export interface LimitsSnapshot {
 }
 
 export interface CanvasTTYApi {
+  clipboard: {
+    writeText(text: string): void;
+  };
   settings: {
     get(): Promise<AppSettings>;
     update(patch: Partial<AppSettings>): Promise<AppSettings>;
@@ -171,6 +174,7 @@ export interface CanvasTTYApi {
 }
 
 export const IPC = {
+  clipboardWrite: "clipboard:write",
   settingsGet: "settings:get",
   settingsUpdate: "settings:update",
   dialogPickDirectory: "dialog:pick-directory",

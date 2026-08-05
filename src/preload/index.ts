@@ -17,6 +17,9 @@ function subscribe<T>(channel: string, listener: (event: T) => void): () => void
 }
 
 const api: CanvasTTYApi = {
+  clipboard: {
+    writeText: (text: string) => ipcRenderer.send(IPC.clipboardWrite, text)
+  },
   settings: {
     get: () => ipcRenderer.invoke(IPC.settingsGet),
     update: (patch: Partial<AppSettings>) => ipcRenderer.invoke(IPC.settingsUpdate, patch)

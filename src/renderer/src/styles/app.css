@@ -110,7 +110,7 @@ button { border: 0; }
 .canvas-controls button { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; color: white; background: transparent; cursor: pointer; transition: background .15s ease; }
 .canvas-controls button:hover { background: rgba(255,255,255,.13); }
 
-.terminal-card { position: absolute; left: 0; top: 0; width: 700px; height: 430px; overflow: hidden; border: 1px solid rgba(255,255,255,.08); border-radius: 17px; background: #202430; box-shadow: var(--shadow-lg); transition: box-shadow .15s ease; }
+.terminal-card { position: absolute; left: 0; top: 0; width: 700px; height: 430px; overflow: hidden; border: 1px solid rgba(255,255,255,.08); border-radius: 17px; background: var(--terminal-background, #202430); box-shadow: var(--shadow-lg); transition: box-shadow .15s ease; }
 .terminal-card:focus-within { box-shadow: 0 0 0 3px var(--primary), var(--shadow-lg); }
 .terminal-card__header { height: 54px; padding: 0 11px 0 15px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: white; background: var(--surface-soft); cursor: move; touch-action: none; }
 .terminal-card__identity { min-width: 0; display: flex; align-items: center; gap: 9px; }
@@ -120,9 +120,10 @@ button { border: 0; }
 .terminal-card__actions button:hover { color: white; background: rgba(255,255,255,.15); }
 .terminal-card__action { transition: color .15s ease, background .15s ease; }
 .terminal-card__actions .terminal-card__action--close:hover { background: var(--danger); }
-.terminal-card__surface { height: calc(100% - 54px); padding: 0; user-select: text; background: #202430; }
+.terminal-card__surface { height: calc(100% - 54px); padding: 0; user-select: text; background: var(--terminal-background, #202430); }
 .terminal-card__surface .xterm { height: 100%; }
-.terminal-card__summary { position: absolute; inset: 54px 0 0; width: 100%; height: calc(100% - 54px); display: none; align-items: center; justify-content: center; overflow: hidden; padding: 0; color: white; background: #202430; cursor: zoom-in; text-align: left; }
+.terminal-card__surface .xterm-viewport { background-color: var(--terminal-background, #202430); }
+.terminal-card__summary { position: absolute; inset: 54px 0 0; width: 100%; height: calc(100% - 54px); display: none; align-items: center; justify-content: center; overflow: hidden; padding: 0; color: white; background: var(--terminal-background, #202430); cursor: zoom-in; text-align: left; }
 .terminal-card__summary:hover { background: #242936; }
 .terminal-card__summary-content { max-width: 78%; display: flex; align-items: center; gap: 22px; transform: scale(var(--summary-scale, 1)); transform-origin: center; }
 .terminal-card__summary-copy { min-width: 0; display: flex; flex-direction: column; gap: 7px; }

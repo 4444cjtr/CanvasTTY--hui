@@ -1,6 +1,6 @@
 import { extname } from "node:path";
 import { readFile, stat } from "node:fs/promises";
-import { BrowserWindow, dialog, ipcMain } from "electron";
+import { BrowserWindow, clipboard, dialog, ipcMain } from "electron";
 import type { OpenDialogOptions } from "electron";
 import type {
   AppSettings,
@@ -28,6 +28,10 @@ interface Dependencies {
 }
 
 export function registerIpc({ settings, terminals, limits }: Dependencies): void {
+  ipcMain.on(IPC.clipboardWrite, (_event, text: string) => {
+    if (typeof text === "string" && text.length > 0) clipboard.writeText(text);
+  });
+
   ipcMain.handle(IPC.settingsGet, () => settings.get());
   ipcMain.handle(IPC.settingsUpdate, (_event, patch: Partial<AppSettings>) => settings.update(patch));
 

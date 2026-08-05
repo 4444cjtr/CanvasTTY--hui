@@ -6,6 +6,7 @@ const terminalCardPath = new URL(
   "../src/renderer/src/features/terminal/TerminalCard.tsx",
   import.meta.url
 );
+const appStylesPath = new URL("../src/renderer/src/styles/app.css", import.meta.url);
 
 test("palette changes retheme the live xterm without recreating it", async () => {
   const source = await readFile(terminalCardPath, "utf8");
@@ -13,6 +14,24 @@ test("palette changes retheme the live xterm without recreating it", async () =>
 
   assert.equal(mountDependencies, "session.id");
   assert.match(source, /terminal\.options\.theme = terminalTheme\(palette\)/);
+});
+
+test("terminal copy shortcuts write the xterm selection without reaching the PTY", async () => {
+  const source = await readFile(terminalCardPath, "utf8");
+
+  assert.match(source, /terminal\.attachCustomKeyEventHandler/);
+  assert.match(source, /window\.canvasTTY\.clipboard\.writeText\(terminal\.getSelection\(\)\)/);
+  assert.match(source, /return false;/);
+});
+
+test("terminal viewport keeps the palette background after row-sized fits", async () => {
+  const [source, styles] = await Promise.all([
+    readFile(terminalCardPath, "utf8"),
+    readFile(appStylesPath, "utf8")
+  ]);
+
+  assert.match(source, /"--terminal-background": terminalBackground/);
+  assert.match(styles, /\.terminal-card__surface \.xterm-viewport \{ background-color: var\(--terminal-background, #202430\); \}/);
 });
 
 function effectDependenciesContaining(source, marker) {
