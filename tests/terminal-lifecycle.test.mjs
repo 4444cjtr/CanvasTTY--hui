@@ -7,6 +7,7 @@ const terminalCardPath = new URL(
   import.meta.url
 );
 const appStylesPath = new URL("../src/renderer/src/styles/app.css", import.meta.url);
+const terminalManagerPath = new URL("../src/main/services/TerminalManager.ts", import.meta.url);
 
 test("palette changes retheme the live xterm without recreating it", async () => {
   const source = await readFile(terminalCardPath, "utf8");
@@ -42,6 +43,14 @@ test("renaming is inline and does not join the xterm mount dependencies", async 
   assert.match(source, /window\.canvasTTY\.terminal\.rename|onRename\(session\.id, title\)/);
   assert.match(source, /data-terminal-rename="true"/);
   assert.match(source, /session\.titleCustomized \? session\.title : compactPath\(session\.cwd\)/);
+});
+
+test("late input and resize events are guarded after PTY exit", async () => {
+  const source = await readFile(terminalManagerPath, "utf8");
+
+  assert.match(source, /session\.metadata\.exitCode !== null/);
+  assert.match(source, /tryPtyOperation\(\(\) => session\.process\.write\(data\)\)/);
+  assert.match(source, /tryPtyOperation\(\(\) => session\.process\.resize\(safeCols, safeRows\)\)/);
 });
 
 function effectDependenciesContaining(source, marker) {

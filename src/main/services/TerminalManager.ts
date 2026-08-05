@@ -15,6 +15,7 @@ import type {
   TerminalDataEvent
 } from "../../shared/contracts";
 import { IPC } from "../../shared/contracts";
+import { tryPtyOperation } from "./ptySafety";
 
 const MAX_SCROLLBACK_BYTES = 240_000;
 const DEFAULT_TERMINAL_SIZE = { width: 700, height: 430 };
@@ -100,14 +101,18 @@ export class TerminalManager {
 
   input(id: string, data: string): void {
     if (typeof data !== "string" || data.length === 0) return;
-    this.sessions.get(id)?.process.write(data);
+    const session = this.sessions.get(id);
+    if (!session || session.metadata.exitCode !== null) return;
+    tryPtyOperation(() => session.process.write(data));
   }
 
   resize(id: string, cols: number, rows: number): void {
     if (!Number.isFinite(cols) || !Number.isFinite(rows)) return;
+    const session = this.sessions.get(id);
+    if (!session || session.metadata.exitCode !== null) return;
     const safeCols = Math.max(20, Math.min(400, Math.floor(cols)));
     const safeRows = Math.max(5, Math.min(200, Math.floor(rows)));
-    this.sessions.get(id)?.process.resize(safeCols, safeRows);
+    tryPtyOperation(() => session.process.resize(safeCols, safeRows));
   }
 
   setBounds(id: string, bounds: SessionBounds): void {

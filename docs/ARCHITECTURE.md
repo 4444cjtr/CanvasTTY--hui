@@ -24,6 +24,7 @@ Electron main process
 - `src/main/services/TerminalManager.ts` is the source of truth for live session state and PTY buffers. A new PTY is `idle`; process exit provides only `done` or `failed`. `working` and `needs_approval` are accepted only as typed provider lifecycle signals, never inferred from PTY existence or terminal text.
 - `src/main/services/LimitsService.ts` reads Codex through the installed CLI's app-server protocol and Claude/Kimi through their provider usage endpoints. Provider credentials are read only inside the trusted main process, sent only to the matching provider over HTTPS, and never logged or exposed over IPC. The service owns timeout, structural normalization, caching, stale fallback, and subprocess cleanup; raw provider responses never cross IPC.
 - `src/main/services/SettingsStore.ts` normalizes every update and persists through a serialized atomic write.
+- `src/main/services/cliEnvironment.ts` supplements the graphical-session `PATH` with existing per-user CLI directories before any provider process is spawned. It never reads shell startup scripts.
 
 ## Renderer boundaries
 
@@ -52,7 +53,7 @@ Keep domain decisions in pure selectors such as `homeModel.ts`, orchestration in
 
 `SessionMetadata` owns both world-space position and card size. `App` reconciles those bounds, while `TerminalCard` may hold transient pointer-move geometry until pointer-up. The main process validates and clamps committed sizes before emitting a session snapshot. Camera wheel handling is limited to empty canvas; interactive surfaces keep their native scroll/input ownership.
 
-A live `TerminalCard` owns one xterm instance for the lifetime of its session ID. Palette changes update `terminal.options.theme` in place; title and settings changes must never dispose the terminal or its renderer-side scrollback. Window titles are updated as session metadata through `terminal:rename`.
+A live `TerminalCard` owns one xterm instance for the lifetime of its session ID. Palette changes update `terminal.options.theme` in place; title and settings changes must never dispose the terminal or its renderer-side scrollback. Window titles are updated as session metadata through `terminal:rename`. PTY input and resize events that race with process exit are contained at the main-process boundary and never surface as uncaught Electron errors.
 
 Application shortcuts are normalized in `SettingsStore`, matched in `App`, and rendered from the same persisted bindings in the canvas hint. `App` owns the selected session used by window actions such as rename; `TerminalCard` owns only the inline editor.
 

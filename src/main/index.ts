@@ -5,6 +5,7 @@ import { registerIpc } from "./ipc/registerIpc";
 import { SettingsStore } from "./services/SettingsStore";
 import { TerminalManager } from "./services/TerminalManager";
 import { LimitsService } from "./services/LimitsService";
+import { augmentCliPath } from "./services/cliEnvironment";
 
 let mainWindow: BrowserWindow | null = null;
 let terminalManager: TerminalManager | null = null;
@@ -48,6 +49,7 @@ async function createWindow(): Promise<BrowserWindow> {
 }
 
 app.whenReady().then(async () => {
+  augmentCliPath();
   const settings = new SettingsStore(app.getPath("userData"), app.getLocale());
   await settings.load();
 
