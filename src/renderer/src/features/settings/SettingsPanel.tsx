@@ -1,13 +1,17 @@
 import type {
   AppSettings,
   CanvasPatternId,
+  EdgePanSpeed,
   LocaleId,
-  PaletteId
+  PaletteId,
+  ZoomSensitivity
 } from "../../../../shared/contracts";
 import { t } from "../../lib/i18n";
 import { UiIcon } from "../../components/UiIcon";
 
-type AppearanceSettings = Pick<AppSettings, "locale" | "palette" | "pattern" | "snapToGrid">;
+type AppearanceSettings = Pick<AppSettings,
+  "locale" | "palette" | "pattern" | "snapToGrid" | "edgePan" | "edgePanSpeed" | "zoomSensitivity"
+>;
 
 interface SettingsPanelProps {
   open: boolean;
@@ -63,6 +67,30 @@ export function SettingsPanel({
             value={settings.snapToGrid ? "on" : "off"}
             options={[["on", t(locale, "on")], ["off", t(locale, "off")]]}
             onChange={(value) => void onChange({ snapToGrid: value === "on" })}
+          />
+        </SettingGroup>
+
+        <SettingGroup label={t(locale, "edgePan")}>
+          <Segmented
+            value={settings.edgePan ? "on" : "off"}
+            options={[["on", t(locale, "on")], ["off", t(locale, "off")]]}
+            onChange={(value) => void onChange({ edgePan: value === "on" })}
+          />
+        </SettingGroup>
+
+        <SettingGroup label={t(locale, "edgePanSpeed")}>
+          <Segmented
+            value={settings.edgePanSpeed}
+            options={(["slow", "normal", "fast"] as EdgePanSpeed[]).map((value) => [value, t(locale, value)])}
+            onChange={(value) => void onChange({ edgePanSpeed: value as EdgePanSpeed })}
+          />
+        </SettingGroup>
+
+        <SettingGroup label={t(locale, "zoomSensitivity")}>
+          <Segmented
+            value={settings.zoomSensitivity}
+            options={(["slow", "normal", "fast"] as ZoomSensitivity[]).map((value) => [value, t(locale, value)])}
+            onChange={(value) => void onChange({ zoomSensitivity: value as ZoomSensitivity })}
           />
         </SettingGroup>
 

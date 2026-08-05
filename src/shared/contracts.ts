@@ -6,6 +6,8 @@ export type PaletteId = "sage" | "lilac" | "night";
 export type CanvasPatternId = "dots" | "grid" | "waves" | "none";
 export type LocaleId = "ru" | "en";
 export type MediaFit = "cover" | "contain";
+export type EdgePanSpeed = "slow" | "normal" | "fast";
+export type ZoomSensitivity = "slow" | "normal" | "fast";
 
 export interface Point {
   x: number;
@@ -31,6 +33,9 @@ export interface AppSettings {
   palette: PaletteId;
   pattern: CanvasPatternId;
   snapToGrid: boolean;
+  edgePan: boolean;
+  edgePanSpeed: EdgePanSpeed;
+  zoomSensitivity: ZoomSensitivity;
   mediaPath: string | null;
   mediaFit: MediaFit;
   lastDirectory: string;
