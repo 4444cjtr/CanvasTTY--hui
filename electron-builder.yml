@@ -1,0 +1,53 @@
+appId: io.github.howdeploy.canvastty
+productName: CanvasTTY
+
+directories:
+  buildResources: build
+  output: release
+
+# Keep the distributable allow-listed: no source tree, docs, local agent context,
+# settings, logs, credentials, or development artifacts are copied into the app.
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.map"
+
+asar: true
+asarUnpack:
+  - node_modules/node-pty/**/*
+npmRebuild: true
+compression: maximum
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+linux:
+  icon: build/icon.png
+  category: Utility
+  maintainer: howdeploy
+  syncDesktopName: true
+  target:
+    - AppImage
+    - deb
+
+win:
+  icon: build/icon.png
+  target:
+    - nsis
+    - portable
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+
+mac:
+  icon: build/icon.png
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+
+publish:
+  provider: github
+  owner: howdeploy
+  repo: CanvasTTY

@@ -1,0 +1,37 @@
+.workspace::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.workspace.pattern-dots::before {
+  background-image: radial-gradient(circle, var(--dot) 1.15px, transparent 1.3px);
+  background-size: 20px 20px;
+}
+
+.workspace.pattern-grid::before {
+  background-image:
+    linear-gradient(var(--dot) 1px, transparent 1px),
+    linear-gradient(90deg, var(--dot) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.workspace.pattern-waves::before {
+  background-color: var(--dot);
+  -webkit-mask-image: url("../assets/patterns/waves.svg");
+  mask-image: url("../assets/patterns/waves.svg");
+  -webkit-mask-position: 0 0;
+  mask-position: 0 0;
+  -webkit-mask-repeat: repeat;
+  mask-repeat: repeat;
+  -webkit-mask-size: 96px 48px;
+  mask-size: 96px 48px;
+}
+
+.workspace.pattern-none::before {
+  background: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+}

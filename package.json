@@ -1,0 +1,52 @@
+{
+  "name": "canvastty",
+  "version": "0.8.0",
+  "private": true,
+  "description": "A spatial desktop for local AI agents and real terminal sessions.",
+  "desktopName": "CanvasTTY",
+  "author": "howdeploy",
+  "homepage": "https://github.com/howdeploy/CanvasTTY",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/howdeploy/CanvasTTY.git"
+  },
+  "main": "./out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "package": "npm run build && electron-builder --dir",
+    "package:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
+    "package:win": "npm run build && electron-builder --win nsis portable --publish never",
+    "package:mac": "npm run build && electron-builder --mac dmg zip --publish never",
+    "preview": "electron-vite preview",
+    "audit:secrets": "node scripts/audit-secrets.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "postinstall": "install-electron && electron-rebuild -f -w node-pty"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "node-pty": "1.1.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "4.2.0",
+    "@types/node": "26.1.2",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "5.2.0",
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "typescript": "7.0.2",
+    "vite": "7.3.6"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.1": true,
+    "node-pty@1.1.0": true
+  }
+}
