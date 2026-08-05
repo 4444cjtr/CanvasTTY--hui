@@ -5,11 +5,11 @@
 ## 环境要求
 
 - Node.js 与 npm。
-- 当前平台支持的 `node-pty` 原生编译工具链。
-- 能够运行 Electron 的图形桌面会话。
-- 按需安装 `codex`、`claude` 或 `kimi` CLI，并确保它们在 `PATH` 中。
+- 当前平台上 `node-pty` 支持的原生编译工具链。
+- 能运行 Electron 的图形桌面环境。
+- 可选：安装 `codex`、`claude` 或 `kimi` 等 Agent CLI 并加入 `PATH`，只装你打算使用的启动器对应的即可。
 
-CanvasTTY 不负责安装或登录智能体 CLI。要使用会话与订阅限额，请先完成对应服务商自身的登录流程。
+CanvasTTY 不会替你安装或登录 Agent CLI。想让某个服务商的会话或订阅限额可用，请先完成该服务商自己的登录流程。
 
 ## 安装与运行
 
@@ -18,17 +18,17 @@ npm install
 npm run dev
 ```
 
-`npm install` 还会准备 Electron，并重新构建原生 `node-pty` 模块。开发命令启动的是真实 Electron 应用，而不是仅用于浏览器的模拟界面。
+`npm install` 还会准备 Electron 并重新编译原生的 `node-pty` 模块。开发命令启动的是真正的 Electron 应用，不是只能在浏览器里跑的模拟界面。
 
 ## 第一个会话
 
-1. 在 Home 点击 **Terminal**，立即在上次使用的项目目录中启动 shell。
-2. 点击 **Codex**、**Claude** 或 **Kimi**，为固定的服务商选择项目目录与启动模式。
-3. 在画布上移动实时终端，或从任意边缘和角落调整大小。
-4. 缩小后使用语义摘要进行导航；放大后回到 xterm 交互。
-5. 返回 Home，查看真实会话以及适配器确实能够读取的服务商配额窗口。
+1. 在 Home 页点击 **Terminal**，立即在上次使用的项目目录里打开一个 shell。
+2. 点击 **Codex**、**Claude** 或 **Kimi**，为对应的固定服务商选择项目目录和启动模式。
+3. 在画布上拖动实时终端，或从任意边缘、角落调整大小。
+4. 缩小后借助语义摘要在画布上导航定位；放大后回到 xterm 继续交互。
+5. 回到 Home 页，查看真实会话，以及适配器暴露出来的服务商配额窗口。
 
-在服务商支持时，**YOLO** 模式会关闭其安全确认。CanvasTTY 会显示明确的危险提示；只应在允许智能体修改的目录中使用该模式。
+在服务商支持的情况下，**YOLO** 模式会关闭其安全确认提示。CanvasTTY 会弹出明确的危险确认；只在你愿意让 Agent 改动的目录中使用该模式。
 
 ## 常用命令
 
@@ -36,30 +36,30 @@ npm run dev
 |:--|:--|
 | `npm run dev` | 启动 Electron 开发构建 |
 | `npm test` | 运行 Node 测试套件 |
-| `npm run typecheck` | 检查 main/preload 与 renderer 的类型 |
-| `npm run build` | 类型检查并创建 production bundle |
-| `npm run preview` | 启动已构建应用，验证 production 路径 |
+| `npm run typecheck` | 对 main/preload 和 renderer 项目做类型检查 |
+| `npm run build` | 类型检查并生成生产环境构建产物 |
+| `npm run preview` | 启动构建好的应用，验证生产环境路径 |
 
-交付改动前，请运行测试、typecheck 与 build，然后在真实 Electron 窗口中检查受影响的流程。
+提交改动之前，请先跑测试、typecheck 和 build，然后在真实的 Electron 窗口里检查受影响的流程。
 
-## 本地状态保存位置
+## 本地状态的存储位置
 
-设置由主进程的 `SettingsStore` 验证并持久化。实时终端状态与有界 scrollback 属于 `TerminalManager`；渲染进程不是 PTY 历史的事实来源。服务商凭据留在已安装 CLI 与可信主进程适配器中，绝不通过 IPC 返回。
+设置由主进程中的 `SettingsStore` 校验并持久化。实时终端状态和有上限的 scrollback 归 `TerminalManager` 管理；渲染进程并不是 PTY 历史记录的可信来源。服务商凭据只留在已安装的 CLI 和可信的主进程适配器里，绝不通过 IPC 传出。
 
-精确边界见[架构](ARCHITECTURE.md)，交互与视觉规则见 [UI 契约](UI_CONTRACT.md)。
+确切的边界见[架构](ARCHITECTURE.md)文档，交互与视觉规则见 [UI 契约](UI_CONTRACT.md)。
 
 ## 故障排查
 
-### `node-pty` 构建失败
+### `node-pty` 编译失败
 
-安装操作系统所需的编译器、Python 与平台 headers，然后重新运行 `npm install`。不要用假终端替换原生 PTY：真实本地进程是产品的核心约束。
+安装操作系统所需的编译器、Python 和平台头文件，然后重新运行 `npm install`。不要用假终端替代原生 PTY：真实的本地进程是本产品的核心约束。
 
-### 服务商可以启动，但限额不可用
+### 服务商能启动，但限额不可用
 
-可用的 CLI 会话与可读取的订阅限额 API 是两种独立能力。重新登录 CLI，并查看 CanvasTTY 返回的明确原因。部分账户类型不提供订阅窗口；界面必须显示不可用，而不是 `0%`。
+能用的 CLI 会话和可读取的订阅限额 API 是两项独立的能力。重新登录 CLI，然后查看 CanvasTTY 给出的具体原因。有些账户类型本身不提供订阅配额窗口；此时界面必须显示为不可用，而不是 `0%`。
 
-### 终端已打开，却没有显示“工作中”
+### 终端已打开，却没有标记为“工作中”
 
-这是预期行为。新 PTY 从 `idle` 开始。只有结构化的服务商生命周期信号可以设置 `working` 或 `needs_approval`；PTY 存在和终端文本都不属于活动遥测。
+这是预期行为。新打开的 PTY 初始状态是 `idle`。只有结构化的服务商生命周期信号才能把状态设为 `working` 或 `needs_approval`；PTY 存在和终端文本本身都不构成活动遥测。
 
-下一步：[编写小组件](widget-authoring.zh-CN.md)或阅读[指标与遥测](metrics-and-telemetry.zh-CN.md)。
+下一步：[编写小组件](widget-authoring.zh-CN.md)，或阅读[指标与遥测](metrics-and-telemetry.zh-CN.md)。
