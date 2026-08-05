@@ -1,0 +1,7 @@
+.notes-app { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 13px; background: var(--background); }
+.notes-app > div:first-child { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.notes-app .state-message { margin: 0; }
+.notes-app textarea { width: 100%; height: 100%; resize: none; padding: 15px; border: 1px solid rgba(255,255,255,.1); outline: 0; border-radius: 13px; color: var(--text); background: var(--surface); font: 700 14px/1.55 "Cascadia Code", monospace; }
+.notes-app textarea:focus { border-color: var(--primary); }
+.notes-app__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.notes-app button { min-height: 40px; padding: 8px 13px; border-radius: 10px; color: #30313d; background: var(--primary); cursor: pointer; font-weight: 900; }

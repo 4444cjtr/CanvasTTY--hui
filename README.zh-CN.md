@@ -46,8 +46,15 @@ npm run dev
 | [快速开始](docs/getting-started.zh-CN.md) | [指标与遥测](docs/metrics-and-telemetry.zh-CN.md) |
 | [安装、发布与本地数据](docs/installing-and-security.zh-CN.md) | [安全策略](SECURITY.md) |
 | [架构](docs/ARCHITECTURE.md) | [UI 契约](docs/UI_CONTRACT.md) |
+| [运行时插件开发（英文）](docs/plugins.md) | [插件 SDK 类型](docs/plugin-api.d.ts) |
 
-> CanvasTTY 目前仍是 Electron MVP。自定义小组件属于源码级扩展，尚无运行时插件注册机制。
+## 运行时插件
+
+CanvasTTY 已提供带权限模型的静态 GitHub 运行时插件，可扩展 HOME 小组件、画布应用和独立 sandbox 窗口。Host SDK 支持持久化的用户音乐目录授权、可 seek 的本地音频流，以及受限的播放列表导入与导出，可用于实现完整的播放器插件。参见[插件开发与安全指南（英文）](docs/plugins.md)、[manifest schema](docs/canvastty-plugin.schema.json)和[TypeScript SDK 类型](docs/plugin-api.d.ts)。
+
+## 内置浏览器框架
+
+源码中包含内置浏览器框架，而不是插件权限：受信任的 React 标签页与导航界面配合隔离的 Electron `WebContentsView` 和独立持久化 profile。它目前不会显示在 HOME 中。网站权限、下载和面向 agent 的 browser automation 仍是后续工作；当前边界见[架构文档](docs/ARCHITECTURE.md)。
 
 ## 快速检查
 

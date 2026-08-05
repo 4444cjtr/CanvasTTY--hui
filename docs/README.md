@@ -11,6 +11,7 @@ CanvasTTY is a spatial Electron desktop for real local terminals and AI-agent CL
 | [Getting started](getting-started.md) | Requirements, local launch, first session, and verification commands |
 | [Installing, releases, and local data](installing-and-security.md) | Installer formats, unsigned-preview caveats, credential boundaries, and release checks |
 | [Widget authoring](widget-authoring.md) | Source-level extension paths, visual grammar, process boundaries, and an AI-agent brief |
+| [Runtime plugins](plugins.md) | Manifest v1, permissions, HOME widgets, canvas apps, separate windows, player media/playlist APIs, SDK, and install flow |
 | [Metrics and telemetry](metrics-and-telemetry.md) | Subscription limits, session token usage, source priority, privacy, stale states, and tests |
 
 ## Maintainer references
@@ -22,9 +23,7 @@ CanvasTTY is a spatial Electron desktop for real local terminals and AI-agent CL
 
 ## Current extension model
 
-CanvasTTY treats a custom widget as a source-level contribution compiled with the app rather than a third-party runtime plugin. This is intentional for the MVP: Electron capabilities remain allow-listed, shared data remains typed, and provider credentials never cross into the renderer.
-
-When a runtime plugin API is introduced, this documentation must be revised around an explicit permission model rather than treating current source-level examples as a stable public ABI.
+CanvasTTY supports static runtime plugins through manifest API v1. Untrusted UI stays inside sandboxed frames/windows and receives only explicitly approved capabilities. Trusted core integrations that need new main-process services remain source-level contributions compiled with the app.
 
 ## Non-negotiable data rule
 

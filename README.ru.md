@@ -46,8 +46,15 @@ npm run dev
 | [Быстрый старт](docs/getting-started.ru.md) | [Метрики и телеметрия](docs/metrics-and-telemetry.ru.md) |
 | [Установка, релизы и локальные данные](docs/installing-and-security.ru.md) | [Политика безопасности](SECURITY.md) |
 | [Архитектура](docs/ARCHITECTURE.md) | [UI-контракт](docs/UI_CONTRACT.md) |
+| [Разработка runtime-плагинов](docs/plugins.ru.md) | [Типы SDK плагинов](docs/plugin-api.d.ts) |
 
-> Сейчас CanvasTTY — Electron MVP. Пользовательские виджеты подключаются на уровне исходного кода; runtime-реестра плагинов пока нет.
+## Runtime-плагины
+
+CanvasTTY включает permissioned runtime для готовых статических GitHub-пакетов: HOME widgets, canvas apps и отдельные sandboxed окна. Host SDK поддерживает постоянные разрешения на выбранные пользователем музыкальные папки, seekable-потоки локального аудио и ограниченный импорт/экспорт плейлистов — этого достаточно для полноценного плеера-плагина. См. [руководство автора и модель безопасности](docs/plugins.ru.md), [схему manifest](docs/canvastty-plugin.schema.json) и [TypeScript-типы SDK](docs/plugin-api.d.ts).
+
+## Заготовка встроенного браузера
+
+В исходниках есть core-заготовка браузера, а не plugin capability: доверенная React-панель вкладок и навигации поверх sandboxed Electron `WebContentsView` с отдельным постоянным профилем. Из HOME браузер пока намеренно не запускается. Разрешения сайтов, загрузки файлов и browser automation для агентов остаются следующими этапами; текущие границы описаны в [архитектуре](docs/ARCHITECTURE.md).
 
 ## Быстрая проверка
 

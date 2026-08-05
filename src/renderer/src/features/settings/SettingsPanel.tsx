@@ -4,29 +4,51 @@ import type {
   CanvasPatternId,
   EdgePanSpeed,
   FocusActivation,
+  InstalledPlugin,
   LocaleId,
   PaletteId,
+  PluginContribution,
+  PluginGridSize,
+  PluginInstallPreview,
   ShortcutAction,
   ZoomSensitivity
 } from "../../../../shared/contracts";
 import { UiIcon } from "../../components/UiIcon";
 import { shortcutFromKeyboardEvent } from "../../lib/shortcuts";
 import { t } from "../../lib/i18n";
+import { PluginSettingsSection } from "../plugins/PluginSettingsSection";
+import { HomeAppearanceSettings } from "../home/HomeAppearanceSettings";
 
-type SettingsSection = "general" | "appearance" | "controls";
+type SettingsSection = "general" | "appearance" | "controls" | "plugins";
 
 interface SettingsPanelProps {
   open: boolean;
   settings: AppSettings;
+  plugins: InstalledPlugin[];
   onClose(): void;
   onChange(patch: Partial<AppSettings>): Promise<void>;
+  onPreviewPlugin(sourceUrl: string): Promise<PluginInstallPreview>;
+  onInstallPlugin(token: string): Promise<void>;
+  onSetPluginEnabled(pluginId: string, enabled: boolean): Promise<void>;
+  onUninstallPlugin(pluginId: string): Promise<void>;
+  onOpenPluginContribution(plugin: InstalledPlugin, contribution: PluginContribution): Promise<void>;
+  onToggleHomeWidget(widgetId: string, size: PluginGridSize): Promise<void>;
+  onEditHome(): void;
 }
 
 export function SettingsPanel({
   open,
   settings,
+  plugins,
   onClose,
-  onChange
+  onChange,
+  onPreviewPlugin,
+  onInstallPlugin,
+  onSetPluginEnabled,
+  onUninstallPlugin,
+  onOpenPluginContribution,
+  onToggleHomeWidget,
+  onEditHome
 }: SettingsPanelProps): React.JSX.Element {
   const locale = settings.locale;
   const [section, setSection] = useState<SettingsSection>("general");
@@ -78,7 +100,7 @@ export function SettingsPanel({
         </header>
 
         <nav className="settings-tabs" role="tablist" aria-label={t(locale, "settingsSections")}>
-          {(["general", "appearance", "controls"] as SettingsSection[]).map((value) => (
+          {(["general", "appearance", "controls", "plugins"] as SettingsSection[]).map((value) => (
             <button
               key={value}
               className={section === value ? "settings-tabs__button settings-tabs__button--active" : "settings-tabs__button"}
@@ -124,6 +146,11 @@ export function SettingsPanel({
                   onChange={(value) => void onChange({ showShortcutHints: value === "on" })}
                 />
               </SettingGroup>
+              <HomeAppearanceSettings
+                settings={settings}
+                onToggleHomeWidget={onToggleHomeWidget}
+                onEditHome={onEditHome}
+              />
             </>
           )}
 
@@ -143,7 +170,7 @@ export function SettingsPanel({
                   onChange={(value) => void onChange({ snapToGrid: value === "on" })}
                 />
               </SettingGroup>
-              <SettingGroup label={t(locale, "edgePan")}>
+              <SettingGroup label={t(locale, "edgePan")} description={t(locale, "edgePanDescription")}>
                 <Segmented
                   value={settings.edgePan ? "on" : "off"}
                   options={[["on", t(locale, "on")], ["off", t(locale, "off")]]}
@@ -191,6 +218,18 @@ export function SettingsPanel({
               </SettingGroup>
             </>
           )}
+
+          {section === "plugins" && (
+            <PluginSettingsSection
+              settings={settings}
+              plugins={plugins}
+              onPreviewPlugin={onPreviewPlugin}
+              onInstallPlugin={onInstallPlugin}
+              onSetPluginEnabled={onSetPluginEnabled}
+              onUninstallPlugin={onUninstallPlugin}
+              onOpenPluginContribution={onOpenPluginContribution}
+            />
+          )}
         </div>
       </aside>
     </div>
@@ -226,8 +265,22 @@ function ShortcutRow({
   );
 }
 
-function SettingGroup({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
-  return <section className="setting-group"><h3>{label}</h3>{children}</section>;
+function SettingGroup({
+  label,
+  description,
+  children
+}: {
+  label: string;
+  description?: string;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <section className="setting-group">
+      <h3>{label}</h3>
+      {description && <p className="setting-group__description">{description}</p>}
+      {children}
+    </section>
+  );
 }
 
 function Segmented({

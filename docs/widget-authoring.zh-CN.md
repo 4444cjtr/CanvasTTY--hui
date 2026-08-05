@@ -2,7 +2,7 @@
 
 [English](widget-authoring.md) · [Русский](widget-authoring.ru.md) · [简体中文](widget-authoring.zh-CN.md) · [文档首页](README.zh-CN.md)
 
-CanvasTTY 的小组件目前是源码级扩展，而不是运行时插件。本指南说明如何在保持 Electron 隔离、基于真实数据源的遥测和统一视觉体系的前提下添加小组件。
+本指南介绍随 CanvasTTY 一起编译的可信源码级小组件。对于运行时安装的第三方包，请使用带权限模型的[运行时插件 API（英文）](plugins.md)。当功能需要新的可信主进程适配器或改变核心产品职责时，仍应采用源码级方式。
 
 ## 选择最小的扩展形态
 

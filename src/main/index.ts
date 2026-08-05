@@ -1,15 +1,45 @@
 import { join } from "node:path";
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, protocol } from "electron";
 import { IPC } from "../shared/contracts";
 import { registerIpc } from "./ipc/registerIpc";
 import { SettingsStore } from "./services/SettingsStore";
 import { TerminalManager } from "./services/TerminalManager";
 import { LimitsService } from "./services/LimitsService";
 import { augmentCliPath } from "./services/cliEnvironment";
+import { PluginManager } from "./services/PluginManager";
+import { PluginMediaService } from "./services/PluginMediaService";
+import { BrowserService } from "./services/BrowserService";
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "canvastty-plugin",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true
+    }
+  },
+  {
+    scheme: "canvastty-media",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true
+    }
+  }
+]);
 
 let mainWindow: BrowserWindow | null = null;
 let terminalManager: TerminalManager | null = null;
 let limitsService: LimitsService | null = null;
+let pluginManager: PluginManager | null = null;
+let pluginMediaService: PluginMediaService | null = null;
+let browserService: BrowserService | null = null;
+const pluginWindows = new Map<BrowserWindow, string>();
 
 async function createWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow({
@@ -27,6 +57,7 @@ async function createWindow(): Promise<BrowserWindow> {
       sandbox: true
     }
   });
+  mainWindow = window;
 
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, url) => {
@@ -59,7 +90,27 @@ app.whenReady().then(async () => {
     }
   });
   limitsService = new LimitsService();
-  registerIpc({ settings, terminals: terminalManager, limits: limitsService });
+  pluginManager = new PluginManager(app.getPath("userData"));
+  await pluginManager.load();
+  pluginMediaService = new PluginMediaService(
+    app.getPath("userData"),
+    (pluginId, permission) => pluginManager!.assertPermission(pluginId, permission)
+  );
+  await pluginMediaService.load();
+  browserService = new BrowserService(() => mainWindow);
+  protocol.handle("canvastty-plugin", (request) => pluginManager!.protocolResponse(request.url));
+  protocol.handle("canvastty-media", (request) => pluginMediaService!.protocolResponse(request));
+  registerIpc({
+    settings,
+    terminals: terminalManager,
+    limits: limitsService,
+    plugins: pluginManager,
+    pluginMedia: pluginMediaService,
+    browser: browserService,
+    openPluginWindow,
+    closePluginWindows,
+    requestPluginLauncher
+  });
 
   mainWindow = await createWindow();
   app.on("activate", async () => {
@@ -68,8 +119,10 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  void browserService?.close();
   limitsService?.dispose();
   terminalManager?.disposeAll();
+  void pluginManager?.dispose();
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
@@ -77,3 +130,51 @@ app.on("window-all-closed", () => {
 
 // Keep shared event names in the main bundle so accidental channel drift fails at build time.
 void IPC.terminalData;
+
+async function openPluginWindow(pluginId: string, contributionId: string): Promise<void> {
+  if (!pluginManager) throw new Error("Plugin manager is not ready.");
+  const contribution = pluginManager.contribution(pluginId, contributionId);
+  if (contribution.kind !== "window") throw new Error("Plugin contribution is not a separate window.");
+
+  const window = new BrowserWindow({
+    width: contribution.defaultSize.width,
+    height: contribution.defaultSize.height,
+    minWidth: 320,
+    minHeight: 220,
+    title: contribution.title,
+    backgroundColor: "#353442",
+    webPreferences: {
+      preload: join(__dirname, "../preload/plugin.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      additionalArguments: [
+        `--canvastty-plugin-id=${encodeURIComponent(pluginId)}`,
+        `--canvastty-contribution-id=${encodeURIComponent(contributionId)}`
+      ]
+    }
+  });
+  pluginWindows.set(window, pluginId);
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event, url) => {
+    if (!url.startsWith(`canvastty-plugin://${pluginId}/`)) event.preventDefault();
+  });
+  window.on("closed", () => pluginWindows.delete(window));
+  await window.loadURL(pluginManager.entryUrl(pluginId, contributionId));
+}
+
+function closePluginWindows(pluginId: string): void {
+  for (const [window, ownerPluginId] of pluginWindows) {
+    if (ownerPluginId !== pluginId) continue;
+    pluginWindows.delete(window);
+    if (!window.isDestroyed()) window.close();
+  }
+}
+
+function requestPluginLauncher(provider: import("../shared/contracts").ProviderId): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send(IPC.pluginsLauncherRequested, { provider });
+}

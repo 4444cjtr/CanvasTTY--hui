@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import type {
   AgentProviderId,
   AppSettings,
+  BrowserCanvasState,
+  BrowserSnapshot,
   CameraState,
+  HomeGridSize,
+  HomeWidgetPlacement,
+  InstalledPlugin,
   LimitsSnapshot,
   Point,
   SessionBounds,
@@ -12,9 +17,12 @@ import { HomeZone } from "../home/HomeZone";
 import { EDGE_PAN_SPEEDS, edgePanVelocity } from "./edgePan";
 import { wheelZoomFactor } from "./zoom";
 import { TerminalCard } from "../terminal/TerminalCard";
+import { PluginCanvasCard } from "../plugins/PluginCanvasCard";
 import { UiIcon } from "../../components/UiIcon";
 import { t } from "../../lib/i18n";
 import type { LimitsLoadState } from "../home/homeModel";
+import { homeGridPixelSize, homeLayoutFitsGrid } from "../home/homeLayout";
+import { BrowserCard } from "../browser/BrowserCard";
 
 interface WorkspaceCanvasProps {
   settings: AppSettings;
@@ -22,12 +30,17 @@ interface WorkspaceCanvasProps {
   sessions: SessionSnapshot[];
   limits: LimitsSnapshot | null;
   limitsLoadState: LimitsLoadState;
+  plugins: InstalledPlugin[];
+  browser: BrowserSnapshot;
+  browserViewVisible: boolean;
+  homeEditing: boolean;
   camera: CameraState;
   onCameraChange(camera: CameraState): void;
   onGoHome(): void;
   onOpenSettings(): void;
   onOpenAgent(provider: AgentProviderId): void;
   onOpenTerminal(): void;
+  onOpenBrowser(): void;
   onFocusSession(session: SessionSnapshot): void;
   activeSessionId: string | null;
   renamingSessionId: string | null;
@@ -36,8 +49,19 @@ interface WorkspaceCanvasProps {
   onRenameEnd(): void;
   onRequestMedia(): Promise<void>;
   onRemoveMedia(): Promise<void>;
+  onHomeLayoutChange(layout: HomeWidgetPlacement[]): void;
+  onHomeGridSizeChange(gridSize: HomeGridSize): void;
+  onFinishHomeEdit(): void;
+  onResetHomeLayout(): void;
+  onPluginError(message: string): void;
+  onPluginCanvasBoundsChange(id: string, bounds: SessionBounds): void;
+  onDisposePluginCanvas(id: string): void;
+  onFocusPluginCanvas(id: string): void;
   onSessionBoundsChange(id: string, bounds: SessionBounds): void;
   onDisposeSession(id: string): void;
+  onBrowserBoundsChange(bounds: BrowserCanvasState): void;
+  onFocusBrowser(): void;
+  onCloseBrowser(): void;
 }
 
 interface PanState {
@@ -52,12 +76,17 @@ export function WorkspaceCanvas({
   sessions,
   limits,
   limitsLoadState,
+  plugins,
+  browser,
+  browserViewVisible,
+  homeEditing,
   camera,
   onCameraChange,
   onGoHome,
   onOpenSettings,
   onOpenAgent,
   onOpenTerminal,
+  onOpenBrowser,
   onFocusSession,
   activeSessionId,
   renamingSessionId,
@@ -66,8 +95,19 @@ export function WorkspaceCanvas({
   onRenameEnd,
   onRequestMedia,
   onRemoveMedia,
+  onHomeLayoutChange,
+  onHomeGridSizeChange,
+  onFinishHomeEdit,
+  onResetHomeLayout,
+  onPluginError,
+  onPluginCanvasBoundsChange,
+  onDisposePluginCanvas,
+  onFocusPluginCanvas,
   onSessionBoundsChange,
-  onDisposeSession
+  onDisposeSession,
+  onBrowserBoundsChange,
+  onFocusBrowser,
+  onCloseBrowser
 }: WorkspaceCanvasProps): React.JSX.Element {
   const viewport = useRef<HTMLDivElement>(null);
   const panState = useRef<PanState | null>(null);
@@ -162,9 +202,15 @@ export function WorkspaceCanvas({
   const zoomBy = (factor: number): void => {
     const bounds = viewport.current?.getBoundingClientRect();
     if (!bounds) return;
-    const nextZoom = clamp(camera.zoom * factor, 0.28, 1.35);
+    const nextZoom = clamp(camera.zoom * factor, 0.2, 1.35);
     zoomAt(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, nextZoom);
   };
+
+  const homeBounds: SessionBounds = {
+    position: { x: 0, y: 0 },
+    size: homeGridPixelSize(settings.homeGridSize)
+  };
+  const homeLayoutValid = homeLayoutFitsGrid(settings.homeLayout, settings.homeGridSize);
 
   return (
     <div
@@ -183,7 +229,7 @@ export function WorkspaceCanvas({
       onWheel={(event) => {
         if ((event.target as HTMLElement).closest('[data-wheel-owner="local"]')) return;
         event.preventDefault();
-        zoomAt(event.clientX, event.clientY, clamp(camera.zoom * wheelZoomFactor(event.deltaY, settings.zoomSensitivity), 0.28, 1.35));
+        zoomAt(event.clientX, event.clientY, clamp(camera.zoom * wheelZoomFactor(event.deltaY, settings.zoomSensitivity), 0.2, 1.35));
       }}
     >
       <div className="workspace__scene" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
@@ -193,39 +239,118 @@ export function WorkspaceCanvas({
           sessions={sessions}
           limits={limits}
           limitsLoadState={limitsLoadState}
+          plugins={plugins}
+          editing={homeEditing}
           onOpenSettings={onOpenSettings}
           onOpenAgent={onOpenAgent}
           onOpenTerminal={onOpenTerminal}
+          onOpenBrowser={onOpenBrowser}
           onFocusSession={onFocusSession}
           onRequestMedia={onRequestMedia}
           onRemoveMedia={onRemoveMedia}
+          onLayoutChange={onHomeLayoutChange}
+          onGridSizeChange={onHomeGridSizeChange}
+          onPluginError={onPluginError}
         />
-        {sessions.map((session) => (
-          <TerminalCard
-            key={session.id}
-            session={session}
-            locale={settings.locale}
-            palette={settings.palette}
-            zoom={camera.zoom}
-            snapEnabled={settings.snapToGrid}
-            focusActivation={settings.focusActivation}
-            selected={activeSessionId === session.id}
-            renaming={renamingSessionId === session.id}
-            snapTargets={[
-              HOME_BOUNDS,
-              ...sessions
-                .filter((candidate) => candidate.id !== session.id)
-                .map((candidate) => ({ position: candidate.position, size: candidate.size }))
-            ]}
-            onActivate={onFocusSession}
-            onSelect={onSelectSession}
-            onRename={onRenameSession}
-            onRenameEnd={onRenameEnd}
-            onBoundsChange={onSessionBoundsChange}
-            onDispose={onDisposeSession}
-          />
-        ))}
+        <div
+          className={`workspace__windows ${homeEditing ? "workspace__windows--hidden" : ""}`}
+          aria-hidden={homeEditing}
+        >
+          {sessions.map((session) => (
+            <TerminalCard
+              key={session.id}
+              session={session}
+              locale={settings.locale}
+              palette={settings.palette}
+              zoom={camera.zoom}
+              snapEnabled={settings.snapToGrid}
+              focusActivation={settings.focusActivation}
+              selected={activeSessionId === session.id}
+              renaming={renamingSessionId === session.id}
+              snapTargets={[
+                homeBounds,
+                ...sessions
+                  .filter((candidate) => candidate.id !== session.id)
+                  .map((candidate) => ({ position: candidate.position, size: candidate.size })),
+                ...settings.pluginCanvas.map((candidate) => ({ position: candidate.position, size: candidate.size })),
+                ...(settings.browserCanvas ? [settings.browserCanvas] : [])
+              ]}
+              onActivate={onFocusSession}
+              onSelect={onSelectSession}
+              onRename={onRenameSession}
+              onRenameEnd={onRenameEnd}
+              onBoundsChange={onSessionBoundsChange}
+              onDispose={onDisposeSession}
+            />
+          ))}
+          {settings.pluginCanvas.map((instance) => {
+            const plugin = plugins.find((candidate) => candidate.manifest.id === instance.pluginId && candidate.enabled);
+            const contribution = plugin?.manifest.contributions.find((candidate) => candidate.id === instance.contributionId);
+            if (!plugin || !contribution || contribution.kind !== "canvas-app") return null;
+            return (
+              <PluginCanvasCard
+                key={instance.id}
+                instance={instance}
+                plugin={plugin}
+                contribution={contribution}
+                locale={settings.locale}
+                palette={settings.palette}
+                zoom={camera.zoom}
+                snapEnabled={settings.snapToGrid}
+                sessions={sessions}
+                limits={limits}
+                snapTargets={[
+                  homeBounds,
+                  ...sessions.map((candidate) => ({ position: candidate.position, size: candidate.size })),
+                  ...settings.pluginCanvas
+                    .filter((candidate) => candidate.id !== instance.id)
+                    .map((candidate) => ({ position: candidate.position, size: candidate.size })),
+                  ...(settings.browserCanvas ? [settings.browserCanvas] : [])
+                ]}
+                onActivate={() => onFocusPluginCanvas(instance.id)}
+                onBoundsChange={onPluginCanvasBoundsChange}
+                onDispose={onDisposePluginCanvas}
+                onOpenLauncher={(provider) => provider === "terminal" ? onOpenTerminal() : onOpenAgent(provider)}
+                onError={onPluginError}
+              />
+            );
+          })}
+          {settings.browserCanvas && (
+            <BrowserCard
+              browser={browser}
+              bounds={settings.browserCanvas}
+              locale={settings.locale}
+              zoom={camera.zoom}
+              camera={camera}
+              visible={browserViewVisible && !homeEditing}
+              snapEnabled={settings.snapToGrid}
+              snapTargets={[
+                homeBounds,
+                ...sessions.map((candidate) => ({ position: candidate.position, size: candidate.size })),
+                ...settings.pluginCanvas.map((candidate) => ({ position: candidate.position, size: candidate.size }))
+              ]}
+              onBoundsChange={onBrowserBoundsChange}
+              onActivate={onFocusBrowser}
+              onClose={onCloseBrowser}
+              onError={onPluginError}
+            />
+          )}
+        </div>
       </div>
+
+      {homeEditing && (
+        <div className="home-editor-toolbar" data-interactive="true">
+          <strong>{t(settings.locale, "homeEditor")}</strong>
+          <button type="button" onClick={onResetHomeLayout}>{t(settings.locale, "resetHome")}</button>
+          <button
+            className="home-editor-toolbar__done"
+            type="button"
+            disabled={!homeLayoutValid}
+            title={homeLayoutValid ? undefined : t(settings.locale, "homeLayoutOutside")}
+            onClick={onFinishHomeEdit}
+          >{t(settings.locale, "doneEditing")}</button>
+        </div>
+      )}
 
       <div className="canvas-controls" data-interactive="true">
         <button type="button" onClick={onGoHome} title={t(settings.locale, "home")}><UiIcon name="home" size={17} /></button>
@@ -241,11 +366,6 @@ export function WorkspaceCanvas({
     </div>
   );
 }
-
-const HOME_BOUNDS: SessionBounds = {
-  position: { x: 0, y: 0 },
-  size: { width: 1180, height: 700 }
-};
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));

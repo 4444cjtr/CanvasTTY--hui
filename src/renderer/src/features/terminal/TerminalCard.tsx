@@ -79,7 +79,7 @@ export function TerminalCard({
   const [renameDraft, setRenameDraft] = useState(session.title);
   const liveBounds = useRef<SessionBounds>({ position: session.position, size: session.size });
   const summaryMode = zoom < 0.5;
-  const summaryScale = summaryMode ? Math.min(1.8, Math.max(1, 0.5 / zoom)) : 1;
+  const summaryScale = summaryMode ? Math.min(2.5, Math.max(1, 0.5 / zoom)) : 1;
   const terminalBackground = terminalTheme(palette).background;
 
   useEffect(() => {

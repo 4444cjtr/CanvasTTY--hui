@@ -1,0 +1,35 @@
+{
+  "apiVersion": 1,
+  "id": "com.example.studio-kit",
+  "name": "Studio Kit",
+  "version": "1.0.0",
+  "description": "Reference HOME, canvas, and separate-window contributions for CanvasTTY.",
+  "author": "CanvasTTY contributors",
+  "permissions": ["storage", "sessions:read", "launcher:open"],
+  "contributions": [
+    {
+      "id": "session-status",
+      "kind": "home-widget",
+      "title": "Session status",
+      "description": "A compact status count derived from real CanvasTTY sessions.",
+      "entry": "widgets/status.html",
+      "defaultSize": { "columns": 4, "rows": 2 }
+    },
+    {
+      "id": "notes",
+      "kind": "canvas-app",
+      "title": "Studio notes",
+      "description": "A movable note saved in isolated plugin storage.",
+      "entry": "apps/notes.html",
+      "defaultSize": { "width": 680, "height": 440 }
+    },
+    {
+      "id": "focus",
+      "kind": "window",
+      "title": "Focus window",
+      "description": "A separate sandboxed window using the same host SDK.",
+      "entry": "windows/focus.html",
+      "defaultSize": { "width": 900, "height": 620 }
+    }
+  ]
+}

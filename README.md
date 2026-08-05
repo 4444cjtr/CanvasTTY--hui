@@ -46,8 +46,15 @@ npm run dev
 | [Getting started](docs/getting-started.md) | [Metrics and telemetry](docs/metrics-and-telemetry.md) |
 | [Install, releases, and local data](docs/installing-and-security.md) | [Security policy](SECURITY.md) |
 | [Architecture](docs/ARCHITECTURE.md) | [UI contract](docs/UI_CONTRACT.md) |
+| [Runtime plugin authoring](docs/plugins.md) | [Typed plugin SDK](docs/plugin-api.d.ts) |
 
-> CanvasTTY is currently an Electron MVP. Custom widgets are source-level extensions; there is no runtime plugin registry yet.
+## Runtime plugins
+
+CanvasTTY includes a permissioned runtime for ready-to-run static GitHub packages: HOME widgets, canvas apps, and separate sandboxed windows. The host SDK now supports persistent user-selected music-library grants, seekable local audio streams, and bounded playlist import/export for full player plugins. See the [authoring and security guide](docs/plugins.md), [manifest schema](docs/canvastty-plugin.schema.json), and [TypeScript SDK declarations](docs/plugin-api.d.ts).
+
+## Built-in browser scaffold
+
+The source tree includes a core browser scaffold rather than a plugin capability: trusted React tab/navigation chrome backed by sandboxed Electron `WebContentsView` tabs in a separate persistent profile. It is intentionally not exposed from HOME yet. Website permissions, downloads, and agent browser automation remain future work; the current boundaries are documented in [Architecture](docs/ARCHITECTURE.md).
 
 ## Quick checks
 

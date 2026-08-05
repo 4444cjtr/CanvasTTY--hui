@@ -4,15 +4,27 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import type {
   AgentProviderId,
   AppSettings,
+  BrowserCanvasState,
   CanvasPatternId,
   EdgePanSpeed,
   FocusActivation,
+  HomeGridSize,
+  HomeWidgetPlacement,
   LocaleId,
   MediaFit,
   PaletteId,
+  PluginCanvasInstance,
   ShortcutBindings,
   ZoomSensitivity
 } from "../../shared/contracts";
+import {
+  DEFAULT_HOME_GRID_SIZE,
+  DEFAULT_HOME_LAYOUT,
+  HOME_GRID_MAX_COLUMNS,
+  HOME_GRID_MAX_ROWS,
+  HOME_GRID_MIN_COLUMNS,
+  HOME_GRID_MIN_ROWS
+} from "../../shared/contracts.ts";
 
 const LOCALES = new Set<LocaleId>(["ru", "en"]);
 const PALETTES = new Set<PaletteId>(["sage", "lilac", "night"]);
@@ -89,7 +101,11 @@ function createDefaults(systemLocale: string): AppSettings {
     mediaPath: null,
     mediaFit: "cover",
     lastDirectory: homedir(),
-    acknowledgedDangerousProfiles: []
+    acknowledgedDangerousProfiles: [],
+    homeGridSize: { ...DEFAULT_HOME_GRID_SIZE },
+    homeLayout: structuredClone(DEFAULT_HOME_LAYOUT),
+    pluginCanvas: [],
+    browserCanvas: null
   };
 }
 
@@ -108,6 +124,17 @@ export function normalizeSettings(candidate: unknown, fallback: AppSettings): Ap
     )
     : fallback.acknowledgedDangerousProfiles;
   const shortcuts = normalizeShortcuts(source.shortcuts, fallback.shortcuts);
+  const homeGridSize = normalizeHomeGridSize(
+    source.homeGridSize,
+    fallback.homeGridSize ?? DEFAULT_HOME_GRID_SIZE
+  );
+  const homeLayout = normalizeHomeLayout(
+    source.homeLayout,
+    fallback.homeLayout ?? DEFAULT_HOME_LAYOUT,
+    homeGridSize
+  );
+  const pluginCanvas = normalizePluginCanvas(source.pluginCanvas, fallback.pluginCanvas ?? []);
+  const browserCanvas = normalizeBrowserCanvas(source.browserCanvas, fallback.browserCanvas ?? null);
 
   return {
     locale: LOCALES.has(source.locale as LocaleId) ? source.locale as LocaleId : fallback.locale,
@@ -135,7 +162,106 @@ export function normalizeSettings(candidate: unknown, fallback: AppSettings): Ap
     lastDirectory: typeof source.lastDirectory === "string" && source.lastDirectory.length > 0
       ? source.lastDirectory
       : fallback.lastDirectory,
-    acknowledgedDangerousProfiles: [...new Set(acknowledged)]
+    acknowledgedDangerousProfiles: [...new Set(acknowledged)],
+    homeGridSize,
+    homeLayout,
+    pluginCanvas,
+    browserCanvas
+  };
+}
+
+export function normalizeHomeLayout(
+  candidate: unknown,
+  fallback: readonly HomeWidgetPlacement[] = DEFAULT_HOME_LAYOUT,
+  gridSize: HomeGridSize = DEFAULT_HOME_GRID_SIZE
+): HomeWidgetPlacement[] {
+  if (!Array.isArray(candidate)) return fallback.map((placement) => structuredClone(placement));
+
+  const placements: HomeWidgetPlacement[] = [];
+  const widgetIds = new Set<string>();
+  for (const value of candidate.slice(0, 64)) {
+    if (!value || typeof value !== "object") continue;
+    const source = value as Partial<HomeWidgetPlacement>;
+    if (!isWidgetId(source.widgetId) || widgetIds.has(source.widgetId)) continue;
+    if (![source.column, source.row, source.columnSpan, source.rowSpan].every(Number.isInteger)) continue;
+
+    const placement: HomeWidgetPlacement = {
+      widgetId: source.widgetId,
+      column: source.column!,
+      row: source.row!,
+      columnSpan: source.columnSpan!,
+      rowSpan: source.rowSpan!
+    };
+    if (!isPlacementInsideGrid(placement, gridSize) || placements.some((current) => placementsOverlap(current, placement))) {
+      continue;
+    }
+    placements.push(placement);
+    widgetIds.add(placement.widgetId);
+  }
+
+  const settingsPlacement = placements.find((placement) => placement.widgetId === "core.settings");
+  if (!settingsPlacement) {
+    const defaultSettings = DEFAULT_HOME_LAYOUT.find((placement) => placement.widgetId === "core.settings")!;
+    const withoutCollision = placements.filter((placement) => !placementsOverlap(placement, defaultSettings));
+    return [...withoutCollision, structuredClone(defaultSettings)];
+  }
+  return placements;
+}
+
+export function normalizeHomeGridSize(
+  candidate: unknown,
+  fallback: HomeGridSize = DEFAULT_HOME_GRID_SIZE
+): HomeGridSize {
+  if (!candidate || typeof candidate !== "object") return { ...fallback };
+  const source = candidate as Partial<HomeGridSize>;
+  if (!Number.isInteger(source.columns) || !Number.isInteger(source.rows)) return { ...fallback };
+  return {
+    columns: clamp(source.columns!, HOME_GRID_MIN_COLUMNS, HOME_GRID_MAX_COLUMNS),
+    rows: clamp(source.rows!, HOME_GRID_MIN_ROWS, HOME_GRID_MAX_ROWS)
+  };
+}
+
+function normalizePluginCanvas(candidate: unknown, fallback: readonly PluginCanvasInstance[]): PluginCanvasInstance[] {
+  if (!Array.isArray(candidate)) return fallback.map((instance) => structuredClone(instance));
+
+  const instances: PluginCanvasInstance[] = [];
+  const ids = new Set<string>();
+  for (const value of candidate.slice(0, 64)) {
+    if (!value || typeof value !== "object") continue;
+    const source = value as Partial<PluginCanvasInstance>;
+    if (!isInstanceId(source.id) || ids.has(source.id)) continue;
+    if (!isPluginId(source.pluginId) || !isContributionId(source.contributionId)) continue;
+    if (typeof source.title !== "string" || source.title.trim().length === 0) continue;
+    if (!isFinitePoint(source.position) || !isFiniteSize(source.size)) continue;
+    instances.push({
+      id: source.id,
+      pluginId: source.pluginId,
+      contributionId: source.contributionId,
+      title: source.title.trim().slice(0, 80),
+      position: { x: source.position.x, y: source.position.y },
+      size: {
+        width: clamp(source.size.width, 320, 1_600),
+        height: clamp(source.size.height, 220, 1_100)
+      }
+    });
+    ids.add(source.id);
+  }
+  return instances;
+}
+
+function normalizeBrowserCanvas(candidate: unknown, fallback: BrowserCanvasState | null): BrowserCanvasState | null {
+  if (candidate === null) return null;
+  if (!candidate || typeof candidate !== "object") return fallback ? structuredClone(fallback) : null;
+  const source = candidate as Partial<BrowserCanvasState>;
+  if (!isFinitePoint(source.position) || !isFiniteSize(source.size)) {
+    return fallback ? structuredClone(fallback) : null;
+  }
+  return {
+    position: { x: source.position.x, y: source.position.y },
+    size: {
+      width: clamp(source.size.width, 560, 1_600),
+      height: clamp(source.size.height, 380, 1_100)
+    }
   };
 }
 
@@ -166,6 +292,71 @@ function isValidShortcut(value: unknown): value is string {
       "Home", "End", "PageUp", "PageDown", "Space", "Enter", "Escape", "Tab",
       "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Delete", "Insert", "Backspace"
     ]).has(key);
+}
+
+function isWidgetId(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 160) return false;
+  if (/^core\.(?:limits|sessions|clock|media|launcher|settings)$/.test(value)) return true;
+  const match = value.match(/^plugin:([^:]+):([^:]+)$/);
+  return Boolean(match && isPluginId(match[1]) && isContributionId(match[2]));
+}
+
+function isPluginId(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length <= 80
+    && /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(value);
+}
+
+function isContributionId(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length <= 64
+    && /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(value);
+}
+
+function isInstanceId(value: unknown): value is string {
+  return typeof value === "string" && /^[a-zA-Z0-9._-]{1,80}$/.test(value);
+}
+
+function isFinitePoint(value: unknown): value is { x: number; y: number } {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && "x" in value
+    && "y" in value
+    && Number.isFinite(value.x)
+    && Number.isFinite(value.y)
+  );
+}
+
+function isFiniteSize(value: unknown): value is { width: number; height: number } {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && "width" in value
+    && "height" in value
+    && Number.isFinite(value.width)
+    && Number.isFinite(value.height)
+  );
+}
+
+function isPlacementInsideGrid(placement: HomeWidgetPlacement, gridSize: HomeGridSize): boolean {
+  return placement.column >= 0
+    && placement.row >= 0
+    && placement.columnSpan > 0
+    && placement.rowSpan > 0
+    && placement.column + placement.columnSpan <= gridSize.columns
+    && placement.row + placement.rowSpan <= gridSize.rows;
+}
+
+function placementsOverlap(left: HomeWidgetPlacement, right: HomeWidgetPlacement): boolean {
+  return left.column < right.column + right.columnSpan
+    && left.column + left.columnSpan > right.column
+    && left.row < right.row + right.rowSpan
+    && left.row + left.rowSpan > right.row;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function isMissingFile(error: unknown): boolean {

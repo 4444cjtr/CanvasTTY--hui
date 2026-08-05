@@ -1,0 +1,4 @@
+.focus-window { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: var(--background); text-align: center; }
+.focus-window h1 { margin: 0; font-size: clamp(48px, 10vw, 96px); letter-spacing: -.06em; }
+.focus-window .state-message { max-width: 520px; margin: 0; }
+.focus-window button { min-height: 48px; padding: 9px 17px; border-radius: 12px; color: #30313d; background: var(--primary); cursor: pointer; font-weight: 900; }

@@ -1,0 +1,3 @@
+.status-widget { display: grid; grid-template-rows: auto 1fr auto; gap: 8px; background: var(--surface); }
+.status-widget__value { align-self: center; font: 900 clamp(38px, 10vw, 76px)/.9 "Cascadia Code", monospace; letter-spacing: -.08em; }
+.status-widget[data-attention="true"] { box-shadow: inset 5px 0 #efd084; }

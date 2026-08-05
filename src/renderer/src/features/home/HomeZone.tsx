@@ -1,17 +1,39 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentProviderId,
   AppSettings,
+  HomeGridSize,
+  HomeWidgetPlacement,
+  InstalledPlugin,
   LimitsSnapshot,
   LocaleId,
+  ProviderId,
   SessionSnapshot
 } from "../../../../shared/contracts";
+import {
+  HOME_GRID_CELL_HEIGHT,
+  HOME_GRID_CELL_WIDTH,
+  HOME_GRID_GAP,
+  HOME_GRID_MAX_COLUMNS,
+  HOME_GRID_MAX_ROWS
+} from "../../../../shared/contracts.ts";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { UiIcon } from "../../components/UiIcon";
 import { t } from "../../lib/i18n";
 import { AGENT_PROVIDERS, PROVIDERS } from "../../lib/providers";
 import { sessionStatusIcon, sessionStatusLabel } from "../../lib/sessionStatus";
 import { HomeMediaWidget } from "./HomeMediaWidget";
+import { PluginFrame } from "../plugins/PluginFrame";
+import {
+  HOME_GRID_COLUMN_STEP,
+  HOME_GRID_ROW_STEP,
+  homeGridPixelSize,
+  isInsideHome,
+  minimumHomeGridSize,
+  resizeHomePlacement,
+  type HomeResizeDirection,
+  updateHomePlacement
+} from "./homeLayout";
 import {
   formatLimitDuration,
   formatResetCountdown,
@@ -27,13 +49,37 @@ interface HomeZoneProps {
   sessions: SessionSnapshot[];
   limits: LimitsSnapshot | null;
   limitsLoadState: LimitsLoadState;
+  plugins: InstalledPlugin[];
+  editing: boolean;
   onOpenSettings(): void;
   onOpenAgent(provider: AgentProviderId): void;
   onOpenTerminal(): void;
+  onOpenBrowser(): void;
   onFocusSession(session: SessionSnapshot): void;
   onRequestMedia(): Promise<void>;
   onRemoveMedia(): Promise<void>;
+  onLayoutChange(layout: HomeWidgetPlacement[]): void;
+  onGridSizeChange(gridSize: HomeGridSize): void;
+  onPluginError(message: string): void;
 }
+
+interface LayoutPointerState {
+  pointerId: number;
+  mode: "move" | "resize";
+  direction: HomeResizeDirection | null;
+  startClient: { x: number; y: number };
+  startPlacement: HomeWidgetPlacement;
+  scale: { x: number; y: number };
+}
+
+interface GridPointerState {
+  pointerId: number;
+  startClient: { x: number; y: number };
+  startGridSize: HomeGridSize;
+  scale: { x: number; y: number };
+}
+
+const HOME_RESIZE_DIRECTIONS: HomeResizeDirection[] = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
 
 export function HomeZone({
   settings,
@@ -41,12 +87,17 @@ export function HomeZone({
   sessions,
   limits,
   limitsLoadState,
+  plugins,
+  editing,
   onOpenSettings,
   onOpenAgent,
   onOpenTerminal,
   onFocusSession,
   onRequestMedia,
-  onRemoveMedia
+  onRemoveMedia,
+  onLayoutChange,
+  onGridSizeChange,
+  onPluginError
 }: HomeZoneProps): React.JSX.Element {
   const locale = settings.locale;
   const [now, setNow] = useState(() => new Date());
@@ -54,21 +105,163 @@ export function HomeZone({
     () => selectHomeModel(sessions, limits, limitsLoadState, now.getTime()),
     [sessions, limits, limitsLoadState, now]
   );
+  const homeElement = useRef<HTMLElement>(null);
+  const layoutPointer = useRef<LayoutPointerState | null>(null);
+  const gridPointer = useRef<GridPointerState | null>(null);
+  const layoutRef = useRef(settings.homeLayout);
+  const gridRef = useRef(settings.homeGridSize);
+  const [draftLayout, setDraftLayout] = useState(settings.homeLayout);
+  const [draftGridSize, setDraftGridSize] = useState(settings.homeGridSize);
+  layoutRef.current = draftLayout;
+  gridRef.current = draftGridSize;
+
+  useEffect(() => {
+    if (!layoutPointer.current) setDraftLayout(settings.homeLayout);
+  }, [settings.homeLayout]);
+
+  useEffect(() => {
+    if (!gridPointer.current) setDraftGridSize(settings.homeGridSize);
+  }, [settings.homeGridSize]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1_000);
     return () => window.clearInterval(timer);
   }, []);
 
-  return (
-    <section className="home-zone" data-interactive="true" aria-label={t(locale, "homeZone")}>
-      <div className="home-zone__top">
+  const startLayoutPointer = (
+    event: React.PointerEvent<HTMLButtonElement>,
+    placement: HomeWidgetPlacement,
+    mode: LayoutPointerState["mode"],
+    direction: HomeResizeDirection | null = null
+  ): void => {
+    const bounds = homeElement.current?.getBoundingClientRect();
+    if (!bounds) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    layoutPointer.current = {
+      pointerId: event.pointerId,
+      mode,
+      direction,
+      startClient: { x: event.clientX, y: event.clientY },
+      startPlacement: placement,
+      scale: {
+        x: bounds.width / homeGridPixelSize(gridRef.current).width,
+        y: bounds.height / homeGridPixelSize(gridRef.current).height
+      }
+    };
+  };
+
+  const moveLayoutPointer = (event: React.PointerEvent<HTMLButtonElement>): void => {
+    const state = layoutPointer.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const columnDelta = Math.round(
+      (event.clientX - state.startClient.x) / (HOME_GRID_COLUMN_STEP * state.scale.x)
+    );
+    const rowDelta = Math.round(
+      (event.clientY - state.startClient.y) / (HOME_GRID_ROW_STEP * state.scale.y)
+    );
+    const next = state.mode === "move"
+      ? {
+        ...state.startPlacement,
+        column: state.startPlacement.column + columnDelta,
+        row: state.startPlacement.row + rowDelta
+      }
+      : resizeHomePlacement(
+        state.startPlacement,
+        state.direction ?? "se",
+        columnDelta,
+        rowDelta
+      );
+    const updated = updateHomePlacement(
+      layoutRef.current,
+      next,
+      gridRef.current,
+      { allowOutside: true }
+    );
+    if (updated) {
+      layoutRef.current = updated;
+      setDraftLayout(updated);
+      onLayoutChange(updated);
+    }
+  };
+
+  const endLayoutPointer = (event: React.PointerEvent<HTMLButtonElement>): void => {
+    if (layoutPointer.current?.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    layoutPointer.current = null;
+    onLayoutChange(layoutRef.current);
+  };
+
+  const startGridPointer = (event: React.PointerEvent<HTMLButtonElement>): void => {
+    const bounds = homeElement.current?.getBoundingClientRect();
+    if (!bounds) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const pixels = homeGridPixelSize(gridRef.current);
+    gridPointer.current = {
+      pointerId: event.pointerId,
+      startClient: { x: event.clientX, y: event.clientY },
+      startGridSize: gridRef.current,
+      scale: { x: bounds.width / pixels.width, y: bounds.height / pixels.height }
+    };
+  };
+
+  const moveGridPointer = (event: React.PointerEvent<HTMLButtonElement>): void => {
+    const state = gridPointer.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const minimum = minimumHomeGridSize(layoutRef.current);
+    const next = {
+      columns: clamp(
+        state.startGridSize.columns + Math.round(
+          (event.clientX - state.startClient.x) / (HOME_GRID_COLUMN_STEP * state.scale.x)
+        ),
+        minimum.columns,
+        HOME_GRID_MAX_COLUMNS
+      ),
+      rows: clamp(
+        state.startGridSize.rows + Math.round(
+          (event.clientY - state.startClient.y) / (HOME_GRID_ROW_STEP * state.scale.y)
+        ),
+        minimum.rows,
+        HOME_GRID_MAX_ROWS
+      )
+    };
+    gridRef.current = next;
+    setDraftGridSize(next);
+  };
+
+  const endGridPointer = (event: React.PointerEvent<HTMLButtonElement>): void => {
+    if (gridPointer.current?.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    gridPointer.current = null;
+    onGridSizeChange(gridRef.current);
+  };
+
+  const openPluginLauncher = (provider: ProviderId): void => {
+    if (provider === "terminal") onOpenTerminal();
+    else onOpenAgent(provider);
+  };
+
+  const widgetContent = (widgetId: string): React.ReactNode => {
+    if (widgetId === "core.limits") {
+      return (
         <section className="tile agent-overview limits-list" aria-label={t(locale, "modelLimits")}>
           {home.limitRows.map((row) => (
             <LimitRow key={row.provider} row={row} locale={locale} now={now.getTime()} />
           ))}
         </section>
-
+      );
+    }
+    if (widgetId === "core.sessions") {
+      return (
         <section className="tile usage-list" data-wheel-owner="local" aria-label={t(locale, "activeSessions")}>
           {home.sessionRows.length === 0 ? (
             <div className="home-empty">{t(locale, "noActiveSessions")}</div>
@@ -93,10 +286,11 @@ export function HomeZone({
             );
           })}
         </section>
-      </div>
-
-      <div className="home-zone__middle">
-        <ClockWidget locale={locale} now={now} />
+      );
+    }
+    if (widgetId === "core.clock") return <ClockWidget locale={locale} now={now} />;
+    if (widgetId === "core.media") {
+      return (
         <HomeMediaWidget
           locale={locale}
           dataUrl={mediaData}
@@ -104,9 +298,10 @@ export function HomeZone({
           onRequestMedia={onRequestMedia}
           onRemoveMedia={onRemoveMedia}
         />
-      </div>
-
-      <div className="home-zone__launcher-row">
+      );
+    }
+    if (widgetId === "core.launcher") {
+      return (
         <section className="tile launcher-dock">
           <button className="launcher-button launcher-button--terminal" type="button" onClick={onOpenTerminal} title={t(locale, "terminal")}>
             <ProviderIcon provider="terminal" size="large" />
@@ -117,10 +312,115 @@ export function HomeZone({
             </button>
           ))}
         </section>
+      );
+    }
+    if (widgetId === "core.settings") {
+      return (
         <button className="tile settings-button" type="button" onClick={onOpenSettings} aria-label={t(locale, "settings")}>
           <UiIcon name="settings" size={48} />
         </button>
-      </div>
+      );
+    }
+
+    const match = widgetId.match(/^plugin:([^:]+):([^:]+)$/);
+    const plugin = match ? plugins.find((candidate) => candidate.manifest.id === match[1] && candidate.enabled) : null;
+    const contribution = plugin?.manifest.contributions.find((candidate) => (
+      candidate.id === match?.[2] && candidate.kind === "home-widget"
+    ));
+    if (plugin && contribution) {
+      return (
+        <section className="tile plugin-widget">
+          <PluginFrame
+            plugin={plugin}
+            contribution={contribution}
+            locale={locale}
+            palette={settings.palette}
+            sessions={sessions}
+            limits={limits}
+            onOpenLauncher={openPluginLauncher}
+            onError={onPluginError}
+          />
+        </section>
+      );
+    }
+    return editing ? <div className="tile plugin-widget plugin-widget--unavailable">{widgetId}</div> : null;
+  };
+
+  const homePixels = homeGridPixelSize(draftGridSize);
+
+  return (
+    <section
+      ref={homeElement}
+      className={`home-zone ${editing ? "home-zone--editing" : ""}`}
+      aria-label={t(locale, "homeZone")}
+      style={{
+        width: homePixels.width,
+        height: homePixels.height,
+        gridTemplateColumns: `repeat(${draftGridSize.columns}, ${HOME_GRID_CELL_WIDTH}px)`,
+        gridTemplateRows: `repeat(${draftGridSize.rows}, ${HOME_GRID_CELL_HEIGHT}px)`
+      }}
+    >
+      {editing && (
+        <>
+          <span className="home-zone__boundary-label">
+            {t(locale, "homeBoundary")} · {draftGridSize.columns} × {draftGridSize.rows}
+          </span>
+          <button
+            className="home-zone__boundary-resize"
+            type="button"
+            data-interactive="true"
+            aria-label={t(locale, "resizeHomeBoundary")}
+            title={t(locale, "resizeHomeBoundary")}
+            onPointerDown={startGridPointer}
+            onPointerMove={moveGridPointer}
+            onPointerUp={endGridPointer}
+            onPointerCancel={endGridPointer}
+          />
+        </>
+      )}
+      {draftLayout.map((placement) => {
+        const content = widgetContent(placement.widgetId);
+        if (!content) return null;
+        return (
+          <div
+            className={`home-widget-slot ${isInsideHome(placement, draftGridSize) ? "" : "home-widget-slot--outside"}`}
+            data-interactive="true"
+            key={placement.widgetId}
+            style={{
+              left: placement.column * HOME_GRID_COLUMN_STEP,
+              top: placement.row * HOME_GRID_ROW_STEP,
+              width: placement.columnSpan * HOME_GRID_COLUMN_STEP - HOME_GRID_GAP,
+              height: placement.rowSpan * HOME_GRID_ROW_STEP - HOME_GRID_GAP
+            }}
+          >
+            {content}
+            {editing && (
+              <>
+                <button
+                  className="home-widget-slot__move"
+                  type="button"
+                  onPointerDown={(event) => startLayoutPointer(event, placement, "move")}
+                  onPointerMove={moveLayoutPointer}
+                  onPointerUp={endLayoutPointer}
+                  onPointerCancel={endLayoutPointer}
+                >{placement.widgetId}</button>
+                {HOME_RESIZE_DIRECTIONS.map((direction) => (
+                  <button
+                    className={`home-widget-slot__resize home-widget-slot__resize--${direction}`}
+                    type="button"
+                    key={direction}
+                    aria-label={`${t(locale, "resizeHomeWidget")}: ${placement.widgetId}`}
+                    onPointerDown={(event) => startLayoutPointer(event, placement, "resize", direction)}
+                    onPointerMove={moveLayoutPointer}
+                    onPointerUp={endLayoutPointer}
+                    onPointerCancel={endLayoutPointer}
+                  />
+                ))}
+              </>
+            )}
+          </div>
+        );
+      })}
     </section>
   );
 }
@@ -225,4 +525,8 @@ function limitReasonLabel(reason: HomeLimitReason | null, locale: LocaleId): str
                 ? "limitRefreshError"
                 : "limitUnavailable";
   return t(locale, key);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }

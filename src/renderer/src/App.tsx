@@ -2,16 +2,28 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentProviderId,
   AppSettings,
+  BrowserCanvasState,
+  BrowserSnapshot,
   CameraState,
+  HomeGridSize,
+  HomeWidgetPlacement,
+  InstalledPlugin,
   LaunchProfileId,
   LimitsSnapshot,
   Point,
+  PluginContribution,
+  PluginGridSize,
+  PluginInstallPreview,
   ProviderId,
   SessionBounds,
   SessionMetadata,
   SessionSnapshot
 } from "../../shared/contracts";
-import { DEFAULT_SHORTCUTS } from "../../shared/contracts";
+import {
+  DEFAULT_HOME_GRID_SIZE,
+  DEFAULT_HOME_LAYOUT,
+  DEFAULT_SHORTCUTS
+} from "../../shared/contracts";
 import { TitleBar } from "./components/TitleBar";
 import { Toast } from "./components/Toast";
 import { AgentLaunchDialog } from "./features/launcher/AgentLaunchDialog";
@@ -20,6 +32,12 @@ import { WorkspaceCanvas } from "./features/workspace/WorkspaceCanvas";
 import type { LimitsLoadState } from "./features/home/homeModel";
 import { t } from "./lib/i18n";
 import { isRenameInputTarget, isShortcutCaptureTarget, matchesShortcut } from "./lib/shortcuts";
+import { homeGridPixelSize, homeLayoutFitsGrid, placeHomeWidget } from "./features/home/homeLayout";
+
+interface HomeEditDraft {
+  homeGridSize: HomeGridSize;
+  homeLayout: HomeWidgetPlacement[];
+}
 
 const FALLBACK_SETTINGS: AppSettings = {
   locale: "ru",
@@ -35,7 +53,11 @@ const FALLBACK_SETTINGS: AppSettings = {
   mediaPath: null,
   mediaFit: "cover",
   lastDirectory: "/",
-  acknowledgedDangerousProfiles: []
+  acknowledgedDangerousProfiles: [],
+  homeGridSize: { ...DEFAULT_HOME_GRID_SIZE },
+  homeLayout: structuredClone(DEFAULT_HOME_LAYOUT),
+  pluginCanvas: [],
+  browserCanvas: null
 };
 
 export function App(): React.JSX.Element {
@@ -44,10 +66,13 @@ export function App(): React.JSX.Element {
   const [limits, setLimits] = useState<LimitsSnapshot | null>(null);
   const [limitsLoadState, setLimitsLoadState] = useState<LimitsLoadState>("loading");
   const [mediaData, setMediaData] = useState<string | null>(null);
-  const [camera, setCamera] = useState<CameraState>(() => homeCamera());
+  const [plugins, setPlugins] = useState<InstalledPlugin[]>([]);
+  const [browser, setBrowser] = useState<BrowserSnapshot>({ tabs: [], activeTabId: null });
+  const [camera, setCamera] = useState<CameraState>(() => homeCamera(DEFAULT_HOME_GRID_SIZE));
   const isHomeCamera = useRef(true);
   const [launchProvider, setLaunchProvider] = useState<AgentProviderId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [homeEditDraft, setHomeEditDraft] = useState<HomeEditDraft | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -63,6 +88,7 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     let active = true;
+    const browserApi = window.canvasTTY.browser;
     const unsubscribeSession = window.canvasTTY.terminal.onSession(({ session }) => {
       if (active) setSessions((current) => upsertSession(current, session));
     });
@@ -73,11 +99,21 @@ export function App(): React.JSX.Element {
       setRenamingSessionId((current) => current === id ? null : current);
     });
 
-    void Promise.all([window.canvasTTY.settings.get(), window.canvasTTY.terminal.list()])
-      .then(async ([loadedSettings, loadedSessions]) => {
+    void Promise.all([
+      window.canvasTTY.settings.get(),
+      window.canvasTTY.terminal.list(),
+      window.canvasTTY.plugins.list()
+    ])
+      .then(async ([loadedSettings, loadedSessions, loadedPlugins]) => {
         if (!active) return;
         setSettings(loadedSettings);
         setSessions(loadedSessions);
+        setPlugins(loadedPlugins);
+        if (loadedSettings.browserCanvas && browserApi) {
+          const browserState = await browserApi.open();
+          if (active) setBrowser(browserState);
+        }
+        if (isHomeCamera.current) setCamera(homeCamera(loadedSettings.homeGridSize));
         if (loadedSettings.mediaPath) {
           const data = await window.canvasTTY.media.read(loadedSettings.mediaPath);
           if (active) setMediaData(data);
@@ -92,6 +128,14 @@ export function App(): React.JSX.Element {
       unsubscribeRemoved();
     };
   }, [showToast]);
+
+  useEffect(() => {
+    const browserApi = window.canvasTTY.browser;
+    if (!browserApi) return;
+    const unsubscribe = browserApi.onState(({ snapshot }) => setBrowser(snapshot));
+    void browserApi.getState().then(setBrowser).catch(() => undefined);
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -127,11 +171,11 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     const recenterHome = (): void => {
-      if (isHomeCamera.current) setCamera(homeCamera());
+      if (isHomeCamera.current) setCamera(homeCamera(settings.homeGridSize));
     };
     window.addEventListener("resize", recenterHome);
     return () => window.removeEventListener("resize", recenterHome);
-  }, []);
+  }, [settings.homeGridSize]);
 
   const saveSettings = useCallback(async (patch: Partial<AppSettings>): Promise<void> => {
     try {
@@ -147,7 +191,7 @@ export function App(): React.JSX.Element {
     profile: LaunchProfileId,
     cwd: string
   ): Promise<SessionSnapshot> => {
-    const position = nextSessionPosition(sessions.length);
+    const position = nextSessionPosition(sessions.length, settings.homeGridSize);
     const session = await window.canvasTTY.terminal.create({ provider, profile, cwd, position });
     setSessions((current) => upsertSnapshot(current, session));
     setActiveSessionId(session.id);
@@ -155,7 +199,7 @@ export function App(): React.JSX.Element {
     isHomeCamera.current = false;
     setCamera(focusCamera(position, session.size));
     return session;
-  }, [sessions.length, saveSettings]);
+  }, [sessions.length, saveSettings, settings.homeGridSize]);
 
   const openTerminal = useCallback(async (): Promise<void> => {
     try {
@@ -165,6 +209,11 @@ export function App(): React.JSX.Element {
       showToast(error instanceof Error ? error.message : t(settings.locale, "launchFailed"));
     }
   }, [createSession, settings.lastDirectory, settings.locale, showToast]);
+
+  useEffect(() => window.canvasTTY.plugins.onOpenLauncher(({ provider }) => {
+    if (provider === "terminal") void openTerminal();
+    else setLaunchProvider(provider);
+  }), [openTerminal]);
 
   const launchAgent = useCallback(async (
     provider: AgentProviderId,
@@ -212,6 +261,74 @@ export function App(): React.JSX.Element {
     window.canvasTTY.terminal.setBounds(id, bounds);
   }, []);
 
+  const changePluginCanvasBounds = useCallback((id: string, bounds: SessionBounds): void => {
+    const pluginCanvas = settings.pluginCanvas.map((instance) => instance.id === id
+      ? { ...instance, position: bounds.position, size: bounds.size }
+      : instance);
+    setSettings((current) => ({ ...current, pluginCanvas }));
+    void saveSettings({ pluginCanvas });
+  }, [saveSettings, settings.pluginCanvas]);
+
+  const changeBrowserBounds = useCallback((browserCanvas: BrowserCanvasState): void => {
+    setSettings((current) => ({ ...current, browserCanvas }));
+    void saveSettings({ browserCanvas });
+  }, [saveSettings]);
+
+  const disposePluginCanvas = useCallback((id: string): void => {
+    void saveSettings({ pluginCanvas: settings.pluginCanvas.filter((instance) => instance.id !== id) });
+  }, [saveSettings, settings.pluginCanvas]);
+
+  const focusPluginCanvas = useCallback((id: string): void => {
+    const instance = settings.pluginCanvas.find((candidate) => candidate.id === id);
+    if (!instance) return;
+    isHomeCamera.current = false;
+    setCamera(focusCamera(instance.position, instance.size));
+  }, [settings.pluginCanvas]);
+
+  const openBrowser = useCallback(async (): Promise<void> => {
+    try {
+      const browserApi = window.canvasTTY.browser;
+      if (!browserApi) {
+        showToast(t(settings.locale, "browserRestartRequired"));
+        return;
+      }
+      const homeSize = homeGridPixelSize(settings.homeGridSize);
+      const browserCanvas = settings.browserCanvas ?? {
+        position: {
+          x: homeSize.width + 160 + ((sessions.length + settings.pluginCanvas.length) % 2) * 760,
+          y: Math.floor((sessions.length + settings.pluginCanvas.length) / 2) * 500 + 20
+        },
+        size: { width: 920, height: 620 }
+      };
+      const snapshot = await browserApi.open();
+      setBrowser(snapshot);
+      if (!settings.browserCanvas) await saveSettings({ browserCanvas });
+      setSettingsOpen(false);
+      isHomeCamera.current = false;
+      setCamera(focusCamera(browserCanvas.position, browserCanvas.size));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t(settings.locale, "browserActionFailed"));
+    }
+  }, [saveSettings, sessions.length, settings.browserCanvas, settings.homeGridSize, settings.locale, settings.pluginCanvas.length, showToast]);
+
+  const closeBrowser = useCallback(async (): Promise<void> => {
+    try {
+      const browserApi = window.canvasTTY.browser;
+      if (!browserApi) return;
+      await browserApi.close();
+      setBrowser({ tabs: [], activeTabId: null });
+      await saveSettings({ browserCanvas: null });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t(settings.locale, "browserActionFailed"));
+    }
+  }, [saveSettings, settings.locale, showToast]);
+
+  const focusBrowser = useCallback((): void => {
+    if (!settings.browserCanvas) return;
+    isHomeCamera.current = false;
+    setCamera(focusCamera(settings.browserCanvas.position, settings.browserCanvas.size));
+  }, [settings.browserCanvas]);
+
   const disposeSession = useCallback((id: string): void => {
     void window.canvasTTY.terminal.dispose(id);
     setSessions((current) => current.filter((session) => session.id !== id));
@@ -241,8 +358,147 @@ export function App(): React.JSX.Element {
 
   const goHome = useCallback((): void => {
     isHomeCamera.current = true;
-    setCamera(homeCamera());
+    setCamera(homeCamera(homeEditDraft?.homeGridSize ?? settings.homeGridSize));
+  }, [homeEditDraft?.homeGridSize, settings.homeGridSize]);
+
+  const changeHomeLayout = useCallback((homeLayout: HomeWidgetPlacement[]): void => {
+    setHomeEditDraft((current) => current ? { ...current, homeLayout } : current);
   }, []);
+
+  const changeHomeGridSize = useCallback((homeGridSize: HomeGridSize): void => {
+    setHomeEditDraft((current) => current ? { ...current, homeGridSize } : current);
+    isHomeCamera.current = true;
+    setCamera(homeCamera(homeGridSize));
+  }, []);
+
+  const resetHomeLayout = useCallback((): void => {
+    const homeGridSize = { ...DEFAULT_HOME_GRID_SIZE };
+    setHomeEditDraft((current) => current ? {
+      homeGridSize,
+      homeLayout: structuredClone(DEFAULT_HOME_LAYOUT)
+    } : current);
+    isHomeCamera.current = true;
+    setCamera(homeCamera(homeGridSize));
+  }, []);
+
+  const toggleHomeWidget = useCallback(async (
+    widgetId: string,
+    defaultSize: PluginGridSize
+  ): Promise<void> => {
+    const exists = settings.homeLayout.some((placement) => placement.widgetId === widgetId);
+    if (exists) {
+      if (widgetId === "core.settings") return;
+      await saveSettings({
+        homeLayout: settings.homeLayout.filter((placement) => placement.widgetId !== widgetId)
+      });
+      return;
+    }
+
+    const result = placeHomeWidget(
+      settings.homeLayout,
+      widgetId,
+      defaultSize,
+      settings.homeGridSize
+    );
+    if (!result) {
+      showToast(t(settings.locale, "homeLayoutFull"));
+      return;
+    }
+    await saveSettings({
+      homeGridSize: result.gridSize,
+      homeLayout: [...settings.homeLayout, result.placement]
+    });
+  }, [saveSettings, settings.homeGridSize, settings.homeLayout, settings.locale, showToast]);
+
+  const previewPlugin = useCallback((sourceUrl: string): Promise<PluginInstallPreview> => (
+    window.canvasTTY.plugins.previewInstall(sourceUrl)
+  ), []);
+
+  const installPlugin = useCallback(async (token: string): Promise<void> => {
+    const installed = await window.canvasTTY.plugins.install(token);
+    setPlugins((current) => [...current.filter((plugin) => plugin.manifest.id !== installed.manifest.id), installed]);
+
+    let homeLayout = settings.homeLayout;
+    let homeGridSize = settings.homeGridSize;
+    for (const contribution of installed.manifest.contributions) {
+      if (contribution.kind !== "home-widget") continue;
+      const widgetId = `plugin:${installed.manifest.id}:${contribution.id}`;
+      const result = placeHomeWidget(homeLayout, widgetId, contribution.defaultSize, homeGridSize);
+      if (!result) continue;
+      homeGridSize = result.gridSize;
+      homeLayout = [...homeLayout, result.placement];
+    }
+    if (homeLayout !== settings.homeLayout) await saveSettings({ homeGridSize, homeLayout });
+    showToast(`${t(settings.locale, "pluginInstalled")}: ${installed.manifest.name}`);
+  }, [saveSettings, settings.homeGridSize, settings.homeLayout, settings.locale, showToast]);
+
+  const setPluginEnabled = useCallback(async (pluginId: string, enabled: boolean): Promise<void> => {
+    const updated = await window.canvasTTY.plugins.setEnabled(pluginId, enabled);
+    setPlugins((current) => current.map((plugin) => plugin.manifest.id === pluginId ? updated : plugin));
+  }, []);
+
+  const uninstallPlugin = useCallback(async (pluginId: string): Promise<void> => {
+    await window.canvasTTY.plugins.uninstall(pluginId);
+    setPlugins((current) => current.filter((plugin) => plugin.manifest.id !== pluginId));
+    await saveSettings({
+      homeLayout: settings.homeLayout.filter((placement) => !placement.widgetId.startsWith(`plugin:${pluginId}:`)),
+      pluginCanvas: settings.pluginCanvas.filter((instance) => instance.pluginId !== pluginId)
+    });
+    showToast(t(settings.locale, "pluginRemoved"));
+  }, [saveSettings, settings.homeLayout, settings.locale, settings.pluginCanvas, showToast]);
+
+  const openPluginContribution = useCallback(async (
+    plugin: InstalledPlugin,
+    contribution: PluginContribution
+  ): Promise<void> => {
+    if (contribution.kind === "window") {
+      await window.canvasTTY.plugins.openWindow(plugin.manifest.id, contribution.id);
+      return;
+    }
+    if (contribution.kind === "home-widget") {
+      await toggleHomeWidget(`plugin:${plugin.manifest.id}:${contribution.id}`, contribution.defaultSize);
+      return;
+    }
+
+    const index = settings.pluginCanvas.length;
+    const homeSize = homeGridPixelSize(settings.homeGridSize);
+    const instance = {
+      id: crypto.randomUUID(),
+      pluginId: plugin.manifest.id,
+      contributionId: contribution.id,
+      title: contribution.title,
+      position: {
+        x: homeSize.width + 160 + (index % 2) * 760,
+        y: Math.floor(index / 2) * 500 + 20
+      },
+      size: contribution.defaultSize
+    };
+    await saveSettings({ pluginCanvas: [...settings.pluginCanvas, instance] });
+    setSettingsOpen(false);
+    isHomeCamera.current = false;
+    setCamera(focusCamera(instance.position, instance.size));
+  }, [saveSettings, settings.homeGridSize, settings.pluginCanvas, toggleHomeWidget]);
+
+  const startHomeEditor = useCallback((): void => {
+    setSettingsOpen(false);
+    setHomeEditDraft({
+      homeGridSize: { ...settings.homeGridSize },
+      homeLayout: structuredClone(settings.homeLayout)
+    });
+    isHomeCamera.current = true;
+    setCamera(homeCamera(settings.homeGridSize));
+  }, [settings.homeGridSize, settings.homeLayout]);
+
+  const finishHomeEditor = useCallback(async (): Promise<void> => {
+    if (!homeEditDraft || !homeLayoutFitsGrid(homeEditDraft.homeLayout, homeEditDraft.homeGridSize)) return;
+    try {
+      const updated = await window.canvasTTY.settings.update(homeEditDraft);
+      setSettings(updated);
+      setHomeEditDraft(null);
+    } catch {
+      showToast(t(settings.locale, "settingsFailed"));
+    }
+  }, [homeEditDraft, settings.locale, showToast]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent): void => {
@@ -272,6 +528,11 @@ export function App(): React.JSX.Element {
     () => `app app--${settings.palette}`,
     [settings.palette]
   );
+  const workspaceSettings = useMemo(() => homeEditDraft ? {
+    ...settings,
+    homeGridSize: homeEditDraft.homeGridSize,
+    homeLayout: homeEditDraft.homeLayout
+  } : settings, [homeEditDraft, settings]);
 
   return (
     <div className={rootClasses}>
@@ -279,19 +540,32 @@ export function App(): React.JSX.Element {
       <main className="app__content">
         {!ready && <div className="loading-screen">{t(settings.locale, "loading")}</div>}
         <WorkspaceCanvas
-          settings={settings}
+          settings={workspaceSettings}
           mediaData={mediaData}
           sessions={sessions}
           limits={limits}
           limitsLoadState={limitsLoadState}
+          plugins={plugins}
+          browser={browser}
+          browserViewVisible={!settingsOpen && launchProvider === null}
+          homeEditing={homeEditDraft !== null}
           camera={camera}
           onCameraChange={changeCamera}
           onGoHome={goHome}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenAgent={setLaunchProvider}
           onOpenTerminal={() => void openTerminal()}
+          onOpenBrowser={() => void openBrowser()}
           onRequestMedia={requestMedia}
           onRemoveMedia={removeMedia}
+          onHomeLayoutChange={changeHomeLayout}
+          onHomeGridSizeChange={changeHomeGridSize}
+          onFinishHomeEdit={() => void finishHomeEditor()}
+          onResetHomeLayout={resetHomeLayout}
+          onPluginError={showToast}
+          onPluginCanvasBoundsChange={changePluginCanvasBounds}
+          onDisposePluginCanvas={disposePluginCanvas}
+          onFocusPluginCanvas={focusPluginCanvas}
           onFocusSession={focusSession}
           activeSessionId={activeSessionId}
           renamingSessionId={renamingSessionId}
@@ -300,6 +574,9 @@ export function App(): React.JSX.Element {
           onRenameEnd={() => setRenamingSessionId(null)}
           onSessionBoundsChange={changeSessionBounds}
           onDisposeSession={disposeSession}
+          onBrowserBoundsChange={changeBrowserBounds}
+          onFocusBrowser={focusBrowser}
+          onCloseBrowser={() => void closeBrowser()}
         />
       </main>
 
@@ -313,8 +590,16 @@ export function App(): React.JSX.Element {
       <SettingsPanel
         open={settingsOpen}
         settings={settings}
+        plugins={plugins}
         onClose={() => setSettingsOpen(false)}
         onChange={saveSettings}
+        onPreviewPlugin={previewPlugin}
+        onInstallPlugin={installPlugin}
+        onSetPluginEnabled={setPluginEnabled}
+        onUninstallPlugin={uninstallPlugin}
+        onOpenPluginContribution={openPluginContribution}
+        onToggleHomeWidget={toggleHomeWidget}
+        onEditHome={startHomeEditor}
       />
       <Toast message={toast} />
     </div>
@@ -333,27 +618,29 @@ function upsertSnapshot(sessions: SessionSnapshot[], next: SessionSnapshot): Ses
   return sessions.map((session) => session.id === next.id ? next : session);
 }
 
-function nextSessionPosition(index: number): Point {
+function nextSessionPosition(index: number, homeGridSize: HomeGridSize): Point {
+  const homeSize = homeGridPixelSize(homeGridSize);
   return {
-    x: 1340 + (index % 2) * 760,
+    x: homeSize.width + 160 + (index % 2) * 760,
     y: Math.floor(index / 2) * 500 + 20
   };
 }
 
-function homeCamera(): CameraState {
+function homeCamera(homeGridSize: HomeGridSize): CameraState {
   const viewportWidth = typeof window === "undefined" ? 1360 : window.innerWidth;
   const viewportHeight = typeof window === "undefined" ? 820 : window.innerHeight - 44;
+  const homeSize = homeGridPixelSize(homeGridSize);
   const availableZoom = Math.min(
     1,
-    (viewportWidth - 64) / 1180,
-    (viewportHeight - 48) / 700
+    (viewportWidth - 80) / homeSize.width,
+    (viewportHeight - 72) / homeSize.height
   );
-  const zoom = [1, 0.9, 0.8, 0.75, 2 / 3, 0.5, 0.4, 1 / 3, 0.28]
-    .find((step) => step <= availableZoom) ?? 0.28;
+  const zoom = [1, 0.9, 0.8, 0.75, 2 / 3, 0.5, 0.4, 1 / 3, 0.28, 0.25, 0.2]
+    .find((step) => step <= availableZoom) ?? 0.2;
   return {
     zoom,
-    x: Math.round((viewportWidth - 1180 * zoom) / 2),
-    y: Math.round((viewportHeight - 700 * zoom) / 2)
+    x: Math.round((viewportWidth - homeSize.width * zoom) / 2),
+    y: Math.round((viewportHeight - homeSize.height * zoom) / 2)
   };
 }
 

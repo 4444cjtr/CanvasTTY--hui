@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="../shared/plugin.css">
+    <link rel="stylesheet" href="./notes.css">
+    <title>Studio notes</title>
+  </head>
+  <body>
+    <main class="surface notes-app">
+      <div>
+        <p class="eyebrow" id="heading">Local note</p>
+        <p class="state-message" id="status">Loading…</p>
+      </div>
+      <textarea id="note" maxlength="12000" aria-label="Plugin note"></textarea>
+      <div class="notes-app__actions">
+        <button id="terminal" type="button">Open terminal</button>
+        <button id="focus" type="button">Open focus window</button>
+      </div>
+    </main>
+    <script src="canvastty-plugin://host/sdk.js"></script>
+    <script src="./notes.js"></script>
+  </body>
+</html>

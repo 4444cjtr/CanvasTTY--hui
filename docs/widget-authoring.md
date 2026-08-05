@@ -2,7 +2,7 @@
 
 [English](widget-authoring.md) · [Русский](widget-authoring.ru.md) · [简体中文](widget-authoring.zh-CN.md) · [Docs home](README.md)
 
-CanvasTTY widgets are currently source-level extensions, not runtime plugins. This guide shows how to add one while preserving Electron isolation, source-backed telemetry, and the visual system.
+This guide covers trusted source-level widgets compiled with CanvasTTY. For third-party packages installed at runtime, use the permissioned [runtime plugin API](plugins.md). Source-level work remains appropriate when a feature needs a new trusted main-process adapter or changes core product ownership.
 
 ## Choose the smallest extension shape
 

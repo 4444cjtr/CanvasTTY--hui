@@ -1,8 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AppSettings,
+  BrowserStateEvent,
+  BrowserViewportBounds,
   CanvasTTYApi,
   CreateSessionRequest,
+  PluginLauncherRequest,
   SessionBounds,
   SessionEvent,
   SessionRemovedEvent,
@@ -33,6 +36,39 @@ const api: CanvasTTYApi = {
   },
   limits: {
     get: () => ipcRenderer.invoke(IPC.limitsGet)
+  },
+  plugins: {
+    list: () => ipcRenderer.invoke(IPC.pluginsList),
+    previewInstall: (sourceUrl: string) => ipcRenderer.invoke(IPC.pluginsPreviewInstall, sourceUrl),
+    install: (token: string) => ipcRenderer.invoke(IPC.pluginsInstall, token),
+    setEnabled: (pluginId: string, enabled: boolean) => ipcRenderer.invoke(IPC.pluginsSetEnabled, pluginId, enabled),
+    uninstall: (pluginId: string) => ipcRenderer.invoke(IPC.pluginsUninstall, pluginId),
+    openWindow: (pluginId: string, contributionId: string) => ipcRenderer.invoke(IPC.pluginsOpenWindow, pluginId, contributionId),
+    openExternal: (pluginId: string, url: string) => ipcRenderer.invoke(IPC.pluginsOpenExternal, pluginId, url),
+    storageGet: (pluginId: string, key: string) => ipcRenderer.invoke(IPC.pluginsStorageGet, pluginId, key),
+    storageSet: (pluginId: string, key: string, value: unknown) => ipcRenderer.invoke(IPC.pluginsStorageSet, pluginId, key, value),
+    mediaPickLibrary: (pluginId: string) => ipcRenderer.invoke(IPC.pluginsMediaPickLibrary, pluginId),
+    mediaListLibraries: (pluginId: string) => ipcRenderer.invoke(IPC.pluginsMediaListLibraries, pluginId),
+    mediaScanLibrary: (pluginId: string, libraryId: string) => ipcRenderer.invoke(IPC.pluginsMediaScanLibrary, pluginId, libraryId),
+    mediaRevokeLibrary: (pluginId: string, libraryId: string) => ipcRenderer.invoke(IPC.pluginsMediaRevokeLibrary, pluginId, libraryId),
+    playlistsList: (pluginId: string, libraryId: string) => ipcRenderer.invoke(IPC.pluginsPlaylistsList, pluginId, libraryId),
+    playlistsRead: (pluginId: string, libraryId: string, playlistId: string) => ipcRenderer.invoke(IPC.pluginsPlaylistsRead, pluginId, libraryId, playlistId),
+    playlistsWrite: (pluginId: string, libraryId: string, name: string, content: string) => ipcRenderer.invoke(IPC.pluginsPlaylistsWrite, pluginId, libraryId, name, content),
+    onOpenLauncher: (listener: (event: PluginLauncherRequest) => void) => subscribe(IPC.pluginsLauncherRequested, listener)
+  },
+  browser: {
+    getState: () => ipcRenderer.invoke(IPC.browserGetState),
+    open: (url?: string) => ipcRenderer.invoke(IPC.browserOpen, url),
+    close: () => ipcRenderer.invoke(IPC.browserClose),
+    newTab: (url?: string) => ipcRenderer.invoke(IPC.browserNewTab, url),
+    selectTab: (id: string) => ipcRenderer.invoke(IPC.browserSelectTab, id),
+    closeTab: (id: string) => ipcRenderer.invoke(IPC.browserCloseTab, id),
+    navigate: (id: string, value: string) => ipcRenderer.invoke(IPC.browserNavigate, id, value),
+    back: (id: string) => ipcRenderer.invoke(IPC.browserBack, id),
+    forward: (id: string) => ipcRenderer.invoke(IPC.browserForward, id),
+    reload: (id: string) => ipcRenderer.invoke(IPC.browserReload, id),
+    setViewport: (bounds: BrowserViewportBounds) => ipcRenderer.send(IPC.browserSetViewport, bounds),
+    onState: (listener: (event: BrowserStateEvent) => void) => subscribe(IPC.browserState, listener)
   },
   terminal: {
     list: () => ipcRenderer.invoke(IPC.terminalList),

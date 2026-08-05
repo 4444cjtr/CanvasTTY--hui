@@ -19,5 +19,7 @@ Include the CanvasTTY version, operating system, affected flow, impact, and mini
 - PTY scrollback is held in bounded process memory and is not committed to the repository.
 - CanvasTTY has no project-operated telemetry endpoint and does not upload application logs.
 - Provider usage requests go only to the matching provider adapter; sanitized limit snapshots cross IPC, never raw responses or credentials.
+- Runtime plugins are static GitHub packages stored below `userData/plugins`. CanvasTTY does not execute their repository scripts or expose Node.js. Plugin UI runs in sandboxed frames/windows and receives only the permissions confirmed during install. A plugin is still third-party code: inspect its source and requested `network`/`external:open` capabilities before installing it.
+- Plugin storage is isolated by plugin ID below `userData/plugin-storage`, capped at 64 KB, and is removed on uninstall. Session access excludes PTY buffers and working directories.
 
 The repository runs `npm run audit:secrets` in CI and before packaging. This is a guardrail, not a reason to commit a secret temporarily: if a real secret ever reaches Git history, revoke it immediately and rewrite/purge the affected history before publishing.
