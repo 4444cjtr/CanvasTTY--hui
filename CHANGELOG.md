@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.1 — public preview
+
+- Restored provider CLI discovery for graphical AppImage launches by supplementing the desktop-session `PATH` with existing per-user CLI directories, including Kimi's `~/.kimi-code/bin`.
+- Prevented late terminal input and resize events from crashing the Electron main process when they race with PTY exit (`EBADFD`).
+
 ## 0.9.0 — public preview
 
 - Fixed the main window never appearing when the renderer paints before `loadURL` resolves; the `ready-to-show` listener is now attached before loading.

@@ -10,7 +10,7 @@
 |:--|:--|:--|
 | Linux x86_64 | AppImage、deb | AppImage 免安装直接运行；deb 可集成到 Debian 系桌面环境 |
 | Windows x64 | NSIS 安装程序、便携版可执行文件 | 安装程序支持自定义安装目录，并会创建开始菜单/桌面快捷方式 |
-| macOS arm64（Apple Silicon） | dmg、zip | 两者都包含图形化的 `.app` bundle；`0.9.0` 暂不包含 Intel/x64 构建 |
+| macOS arm64（Apple Silicon） | dmg、zip | 两者都包含图形化的 `.app` bundle；`0.9.1` 暂不包含 Intel/x64 构建 |
 
 请只从本仓库的 [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) 页面下载产物。`0.9.x` 目前是公共预览版，没有商业代码签名证书，也未经过 Apple 公证（notarization）。因此 Windows SmartScreen 和 macOS Gatekeeper 可能会提示开发者未知。在确认任何警告之前，请先核对 release tag 和产物名称。
 
