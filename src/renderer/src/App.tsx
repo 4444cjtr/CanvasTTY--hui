@@ -24,7 +24,7 @@ const FALLBACK_SETTINGS: AppSettings = {
   palette: "sage",
   pattern: "dots",
   snapToGrid: true,
-  edgePan: true,
+  edgePan: false,
   edgePanSpeed: "normal",
   zoomSensitivity: "normal",
   mediaPath: null,

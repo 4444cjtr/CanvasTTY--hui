@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
-import { normalizeSettings } from "../src/main/services/SettingsStore.ts";
+import { normalizeSettings, SettingsStore } from "../src/main/services/SettingsStore.ts";
 
 const fallback = {
   locale: "en",
@@ -48,4 +51,23 @@ test("older settings files without the new keys inherit defaults", () => {
 test("a non-object candidate yields the fallback wholesale", () => {
   assert.equal(normalizeSettings(null, fallback), fallback);
   assert.equal(normalizeSettings("settings", fallback), fallback);
+});
+
+test("edge panning is off by default for fresh installs", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "canvastty-settings-"));
+  try {
+    const store = new SettingsStore(dir, "en");
+    await store.load();
+    assert.equal(store.get().edgePan, false);
+    assert.equal(store.get().edgePanSpeed, "normal");
+    assert.equal(store.get().zoomSensitivity, "normal");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a saved edge pan preference survives normalization", () => {
+  const normalized = normalizeSettings({ edgePan: true, edgePanSpeed: "fast" }, fallback);
+  assert.equal(normalized.edgePan, true);
+  assert.equal(normalized.edgePanSpeed, "fast");
 });
