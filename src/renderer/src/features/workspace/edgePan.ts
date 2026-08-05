@@ -1,4 +1,4 @@
-import type { Point } from "../../../../shared/contracts";
+import type { EdgePanSpeed, Point } from "../../../../shared/contracts";
 
 export interface EdgePanViewport {
   left: number;
@@ -16,6 +16,12 @@ export interface EdgePanOptions {
 
 export const EDGE_PAN_ZONE = 56;
 export const EDGE_PAN_MAX_SPEED = 900;
+
+export const EDGE_PAN_SPEEDS: Record<EdgePanSpeed, number> = {
+  slow: 450,
+  normal: EDGE_PAN_MAX_SPEED,
+  fast: 1400
+};
 
 /**
  * RTS-style edge panning: the camera drifts while the pointer rests near a

@@ -14,7 +14,7 @@ This contract preserves the approved MVP concept and prevents feature ownership 
 
 - Clicking a provider opens a Focus Card for that provider. The provider is fixed; there is no second provider selector.
 - The Focus Card contains only the provider mark, project folder, Normal/YOLO profile, launch action, and contextual danger confirmation.
-- Settings contains language, palette, background pattern, and window snapping. Media controls never appear there. Snapping is enabled by default and can be disabled without changing existing window bounds.
+- Settings contains language, palette, background pattern, window snapping, edge panning (toggle plus slow/normal/fast speed), and zoom sensitivity (slow/normal/fast). Media controls never appear there. Snapping is enabled by default and can be disabled without changing existing window bounds.
 
 ## Visual system
 

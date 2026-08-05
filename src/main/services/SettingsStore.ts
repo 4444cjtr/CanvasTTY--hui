@@ -5,9 +5,11 @@ import type {
   AgentProviderId,
   AppSettings,
   CanvasPatternId,
+  EdgePanSpeed,
   LocaleId,
   MediaFit,
-  PaletteId
+  PaletteId,
+  ZoomSensitivity
 } from "../../shared/contracts";
 
 const LOCALES = new Set<LocaleId>(["ru", "en"]);
@@ -15,6 +17,8 @@ const PALETTES = new Set<PaletteId>(["sage", "lilac", "night"]);
 const PATTERNS = new Set<CanvasPatternId>(["dots", "grid", "waves", "none"]);
 const MEDIA_FITS = new Set<MediaFit>(["cover", "contain"]);
 const AGENT_PROVIDERS = new Set<AgentProviderId>(["codex", "claude", "kimi"]);
+const EDGE_PAN_SPEEDS = new Set<EdgePanSpeed>(["slow", "normal", "fast"]);
+const ZOOM_SENSITIVITIES = new Set<ZoomSensitivity>(["slow", "normal", "fast"]);
 
 export class SettingsStore {
   private readonly filePath: string;
@@ -71,6 +75,9 @@ function createDefaults(systemLocale: string): AppSettings {
     palette: "sage",
     pattern: "dots",
     snapToGrid: true,
+    edgePan: true,
+    edgePanSpeed: "normal",
+    zoomSensitivity: "normal",
     mediaPath: null,
     mediaFit: "cover",
     lastDirectory: homedir(),
@@ -78,7 +85,7 @@ function createDefaults(systemLocale: string): AppSettings {
   };
 }
 
-function normalizeSettings(candidate: unknown, fallback: AppSettings): AppSettings {
+export function normalizeSettings(candidate: unknown, fallback: AppSettings): AppSettings {
   if (!candidate || typeof candidate !== "object") {
     return fallback;
   }
@@ -100,6 +107,13 @@ function normalizeSettings(candidate: unknown, fallback: AppSettings): AppSettin
       ? source.pattern as CanvasPatternId
       : fallback.pattern,
     snapToGrid: typeof source.snapToGrid === "boolean" ? source.snapToGrid : fallback.snapToGrid,
+    edgePan: typeof source.edgePan === "boolean" ? source.edgePan : fallback.edgePan,
+    edgePanSpeed: EDGE_PAN_SPEEDS.has(source.edgePanSpeed as EdgePanSpeed)
+      ? source.edgePanSpeed as EdgePanSpeed
+      : fallback.edgePanSpeed,
+    zoomSensitivity: ZOOM_SENSITIVITIES.has(source.zoomSensitivity as ZoomSensitivity)
+      ? source.zoomSensitivity as ZoomSensitivity
+      : fallback.zoomSensitivity,
     mediaPath,
     mediaFit: MEDIA_FITS.has(source.mediaFit as MediaFit) ? source.mediaFit as MediaFit : fallback.mediaFit,
     lastDirectory: typeof source.lastDirectory === "string" && source.lastDirectory.length > 0
