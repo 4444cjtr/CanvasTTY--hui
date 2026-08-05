@@ -11,8 +11,8 @@
 <table>
   <tr>
     <td>
-      <strong>终端是空间，而不只是标签页。</strong><br>
-      CanvasTTY 是一个 Electron 空间桌面，用于真实的本地 PTY 与 AI 智能体 CLI 会话。它把固定的 Home 区域、无限画布上的实时终端，以及不伪造数据的服务商限额放在同一界面中。
+      <strong>终端是有位置的空间，而不只是标签页。</strong><br>
+      CanvasTTY 是一个基于 Electron 的空间桌面，承载真实的本地 PTY 与 AI 智能体 CLI 会话。固定的 Home 区域、无限画布上自由摆放的实时终端、真实可信的服务商限额，都在同一个界面里——没有编造的遥测数据。
     </td>
   </tr>
 </table>
@@ -25,11 +25,11 @@
 
 ## 一张画布，真实会话
 
-在项目目录中启动 shell 或智能体，移动并调整实时终端窗口，缩小后通过语义摘要导航，再回到 Home 查看会话、限额、媒体与启动入口。CanvasTTY 在可信的主进程中维护 PTY 状态，只向渲染进程暴露经过类型约束和白名单许可的能力。
+在项目目录中启动 shell 或智能体，随意移动、调整它的实时终端窗口；缩小视图，以语义化的方式纵览全局；回到 Home，查看会话、限额、媒体与启动入口。CanvasTTY 在可信的主进程中维护 PTY 状态，只向渲染进程暴露类型化且经白名单放行的能力。
 
 ## 安装
 
-从 [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) 下载 `0.8.x` 公共预览版：Linux 提供 AppImage/deb，Windows 提供安装程序/便携版，macOS 提供 dmg/zip。软件包尚未进行代码签名或 notarization；请先阅读[安装与本地数据安全](docs/installing-and-security.zh-CN.md)。
+从 [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) 下载 `0.8.x` 公开预览版：Linux x86_64 提供 AppImage/deb，Windows x64 提供安装程序/便携版，Apple Silicon macOS 提供 dmg/zip。软件包尚未进行代码签名或公证，目前也不包含 Intel Mac 构建；请先阅读[安装与本地数据安全](docs/installing-and-security.zh-CN.md)。
 
 也可以从源码运行：
 

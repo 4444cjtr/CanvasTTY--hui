@@ -29,7 +29,7 @@ Launch a shell or agent in a project directory, move and resize its live termina
 
 ## Install
 
-Download the `0.8.x` public preview from [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases): AppImage/deb for Linux, installer/portable app for Windows, and dmg/zip for macOS. Packages are not yet code-signed or notarized; read [installing and local-data security](docs/installing-and-security.md).
+Download the `0.8.x` public preview from [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases): AppImage/deb for Linux x86_64, installer/portable app for Windows x64, and dmg/zip for Apple Silicon macOS. Packages are not yet code-signed or notarized; Intel Mac builds are not included yet. Read [installing and local-data security](docs/installing-and-security.md).
 
 Or run from source:
 
