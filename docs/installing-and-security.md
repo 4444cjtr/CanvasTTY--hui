@@ -8,7 +8,7 @@ Each `v*` tag starts native GitHub-hosted builds for all three operating systems
 
 | Platform | Artifacts | Notes |
 |:--|:--|:--|
-| Linux x86_64 | AppImage, deb | AppImage runs without installation; deb integrates with Debian-family desktops |
+| Linux x86_64 | AppImage, deb | AppImage is a single-file package and requires a FUSE 2 compatibility library (`libfuse2t64` on Ubuntu 24.04); deb integrates with Debian-family desktops |
 | Windows x64 | NSIS installer, portable executable | The installer allows choosing a directory and creates Start Menu/Desktop shortcuts |
 | macOS arm64 (Apple Silicon) | dmg, zip | Both contain the graphical `.app` bundle; `1.0.0` does not include an Intel/x64 build |
 

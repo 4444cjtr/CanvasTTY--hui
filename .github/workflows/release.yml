@@ -47,6 +47,9 @@ jobs:
         run: npm test
       - name: Build installers
         run: npm run ${{ matrix.script }}
+      - name: Install AppImage runtime dependency
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libfuse2t64
       - name: Smoke-test packaged AppImage
         if: runner.os == 'Linux'
         timeout-minutes: 2

@@ -8,7 +8,7 @@
 
 | 平台 | 产物 | 说明 |
 |:--|:--|:--|
-| Linux x86_64 | AppImage、deb | AppImage 免安装直接运行；deb 可集成到 Debian 系桌面环境 |
+| Linux x86_64 | AppImage、deb | AppImage 是单文件包，需要 FUSE 2 兼容库（Ubuntu 24.04 上为 `libfuse2t64`）；deb 可集成到 Debian 系桌面环境 |
 | Windows x64 | NSIS 安装程序、便携版可执行文件 | 安装程序支持自定义安装目录，并会创建开始菜单/桌面快捷方式 |
 | macOS arm64（Apple Silicon） | dmg、zip | 两者都包含图形化的 `.app` bundle；`1.0.0` 暂不包含 Intel/x64 构建 |
 

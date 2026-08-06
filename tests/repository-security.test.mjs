@@ -80,7 +80,9 @@ test("AppImage avoids maximum XZ compression and is smoke-tested before upload",
   assert.match(config, /^appImage:\n  compression: gzip$/m);
   assert.doesNotMatch(config, /^compression: maximum$/m);
   assert.equal(manifest.scripts["smoke:appimage"], "node scripts/smoke-appimage.mjs");
+  assert.match(workflow, /sudo apt-get install --no-install-recommends -y libfuse2t64/);
   assert.match(workflow, /xvfb-run -a npm run smoke:appimage/);
+  assert.ok(workflow.indexOf("Install AppImage runtime dependency") < workflow.indexOf("Smoke-test packaged AppImage"));
   assert.ok(workflow.indexOf("Smoke-test packaged AppImage") < workflow.indexOf("Upload installers"));
 });
 
