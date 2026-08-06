@@ -110,7 +110,9 @@ function createDefaults(systemLocale: string): AppSettings {
     homeGridSize: { ...DEFAULT_HOME_GRID_SIZE },
     homeLayout: structuredClone(DEFAULT_HOME_LAYOUT),
     pluginCanvas: [],
-    browserCanvas: null
+    browserCanvas: null,
+    browserAgentAccess: true,
+    browserRestoreTabs: true
   };
 }
 
@@ -181,7 +183,13 @@ export function normalizeSettings(candidate: unknown, fallback: AppSettings): Ap
     homeGridSize,
     homeLayout,
     pluginCanvas,
-    browserCanvas
+    browserCanvas,
+    browserAgentAccess: typeof source.browserAgentAccess === "boolean"
+      ? source.browserAgentAccess
+      : fallback.browserAgentAccess,
+    browserRestoreTabs: typeof source.browserRestoreTabs === "boolean"
+      ? source.browserRestoreTabs
+      : fallback.browserRestoreTabs
   };
 }
 

@@ -35,7 +35,9 @@ const fallback = {
     { widgetId: "core.settings", column: 10, row: 6, columnSpan: 2, rowSpan: 2 }
   ],
   pluginCanvas: [],
-  browserCanvas: null
+  browserCanvas: null,
+  browserAgentAccess: true,
+  browserRestoreTabs: true
 };
 
 test("keeps valid wheel, edge pan, zoom, and focus values", () => {
@@ -111,10 +113,22 @@ test("fresh installs keep optional navigation automation off", async () => {
     assert.equal(store.get().showShortcutHints, true);
     assert.deepEqual(store.get().homeGridSize, { columns: 16, rows: 12 });
     assert.equal(store.get().browserCanvas, null);
+    assert.equal(store.get().browserAgentAccess, true);
+    assert.equal(store.get().browserRestoreTabs, true);
     assert.deepEqual(store.get().shortcuts, { home: "Home", renameWindow: "F2" });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("normalizes browser agent access and tab restore preferences", () => {
+  const disabled = normalizeSettings({ browserAgentAccess: false, browserRestoreTabs: false }, fallback);
+  assert.equal(disabled.browserAgentAccess, false);
+  assert.equal(disabled.browserRestoreTabs, false);
+
+  const invalid = normalizeSettings({ browserAgentAccess: "yes", browserRestoreTabs: 1 }, fallback);
+  assert.equal(invalid.browserAgentAccess, true);
+  assert.equal(invalid.browserRestoreTabs, true);
 });
 
 test("normalizes the optional built-in browser canvas bounds", () => {

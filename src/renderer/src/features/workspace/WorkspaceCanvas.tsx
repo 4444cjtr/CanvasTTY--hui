@@ -243,6 +243,7 @@ export function WorkspaceCanvas({
       <div className="workspace__scene" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
         <HomeZone
           settings={settings}
+          browser={browser}
           mediaData={mediaData}
           sessions={sessions}
           limits={limits}
