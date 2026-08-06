@@ -230,26 +230,6 @@ bool ConnectPipe(HANDLE pipe) {
   return connected;
 }
 
-bool IsCurrentUserClient(HANDLE pipe, PSID expected_sid) {
-  if (!ImpersonateNamedPipeClient(pipe)) return false;
-  HANDLE token = nullptr;
-  bool matches = false;
-  if (OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &token)) {
-    DWORD required = 0;
-    GetTokenInformation(token, TokenUser, nullptr, 0, &required);
-    if (required > 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-      std::vector<std::uint8_t> token_user(required);
-      if (GetTokenInformation(token, TokenUser, token_user.data(), required, &required)) {
-        const PSID actual_sid = reinterpret_cast<TOKEN_USER*>(token_user.data())->User.Sid;
-        matches = IsValidSid(actual_sid) && EqualSid(expected_sid, actual_sid);
-      }
-    }
-    CloseHandle(token);
-  }
-  RevertToSelf();
-  return matches;
-}
-
 struct Connection {
   Connection(std::uint32_t new_id, HANDLE new_pipe)
       : id(new_id), pipe(new_pipe), close_event(CreateEventW(nullptr, TRUE, FALSE, nullptr)) {}
@@ -440,18 +420,9 @@ void AcceptClients(const std::wstring& name, CurrentUserSecurity& security) {
       }
       return;
     }
-    if (!IsCurrentUserClient(listener, security.user_sid())) {
-      DisconnectNamedPipe(listener);
-      CloseHandle(listener);
-      listener = CreateSecurePipe(name, security, false);
-      if (listener == INVALID_HANDLE_VALUE) {
-        SendTextFrame(FrameType::kFatal, "Could not recreate the protected pipe listener.");
-        SignalShutdown();
-        return;
-      }
-      continue;
-    }
-
+    // The protected DACL is the authorization boundary for every pipe instance.
+    // ImpersonateNamedPipeClient cannot authenticate a newly connected client here because
+    // Windows derives that context from the last message read, and no message has been read yet.
     HANDLE replacement = CreateSecurePipe(name, security, false);
     if (replacement == INVALID_HANDLE_VALUE) {
       DisconnectNamedPipe(listener);
