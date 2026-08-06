@@ -23,13 +23,15 @@
 |:--|:--|:--|:--|
 | **Electron**<br>electron-vite | **React**<br>TypeScript | **xterm.js**<br>node-pty | **Codex**<br>Claude · Kimi |
 
+Интерфейс приложения сейчас поддерживает английский и русский языки. Документация также доступна на упрощённом китайском.
+
 ## Один канвас, настоящие сессии
 
 Запускайте shell или агента в каталоге проекта, перемещайте и растягивайте живой терминал, отдаляйте камеру, чтобы ориентироваться по смысловым сводкам, и возвращайтесь в Home — к сессиям, лимитам, медиа и кнопкам запуска. CanvasTTY хранит состояние PTY в доверенном main-процессе и открывает renderer доступ только к типизированным возможностям из белого списка.
 
 ## Установка
 
-Скачайте публичный превью-релиз `0.9.x` из [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases): AppImage/deb для Linux x86_64, установщик и portable-версию для Windows x64, dmg/zip для macOS на Apple Silicon. Пакеты пока не имеют цифровой подписи и не заверены Apple (notarization); сборки для Intel Mac ещё нет. Сначала прочитайте про [установку и локальные данные](docs/installing-and-security.ru.md).
+Скачайте релиз `1.0.1` из [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases): AppImage/deb для Linux x86_64, установщик и portable-версию для Windows x64, dmg/zip для macOS на Apple Silicon. Пакеты пока не имеют цифровой подписи и не заверены Apple (notarization); сборки для Intel Mac ещё нет. Сначала прочитайте про [установку и локальные данные](docs/installing-and-security.ru.md).
 
 Или запустите из исходников:
 
@@ -44,9 +46,10 @@ npm run dev
 |:--|:--|
 | [Центр документации](docs/README.ru.md) | [Создание виджетов](docs/widget-authoring.ru.md) |
 | [Быстрый старт](docs/getting-started.ru.md) | [Метрики и телеметрия](docs/metrics-and-telemetry.ru.md) |
-| [Установка, релизы и локальные данные](docs/installing-and-security.ru.md) | [Политика безопасности](SECURITY.md) |
-| [Архитектура](docs/ARCHITECTURE.md) | [UI-контракт](docs/UI_CONTRACT.md) |
+| [Установка, релизы и локальные данные](docs/installing-and-security.ru.md) | [Политика безопасности](SECURITY.ru.md) |
+| [Архитектура](docs/ARCHITECTURE.ru.md) | [UI-контракт](docs/UI_CONTRACT.ru.md) |
 | [Разработка runtime-плагинов](docs/plugins.ru.md) | [Типы SDK плагинов](docs/plugin-api.d.ts) |
+| [История изменений](CHANGELOG.ru.md) | [Лицензия MIT](LICENSE) |
 
 ## Runtime-плагины
 
@@ -54,7 +57,7 @@ CanvasTTY включает permissioned runtime для готовых стати
 
 ## Заготовка встроенного браузера
 
-В исходниках есть core-заготовка браузера, а не plugin capability: доверенная React-панель вкладок и навигации поверх sandboxed Electron `WebContentsView` с отдельным постоянным профилем. Из HOME браузер пока намеренно не запускается. Разрешения сайтов, загрузки файлов и browser automation для агентов остаются следующими этапами; текущие границы описаны в [архитектуре](docs/ARCHITECTURE.md).
+В исходниках есть core-заготовка браузера, а не plugin capability: доверенная React-панель вкладок и навигации поверх sandboxed Electron `WebContentsView` с отдельным постоянным профилем. Из HOME браузер пока намеренно не запускается. Разрешения сайтов, загрузки файлов и browser automation для агентов остаются следующими этапами; текущие границы описаны в [архитектуре](docs/ARCHITECTURE.ru.md).
 
 ## Быстрая проверка
 
@@ -63,3 +66,7 @@ npm test
 npm run typecheck
 npm run build
 ```
+
+## Лицензия
+
+CanvasTTY распространяется по [лицензии MIT](LICENSE).

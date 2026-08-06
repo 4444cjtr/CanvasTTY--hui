@@ -41,7 +41,10 @@ export function remapTerminalMouseCoordinates(
   };
 }
 
-export function attachTerminalMouseCoordinateAdapter(screen: HTMLElement): () => void {
+export function attachTerminalMouseCoordinateAdapter(
+  screen: HTMLElement,
+  getWheelMultiplier: () => 1 | -1 = () => 1
+): () => void {
   const ownerDocument = screen.ownerDocument;
   const syntheticEvents = new WeakSet<Event>();
   let dragging = false;
@@ -87,11 +90,12 @@ export function attachTerminalMouseCoordinateAdapter(screen: HTMLElement): () =>
     );
     const needsRemap = Math.abs(adjusted.x - event.clientX) > 0.01
       || Math.abs(adjusted.y - event.clientY) > 0.01;
-    if (!needsRemap) return;
+    const wheelMultiplier = getWheelMultiplier();
+    if (!needsRemap && wheelMultiplier === 1) return;
 
     event.preventDefault();
     event.stopImmediatePropagation();
-    const remapped = cloneWheelEvent(event, adjusted);
+    const remapped = cloneWheelEvent(event, adjusted, wheelMultiplier);
     syntheticEvents.add(remapped);
     target.dispatchEvent(remapped);
   };
@@ -126,7 +130,7 @@ function cloneMouseEvent(event: MouseEvent, point: ClientPoint): MouseEvent {
   });
 }
 
-function cloneWheelEvent(event: WheelEvent, point: ClientPoint): WheelEvent {
+function cloneWheelEvent(event: WheelEvent, point: ClientPoint, multiplier: 1 | -1): WheelEvent {
   return new WheelEvent(event.type, {
     bubbles: true,
     cancelable: true,
@@ -143,9 +147,9 @@ function cloneWheelEvent(event: WheelEvent, point: ClientPoint): WheelEvent {
     button: event.button,
     buttons: event.buttons,
     relatedTarget: event.relatedTarget,
-    deltaX: event.deltaX,
-    deltaY: event.deltaY,
-    deltaZ: event.deltaZ,
+    deltaX: event.deltaX * multiplier,
+    deltaY: event.deltaY * multiplier,
+    deltaZ: event.deltaZ * multiplier,
     deltaMode: event.deltaMode
   });
 }

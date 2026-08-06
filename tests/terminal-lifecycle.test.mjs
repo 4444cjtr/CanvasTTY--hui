@@ -35,7 +35,33 @@ test("terminal paste reads the trusted clipboard bridge and uses xterm paste sem
 test("terminal mouse coordinates are adapted for a transformed canvas", async () => {
   const source = await readFile(terminalCardPath, "utf8");
 
-  assert.match(source, /attachTerminalMouseCoordinateAdapter\(screen\)/);
+  assert.match(source, /attachTerminalMouseCoordinateAdapter\(screen/);
+});
+
+test("selecting a terminal moves keyboard focus into the live xterm", async () => {
+  const source = await readFile(terminalCardPath, "utf8");
+
+  assert.match(source, /if \(selected && !renaming && !summaryMode\) terminal\.focus\(\)/);
+  assert.match(source, /else if \(!selected\) \{\s*terminal\.blur\(\)/);
+});
+
+test("programmatic hover focus does not leak focus reports into the agent TUI", async () => {
+  const source = await readFile(terminalCardPath, "utf8");
+
+  assert.match(source, /hoverFocusTransition\.current = "focus"/);
+  assert.match(source, /hoverFocusTransition\.current = "blur"/);
+  assert.match(source, /suppressFocusReport\.current/);
+  assert.match(source, /TERMINAL_FOCUS_IN/);
+  assert.match(source, /TERMINAL_FOCUS_OUT/);
+});
+
+test("PTY output is batched before crossing into the renderer", async () => {
+  const source = await readFile(terminalManagerPath, "utf8");
+
+  assert.match(source, /const OUTPUT_BATCH_MS = 16/);
+  assert.match(source, /session\.pendingOutput\.push\(data\)/);
+  assert.match(source, /session\.pendingOutput\.join\(""\)/);
+  assert.match(source, /bufferChunks\.slice\(session\.bufferStart\)\.join\(""\)/);
 });
 
 test("terminal viewport keeps the palette background after row-sized fits", async () => {

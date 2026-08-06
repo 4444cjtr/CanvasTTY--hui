@@ -15,10 +15,14 @@ const fallback = {
   palette: "sage",
   pattern: "dots",
   snapToGrid: true,
+  invertTerminalWheel: true,
+  invertCanvasWheel: false,
   edgePan: true,
   edgePanSpeed: "normal",
   zoomSensitivity: "normal",
   focusActivation: "off",
+  hoverFocus: false,
+  hoverFocusSpeed: "normal",
   showShortcutHints: true,
   shortcuts: { home: "Home", renameWindow: "F2" },
   mediaPath: null,
@@ -34,14 +38,26 @@ const fallback = {
   browserCanvas: null
 };
 
-test("keeps valid edge pan and zoom sensitivity values", () => {
+test("keeps valid wheel, edge pan, zoom, and focus values", () => {
   const normalized = normalizeSettings(
-    { edgePan: false, edgePanSpeed: "fast", zoomSensitivity: "slow" },
+    {
+      invertTerminalWheel: false,
+      invertCanvasWheel: true,
+      edgePan: false,
+      edgePanSpeed: "fast",
+      zoomSensitivity: "slow",
+      hoverFocus: true,
+      hoverFocusSpeed: "fast"
+    },
     fallback
   );
+  assert.equal(normalized.invertTerminalWheel, false);
+  assert.equal(normalized.invertCanvasWheel, true);
   assert.equal(normalized.edgePan, false);
   assert.equal(normalized.edgePanSpeed, "fast");
   assert.equal(normalized.zoomSensitivity, "slow");
+  assert.equal(normalized.hoverFocus, true);
+  assert.equal(normalized.hoverFocusSpeed, "fast");
 });
 
 test("falls back when edge pan and zoom values are garbage", () => {
@@ -52,7 +68,11 @@ test("falls back when edge pan and zoom values are garbage", () => {
   assert.equal(normalized.edgePan, fallback.edgePan);
   assert.equal(normalized.edgePanSpeed, fallback.edgePanSpeed);
   assert.equal(normalized.zoomSensitivity, fallback.zoomSensitivity);
+  assert.equal(normalized.invertTerminalWheel, fallback.invertTerminalWheel);
+  assert.equal(normalized.invertCanvasWheel, fallback.invertCanvasWheel);
   assert.equal(normalized.focusActivation, fallback.focusActivation);
+  assert.equal(normalized.hoverFocus, fallback.hoverFocus);
+  assert.equal(normalized.hoverFocusSpeed, fallback.hoverFocusSpeed);
   assert.equal(normalized.showShortcutHints, fallback.showShortcutHints);
   assert.deepEqual(normalized.shortcuts, fallback.shortcuts);
 });
@@ -64,6 +84,10 @@ test("older settings files without the new keys inherit defaults", () => {
   assert.equal(normalized.edgePan, fallback.edgePan);
   assert.equal(normalized.edgePanSpeed, fallback.edgePanSpeed);
   assert.equal(normalized.zoomSensitivity, fallback.zoomSensitivity);
+  assert.equal(normalized.invertTerminalWheel, fallback.invertTerminalWheel);
+  assert.equal(normalized.invertCanvasWheel, fallback.invertCanvasWheel);
+  assert.equal(normalized.hoverFocus, fallback.hoverFocus);
+  assert.equal(normalized.hoverFocusSpeed, fallback.hoverFocusSpeed);
 });
 
 test("a non-object candidate yields the fallback wholesale", () => {
@@ -79,7 +103,11 @@ test("fresh installs keep optional navigation automation off", async () => {
     assert.equal(store.get().edgePan, false);
     assert.equal(store.get().edgePanSpeed, "normal");
     assert.equal(store.get().zoomSensitivity, "normal");
+    assert.equal(store.get().invertTerminalWheel, true);
+    assert.equal(store.get().invertCanvasWheel, false);
     assert.equal(store.get().focusActivation, "off");
+    assert.equal(store.get().hoverFocus, false);
+    assert.equal(store.get().hoverFocusSpeed, "normal");
     assert.equal(store.get().showShortcutHints, true);
     assert.deepEqual(store.get().homeGridSize, { columns: 16, rows: 12 });
     assert.equal(store.get().browserCanvas, null);

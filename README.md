@@ -23,13 +23,15 @@
 |:--|:--|:--|:--|
 | **Electron**<br>electron-vite | **React**<br>TypeScript | **xterm.js**<br>node-pty | **Codex**<br>Claude · Kimi |
 
+The application interface currently supports English and Russian. This documentation is also available in Simplified Chinese.
+
 ## One canvas, real sessions
 
 Launch a shell or agent in a project directory, move and resize its live terminal, zoom out to navigate semantically, and return to Home for sessions, limits, media, and launch shortcuts. CanvasTTY keeps PTY state in the trusted main process and exposes only typed, allow-listed capabilities to the renderer.
 
 ## Install
 
-Download the `0.9.x` public preview from [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases): AppImage/deb for Linux x86_64, installer/portable app for Windows x64, and dmg/zip for Apple Silicon macOS. Packages are not yet code-signed or notarized; Intel Mac builds are not included yet. Read [installing and local-data security](docs/installing-and-security.md).
+Download the `1.0.1` release from [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases): AppImage/deb for Linux x86_64, installer/portable app for Windows x64, and dmg/zip for Apple Silicon macOS. Packages are not yet code-signed or notarized; Intel Mac builds are not included yet. Read [installing and local-data security](docs/installing-and-security.md).
 
 Or run from source:
 
@@ -47,6 +49,7 @@ npm run dev
 | [Install, releases, and local data](docs/installing-and-security.md) | [Security policy](SECURITY.md) |
 | [Architecture](docs/ARCHITECTURE.md) | [UI contract](docs/UI_CONTRACT.md) |
 | [Runtime plugin authoring](docs/plugins.md) | [Typed plugin SDK](docs/plugin-api.d.ts) |
+| [Changelog](CHANGELOG.md) | [MIT license](LICENSE) |
 
 ## Runtime plugins
 
@@ -63,3 +66,7 @@ npm test
 npm run typecheck
 npm run build
 ```
+
+## License
+
+CanvasTTY is released under the [MIT License](LICENSE).

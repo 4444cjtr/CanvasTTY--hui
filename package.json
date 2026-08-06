@@ -1,10 +1,11 @@
 {
   "name": "canvastty",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "A spatial desktop for local AI agents and real terminal sessions.",
   "desktopName": "CanvasTTY",
   "author": "howdeploy",
+  "license": "MIT",
   "homepage": "https://github.com/howdeploy/CanvasTTY",
   "repository": {
     "type": "git",

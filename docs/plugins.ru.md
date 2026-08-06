@@ -1,6 +1,6 @@
 # Runtime-плагины
 
-[English](plugins.md) · [Русский](plugins.ru.md) · [Документация](README.ru.md)
+[English](plugins.md) · [Русский](plugins.ru.md) · [简体中文](plugins.zh-CN.md) · [Документация](README.ru.md)
 
 Runtime-плагин CanvasTTY — это статический web-пакет, установленный из HTTPS GitHub-репозитория. Один плагин может добавить виджет HOME, перемещаемое приложение на канвасе, отдельное окно приложения или сразу несколько таких элементов. HTML, CSS и JavaScript плагина работают в Electron sandbox без Node.js.
 

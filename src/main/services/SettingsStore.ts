@@ -76,13 +76,14 @@ export class SettingsStore {
     const snapshot = JSON.stringify(this.value, null, 2);
     const temporaryPath = `${this.filePath}.tmp`;
 
-    this.writeQueue = this.writeQueue.then(async () => {
+    const write = this.writeQueue.catch(() => undefined).then(async () => {
       await mkdir(dirname(this.filePath), { recursive: true });
       await writeFile(temporaryPath, snapshot, "utf8");
       await rename(temporaryPath, this.filePath);
     });
+    this.writeQueue = write;
 
-    return this.writeQueue;
+    return write;
   }
 }
 
@@ -92,10 +93,14 @@ function createDefaults(systemLocale: string): AppSettings {
     palette: "sage",
     pattern: "dots",
     snapToGrid: true,
+    invertTerminalWheel: true,
+    invertCanvasWheel: false,
     edgePan: false,
     edgePanSpeed: "normal",
     zoomSensitivity: "normal",
     focusActivation: "off",
+    hoverFocus: false,
+    hoverFocusSpeed: "normal",
     showShortcutHints: true,
     shortcuts: { ...DEFAULT_SHORTCUTS },
     mediaPath: null,
@@ -143,6 +148,12 @@ export function normalizeSettings(candidate: unknown, fallback: AppSettings): Ap
       ? source.pattern as CanvasPatternId
       : fallback.pattern,
     snapToGrid: typeof source.snapToGrid === "boolean" ? source.snapToGrid : fallback.snapToGrid,
+    invertTerminalWheel: typeof source.invertTerminalWheel === "boolean"
+      ? source.invertTerminalWheel
+      : fallback.invertTerminalWheel,
+    invertCanvasWheel: typeof source.invertCanvasWheel === "boolean"
+      ? source.invertCanvasWheel
+      : fallback.invertCanvasWheel,
     edgePan: typeof source.edgePan === "boolean" ? source.edgePan : fallback.edgePan,
     edgePanSpeed: EDGE_PAN_SPEEDS.has(source.edgePanSpeed as EdgePanSpeed)
       ? source.edgePanSpeed as EdgePanSpeed
@@ -153,6 +164,10 @@ export function normalizeSettings(candidate: unknown, fallback: AppSettings): Ap
     focusActivation: FOCUS_ACTIVATIONS.has(source.focusActivation as FocusActivation)
       ? source.focusActivation as FocusActivation
       : fallback.focusActivation,
+    hoverFocus: typeof source.hoverFocus === "boolean" ? source.hoverFocus : fallback.hoverFocus,
+    hoverFocusSpeed: EDGE_PAN_SPEEDS.has(source.hoverFocusSpeed as EdgePanSpeed)
+      ? source.hoverFocusSpeed as EdgePanSpeed
+      : fallback.hoverFocusSpeed,
     showShortcutHints: typeof source.showShortcutHints === "boolean"
       ? source.showShortcutHints
       : fallback.showShortcutHints,

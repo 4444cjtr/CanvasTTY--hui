@@ -9,7 +9,7 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 test("local links in repository documentation resolve", async () => {
   const markdownFiles = [
     ...await markdownIn(root, false, (name) => (
-      name.startsWith("README") || name === "SECURITY.md" || name === "CHANGELOG.md"
+      name.startsWith("README") || name.startsWith("SECURITY") || name.startsWith("CHANGELOG")
     )),
     ...await markdownIn(resolve(root, "docs"), true)
   ];

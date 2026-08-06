@@ -89,7 +89,7 @@ async function initializeServices(): Promise<void> {
       mainWindow.webContents.send(channel, payload);
     }
   });
-  limitsService = new LimitsService();
+  limitsService = new LimitsService(app.getVersion());
   pluginManager = new PluginManager(app.getPath("userData"));
   await pluginManager.load();
   pluginMediaService = new PluginMediaService(

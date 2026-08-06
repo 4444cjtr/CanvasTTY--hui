@@ -1,6 +1,6 @@
 # Runtime plugins
 
-[English](plugins.md) · [Русский](plugins.ru.md) · [Docs home](README.md)
+[English](plugins.md) · [Русский](plugins.ru.md) · [简体中文](plugins.zh-CN.md) · [Docs home](README.md)
 
 CanvasTTY runtime plugins are static web packages installed from an HTTPS GitHub repository. A plugin can contribute a HOME widget, a movable canvas app, a separate application window, or any combination of the three. Plugin HTML, CSS, and JavaScript run in an Electron sandbox without Node.js.
 

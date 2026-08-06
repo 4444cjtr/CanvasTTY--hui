@@ -41,14 +41,20 @@ interface PendingRequest {
 }
 
 export class LimitsService {
-  private readonly codex = new CodexAppServerClient();
+  private readonly codex: CodexAppServerClient;
   private readonly kimi = new KimiWebUsageClient();
+  private readonly clientVersion: string;
   private cache: CacheEntry | null = null;
   private inFlight: Promise<LimitsSnapshot> | null = null;
   private lastGoodCodex: Extract<ProviderLimitsSnapshot, { state: "available" }> | null = null;
   private lastGoodClaude: Extract<ProviderLimitsSnapshot, { state: "available" }> | null = null;
   private lastGoodKimi: Extract<ProviderLimitsSnapshot, { state: "available" }> | null = null;
   private disposed = false;
+
+  constructor(clientVersion = "unknown") {
+    this.clientVersion = clientVersion;
+    this.codex = new CodexAppServerClient(clientVersion);
+  }
 
   async get(): Promise<LimitsSnapshot> {
     const now = Date.now();
@@ -123,7 +129,7 @@ export class LimitsService {
 
   private async loadClaude(checkedAt: number): Promise<ProviderLimitsSnapshot> {
     try {
-      const raw = await readClaudeUsage();
+      const raw = await readClaudeUsage(this.clientVersion);
       const windows = normalizeClaudeLimits(raw);
       if (windows.length === 0) throw new LimitsAdapterError("protocol-error");
 
@@ -180,7 +186,7 @@ export class LimitsService {
   }
 }
 
-async function readClaudeUsage(): Promise<unknown> {
+async function readClaudeUsage(clientVersion: string): Promise<unknown> {
   const configRoot = process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
   const credentials = await readCredentialFile(join(configRoot, ".credentials.json"), "subscription-required");
   const oauth = isRecord(credentials.claudeAiOauth) ? credentials.claudeAiOauth : null;
@@ -189,7 +195,7 @@ async function readClaudeUsage(): Promise<unknown> {
 
   return fetchUsageJson(CLAUDE_USAGE_URL, accessToken, {
     "anthropic-beta": "oauth-2025-04-20",
-    "user-agent": "canvastty/0.9.2"
+    "user-agent": `canvastty/${clientVersion}`
   });
 }
 
@@ -395,6 +401,8 @@ class CodexAppServerClient {
   private buffer = "";
   private disposed = false;
 
+  constructor(private readonly clientVersion: string) {}
+
   async readRateLimits(): Promise<unknown> {
     await this.ensureConnected();
     return this.request("account/rateLimits/read");
@@ -413,7 +421,7 @@ class CodexAppServerClient {
 
     this.startChild();
     this.ready = this.request("initialize", {
-      clientInfo: { name: "canvastty", version: "0.1.0" }
+      clientInfo: { name: "canvastty", version: this.clientVersion }
     }).then(() => {
       this.notify("initialized", {});
     }).catch((error: unknown) => {

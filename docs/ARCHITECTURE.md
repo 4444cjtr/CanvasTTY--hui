@@ -1,5 +1,7 @@
 # Architecture
 
+[English](ARCHITECTURE.md) · [Русский](ARCHITECTURE.ru.md) · [简体中文](ARCHITECTURE.zh-CN.md)
+
 ## Process boundaries
 
 CanvasTTY follows Electron's three-layer model:
@@ -13,7 +15,7 @@ preload bridge (contextBridge)
     ▼
 Electron main process
     ├── SettingsStore  → validated, atomic JSON persistence
-    ├── TerminalManager → node-pty lifecycle and scrollback
+    ├── TerminalManager → node-pty lifecycle, bounded scrollback, and output batching
     ├── LimitsService  → sanitized provider-limit adapters and cache
     ├── PluginManager  → GitHub install, manifest validation, assets, permissions, storage
     ├── PluginMediaService → user-granted music folders, ranged audio streams, playlist files
@@ -26,7 +28,7 @@ Electron main process
 - `src/shared/contracts.ts` is the single public contract between processes. Add or change cross-process data here first.
 - `src/preload/index.ts` exposes only the typed capabilities the renderer needs. Node integration stays disabled; context isolation and sandbox stay enabled.
 - `src/main/ipc/registerIpc.ts` owns native side effects and validates access to persisted media.
-- `src/main/services/TerminalManager.ts` is the source of truth for live session state and PTY buffers. A new PTY is `idle`; process exit provides only `done` or `failed`. `working` and `needs_approval` are accepted only as typed provider lifecycle signals, never inferred from PTY existence or terminal text.
+- `src/main/services/TerminalManager.ts` is the source of truth for live session state and PTY buffers. It keeps scrollback in a bounded chunk buffer and coalesces PTY data into 16ms IPC batches so clear/redraw sequences reach xterm together. A new PTY is `idle`; process exit provides only `done` or `failed`. `working` and `needs_approval` are accepted only as typed provider lifecycle signals, never inferred from PTY existence or terminal text.
 - `src/main/services/LimitsService.ts` reads Codex through the installed CLI's app-server protocol and Claude/Kimi through their provider usage endpoints. Provider credentials are read only inside the trusted main process, sent only to the matching provider over HTTPS, and never logged or exposed over IPC. The service owns timeout, structural normalization, caching, stale fallback, and subprocess cleanup; raw provider responses never cross IPC.
 - `src/main/services/SettingsStore.ts` normalizes every update and persists through a serialized atomic write.
 - `src/main/services/PluginManager.ts` installs ready-to-run static repositories without executing package scripts, rejects symlinks and oversized packages, persists the enabled registry, serves only contained package files, and enforces per-plugin permissions/storage quotas.
@@ -66,7 +68,7 @@ Keep domain decisions in pure selectors such as `homeModel.ts`, orchestration in
 
 1. Home requests a terminal or opens a provider-specific launch card.
 2. `App` sends a typed `terminal:create` request.
-3. `TerminalManager` validates the request, spawns the PTY, stores metadata and bounded scrollback, then emits lifecycle/data events.
+3. `TerminalManager` validates the request, spawns the PTY, stores metadata and bounded chunked scrollback, then emits lifecycle events and 16ms-batched data events.
 4. `App` reconciles lifecycle snapshots by session ID.
 5. `TerminalCard` subscribes to its PTY stream, sends PTY input/grid resize events, and commits typed canvas bounds after a drag or edge resize.
 
@@ -74,9 +76,11 @@ Keep domain decisions in pure selectors such as `homeModel.ts`, orchestration in
 
 A live `TerminalCard` owns one xterm instance for the lifetime of its session ID. Palette changes update `terminal.options.theme` in place; title and settings changes must never dispose the terminal or its renderer-side scrollback. Window titles are updated as session metadata through `terminal:rename`. PTY input and resize events that race with process exit are contained at the main-process boundary and never surface as uncaught Electron errors.
 
-Terminal pointer coordinates are converted from the canvas's visually transformed rectangle back to xterm layout coordinates before selection or wheel handling. Selected text is copied through the typed clipboard bridge with `Ctrl+C`, `Ctrl+Shift+C`, or `Cmd+C`; paste uses `Ctrl+Shift+V`, `Cmd+V`, or `Shift+Insert` and enters xterm through `Terminal.paste` rather than synthetic keystrokes.
+Output batching is an IPC/rendering boundary, not a history boundary: every PTY chunk is appended to bounded scrollback immediately, while pending renderer output is flushed on the 16ms timer, before exit, and before disposal. Scrollback trimming advances through chunks instead of rebuilding the entire buffer for every write; snapshots join only the retained suffix.
 
-Application shortcuts are normalized in `SettingsStore`, matched in `App`, and rendered from the same persisted bindings in the canvas hint. `App` owns the selected session used by window actions such as rename; `TerminalCard` owns only the inline editor.
+Terminal pointer coordinates are converted from the canvas's visually transformed rectangle back to xterm layout coordinates before selection or wheel handling. Terminal and canvas wheel direction are normalized independently from persisted settings. Selected text is copied through the typed clipboard bridge with `Ctrl+C`, `Ctrl+Shift+C`, or `Cmd+C`; paste uses `Ctrl+Shift+V`, `Cmd+V`, or `Shift+Insert` and enters xterm through `Terminal.paste` rather than synthetic keystrokes. `Shift+Enter` sends the CSI-u modified Enter sequence directly to the PTY.
+
+Application shortcuts are normalized in `SettingsStore`, matched in `App`, and rendered from the same persisted bindings in the canvas hint. `App` owns the selected session used by window actions such as rename; `TerminalCard` owns xterm focus and only the inline editor. Pressing empty canvas clears selection. Optional hover focus schedules the same configured delay on entry and exit; focus-in/focus-out sequences produced by this programmatic transition are suppressed before PTY input so agent TUIs do not reset their history position.
 
 Session counters, progress bars, and statuses must always derive from actual `SessionSnapshot` values. The UI must not synthesize telemetry.
 

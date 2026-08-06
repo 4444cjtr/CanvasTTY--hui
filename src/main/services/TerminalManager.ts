@@ -17,7 +17,8 @@ import type {
 import { IPC } from "../../shared/contracts";
 import { tryPtyOperation } from "./ptySafety";
 
-const MAX_SCROLLBACK_BYTES = 240_000;
+const MAX_SCROLLBACK_CHARS = 240_000;
+const OUTPUT_BATCH_MS = 16;
 const DEFAULT_TERMINAL_SIZE = { width: 700, height: 430 };
 const MIN_TERMINAL_SIZE = { width: 420, height: 260 };
 const MAX_TERMINAL_SIZE = { width: 1_600, height: 1_100 };
@@ -25,7 +26,11 @@ const MAX_TERMINAL_SIZE = { width: 1_600, height: 1_100 };
 interface ManagedSession {
   metadata: SessionMetadata;
   process: IPty;
-  buffer: string;
+  bufferChunks: string[];
+  bufferStart: number;
+  bufferLength: number;
+  pendingOutput: string[];
+  outputTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export interface ProviderLifecycleSignal {
@@ -76,20 +81,29 @@ export class TerminalManager {
       env: terminalEnvironment()
     });
 
-    const session: ManagedSession = { metadata, process, buffer: "" };
+    const session: ManagedSession = {
+      metadata,
+      process,
+      bufferChunks: [],
+      bufferStart: 0,
+      bufferLength: 0,
+      pendingOutput: [],
+      outputTimer: null
+    };
     this.sessions.set(id, session);
     process.onData((data) => {
       const current = this.sessions.get(id);
       if (!current) return;
 
-      current.buffer = `${current.buffer}${data}`.slice(-MAX_SCROLLBACK_BYTES);
-      this.emit(IPC.terminalData, { id, data });
+      appendScrollback(current, data);
+      this.queueOutput(id, current, data);
     });
 
     process.onExit(({ exitCode }) => {
       const current = this.sessions.get(id);
       if (!current) return;
 
+      this.flushOutput(id, current);
       current.metadata.exitCode = exitCode;
       current.metadata.status = exitCode === 0 ? "done" : "failed";
       this.emitSession(current.metadata);
@@ -155,6 +169,7 @@ export class TerminalManager {
     const session = this.sessions.get(id);
     if (!session) return;
 
+    this.flushOutput(id, session);
     this.sessions.delete(id);
     try {
       session.process.kill();
@@ -172,6 +187,25 @@ export class TerminalManager {
 
   private emitSession(metadata: SessionMetadata): void {
     this.emit(IPC.terminalSession, { session: structuredClone(metadata) });
+  }
+
+  private queueOutput(id: string, session: ManagedSession, data: string): void {
+    session.pendingOutput.push(data);
+    if (session.outputTimer !== null) return;
+    // Keep a TUI's clear-and-redraw sequence in one renderer update whenever possible.
+    session.outputTimer = setTimeout(() => this.flushOutput(id, session), OUTPUT_BATCH_MS);
+  }
+
+  private flushOutput(id: string, session: ManagedSession): void {
+    if (session.outputTimer !== null) {
+      clearTimeout(session.outputTimer);
+      session.outputTimer = null;
+    }
+    if (session.pendingOutput.length === 0) return;
+
+    const data = session.pendingOutput.join("");
+    session.pendingOutput.length = 0;
+    this.emit(IPC.terminalData, { id, data });
   }
 }
 
@@ -259,5 +293,36 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function snapshot(session: ManagedSession): SessionSnapshot {
-  return { ...structuredClone(session.metadata), buffer: session.buffer };
+  return {
+    ...structuredClone(session.metadata),
+    buffer: session.bufferChunks.slice(session.bufferStart).join("")
+  };
+}
+
+function appendScrollback(session: ManagedSession, data: string): void {
+  session.bufferChunks.push(data);
+  session.bufferLength += data.length;
+
+  while (session.bufferLength > MAX_SCROLLBACK_CHARS) {
+    const first = session.bufferChunks[session.bufferStart];
+    if (first === undefined) {
+      session.bufferChunks.length = 0;
+      session.bufferStart = 0;
+      session.bufferLength = 0;
+      return;
+    }
+    const overflow = session.bufferLength - MAX_SCROLLBACK_CHARS;
+    if (first.length <= overflow) {
+      session.bufferStart += 1;
+      session.bufferLength -= first.length;
+      continue;
+    }
+    session.bufferChunks[session.bufferStart] = first.slice(overflow);
+    session.bufferLength -= overflow;
+  }
+
+  if (session.bufferStart > 256 && session.bufferStart * 2 >= session.bufferChunks.length) {
+    session.bufferChunks = session.bufferChunks.slice(session.bufferStart);
+    session.bufferStart = 0;
+  }
 }

@@ -217,12 +217,13 @@ export class PluginMediaService {
   private persist(): Promise<void> {
     const snapshot = JSON.stringify([...this.libraries.values()], null, 2);
     const temporaryPath = `${this.registryPath}.tmp`;
-    this.writeQueue = this.writeQueue.then(async () => {
+    const write = this.writeQueue.catch(() => undefined).then(async () => {
       await mkdir(dirname(this.registryPath), { recursive: true });
       await writeFile(temporaryPath, snapshot, "utf8");
       await rename(temporaryPath, this.registryPath);
     });
-    return this.writeQueue;
+    this.writeQueue = write;
+    return write;
   }
 }
 

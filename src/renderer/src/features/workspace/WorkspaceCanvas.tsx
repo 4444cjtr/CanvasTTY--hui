@@ -45,6 +45,8 @@ interface WorkspaceCanvasProps {
   activeSessionId: string | null;
   renamingSessionId: string | null;
   onSelectSession(id: string): void;
+  onClearSessionSelection(): void;
+  onDeselectSession(id: string): void;
   onRenameSession(id: string, title: string): Promise<void>;
   onRenameEnd(): void;
   onRequestMedia(): Promise<void>;
@@ -91,6 +93,8 @@ export function WorkspaceCanvas({
   activeSessionId,
   renamingSessionId,
   onSelectSession,
+  onClearSessionSelection,
+  onDeselectSession,
   onRenameSession,
   onRenameEnd,
   onRequestMedia,
@@ -216,6 +220,9 @@ export function WorkspaceCanvas({
     <div
       ref={viewport}
       className={`workspace pattern-${settings.pattern} ${panning ? "workspace--panning" : ""}`}
+      onPointerDownCapture={(event) => {
+        if (!(event.target as HTMLElement).closest(".terminal-card")) onClearSessionSelection();
+      }}
       onPointerDown={startPan}
       onPointerMove={(event) => {
         pan(event);
@@ -229,7 +236,8 @@ export function WorkspaceCanvas({
       onWheel={(event) => {
         if ((event.target as HTMLElement).closest('[data-wheel-owner="local"]')) return;
         event.preventDefault();
-        zoomAt(event.clientX, event.clientY, clamp(camera.zoom * wheelZoomFactor(event.deltaY, settings.zoomSensitivity), 0.2, 1.35));
+        const deltaY = settings.invertCanvasWheel ? -event.deltaY : event.deltaY;
+        zoomAt(event.clientX, event.clientY, clamp(camera.zoom * wheelZoomFactor(deltaY, settings.zoomSensitivity), 0.2, 1.35));
       }}
     >
       <div className="workspace__scene" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
@@ -265,6 +273,9 @@ export function WorkspaceCanvas({
               zoom={camera.zoom}
               snapEnabled={settings.snapToGrid}
               focusActivation={settings.focusActivation}
+              hoverFocus={settings.hoverFocus}
+              hoverFocusSpeed={settings.hoverFocusSpeed}
+              invertTerminalWheel={settings.invertTerminalWheel}
               selected={activeSessionId === session.id}
               renaming={renamingSessionId === session.id}
               snapTargets={[
@@ -277,6 +288,7 @@ export function WorkspaceCanvas({
               ]}
               onActivate={onFocusSession}
               onSelect={onSelectSession}
+              onDeselect={onDeselectSession}
               onRename={onRenameSession}
               onRenameEnd={onRenameEnd}
               onBoundsChange={onSessionBoundsChange}

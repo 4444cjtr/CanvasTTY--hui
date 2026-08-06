@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  SHIFT_ENTER_SEQUENCE,
   shouldCopyTerminalSelection,
-  shouldPasteTerminalClipboard
+  shouldPasteTerminalClipboard,
+  shouldSendTerminalLineBreak
 } from "../src/renderer/src/features/terminal/terminalShortcuts.ts";
 
 const keydown = {
@@ -46,4 +48,14 @@ test("leaves literal control-v and unrelated paste chords to the PTY", () => {
   assert.equal(shouldPasteTerminalClipboard({ ...paste, ctrlKey: true }), false);
   assert.equal(shouldPasteTerminalClipboard({ ...paste, ctrlKey: true, shiftKey: true, altKey: true }), false);
   assert.equal(shouldPasteTerminalClipboard({ ...paste, ctrlKey: true, shiftKey: true, type: "keyup" }), false);
+});
+
+test("encodes shift-enter as a modified terminal enter key", () => {
+  const enter = { ...keydown, key: "Enter", code: "Enter" };
+
+  assert.equal(shouldSendTerminalLineBreak({ ...enter, shiftKey: true }), true);
+  assert.equal(shouldSendTerminalLineBreak(enter), false);
+  assert.equal(shouldSendTerminalLineBreak({ ...enter, shiftKey: true, ctrlKey: true }), false);
+  assert.equal(shouldSendTerminalLineBreak({ ...enter, shiftKey: true, type: "keyup" }), false);
+  assert.equal(SHIFT_ENTER_SEQUENCE, "\u001b[13;2u");
 });

@@ -233,7 +233,7 @@ export class PluginManager {
     this.assertPermission(pluginId, "storage");
     assertStorageKey(key);
     const previous = this.storageWrites.get(pluginId) ?? Promise.resolve();
-    const next = previous.then(async () => {
+    const next = previous.catch(() => undefined).then(async () => {
       const storage = await this.readStorage(pluginId);
       storage[key] = jsonClone(value);
       const snapshot = JSON.stringify(storage, null, 2);
@@ -338,12 +338,13 @@ export class PluginManager {
     }] satisfies [string, StoredPluginRecord]));
     const snapshot = JSON.stringify(registry, null, 2);
     const temporaryPath = `${this.registryPath}.tmp`;
-    this.registryWrite = this.registryWrite.then(async () => {
+    const write = this.registryWrite.catch(() => undefined).then(async () => {
       await mkdir(dirname(this.registryPath), { recursive: true });
       await writeFile(temporaryPath, snapshot, "utf8");
       await rename(temporaryPath, this.registryPath);
     });
-    return this.registryWrite;
+    this.registryWrite = write;
+    return write;
   }
 }
 

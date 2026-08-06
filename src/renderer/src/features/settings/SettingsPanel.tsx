@@ -163,6 +163,22 @@ export function SettingsPanel({
                   onChange={(value) => void onChange({ focusActivation: value as FocusActivation })}
                 />
               </SettingGroup>
+              <SettingGroup label={t(locale, "hoverFocus")} description={t(locale, "hoverFocusDescription")}>
+                <Segmented
+                  value={settings.hoverFocus ? "on" : "off"}
+                  options={[["on", t(locale, "on")], ["off", t(locale, "off")]]}
+                  onChange={(value) => void onChange({ hoverFocus: value === "on" })}
+                />
+              </SettingGroup>
+              {settings.hoverFocus && (
+                <SettingGroup label={t(locale, "hoverFocusSpeed")}>
+                  <Segmented
+                    value={settings.hoverFocusSpeed}
+                    options={(["slow", "normal", "fast"] as EdgePanSpeed[]).map((value) => [value, t(locale, value)])}
+                    onChange={(value) => void onChange({ hoverFocusSpeed: value as EdgePanSpeed })}
+                  />
+                </SettingGroup>
+              )}
               <SettingGroup label={t(locale, "snapToGrid")}>
                 <Segmented
                   value={settings.snapToGrid ? "on" : "off"}
@@ -189,6 +205,20 @@ export function SettingsPanel({
                   value={settings.zoomSensitivity}
                   options={(["slow", "normal", "fast"] as ZoomSensitivity[]).map((value) => [value, t(locale, value)])}
                   onChange={(value) => void onChange({ zoomSensitivity: value as ZoomSensitivity })}
+                />
+              </SettingGroup>
+              <SettingGroup label={t(locale, "terminalWheelDirection")}>
+                <Segmented
+                  value={settings.invertTerminalWheel ? "inverted" : "normal"}
+                  options={[["inverted", t(locale, "wheelInverted")], ["normal", t(locale, "wheelNormal")]]}
+                  onChange={(value) => void onChange({ invertTerminalWheel: value === "inverted" })}
+                />
+              </SettingGroup>
+              <SettingGroup label={t(locale, "canvasWheelDirection")}>
+                <Segmented
+                  value={settings.invertCanvasWheel ? "inverted" : "normal"}
+                  options={[["normal", t(locale, "wheelNormal")], ["inverted", t(locale, "wheelInverted")]]}
+                  onChange={(value) => void onChange({ invertCanvasWheel: value === "inverted" })}
                 />
               </SettingGroup>
               <SettingGroup label={t(locale, "keyboardShortcuts")}>

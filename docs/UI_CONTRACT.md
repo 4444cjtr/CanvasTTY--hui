@@ -1,5 +1,7 @@
 # UI contract
 
+[English](UI_CONTRACT.md) · [Русский](UI_CONTRACT.ru.md) · [简体中文](UI_CONTRACT.zh-CN.md)
+
 This contract preserves the approved MVP concept and prevents feature ownership from drifting.
 
 ## Home zone
@@ -16,10 +18,13 @@ This contract preserves the approved MVP concept and prevents feature ownership 
 
 - Clicking a provider opens a Focus Card for that provider. The provider is fixed; there is no second provider selector.
 - The Focus Card contains only the provider mark, project folder, Normal/YOLO profile, launch action, and contextual danger confirmation.
-- Settings uses a top section strip: General, Appearance, Controls, and Plugins. General owns language. Appearance owns palette, background pattern, the shortcut-hint toggle, system HOME tiles, and the HOME editor entry. Controls owns click focus, window snapping, edge panning, zoom sensitivity, and keyboard shortcuts. Plugins owns install preview, permission review, the installed-plugin list, enable/disable/uninstall, and contribution actions. Media controls never appear there.
+- Settings uses a top section strip: General, Appearance, Controls, and Plugins. General owns language. Appearance owns palette, background pattern, the shortcut-hint toggle, system HOME tiles, and the HOME editor entry. Controls owns click focus, hover focus, window snapping, edge panning, zoom sensitivity, wheel direction, and keyboard shortcuts. Plugins owns install preview, permission review, the installed-plugin list, enable/disable/uninstall, and contribution actions. Media controls never appear there.
 - Click focus has three explicit modes: Off, Single click, and Double click. It is off by default. Selection and its visible outline still work when camera focus is off; a double-click mode never jumps the camera on the first click.
+- Selection is exclusive: pressing on empty canvas clears it. The selected live terminal holds xterm keyboard focus and loses it on deselect.
+- Hover focus is a separate off-by-default selection mode: after a configurable delay (slow `500ms`, normal `250ms`, fast `80ms`) the terminal under the pointer becomes selected and receives keyboard focus; leaving the card clears the selection after the same delay.
 - Keyboard shortcuts are user-remappable and persisted locally. Defaults are `Home` for focusing the Home zone and `F2` for renaming the selected terminal window. Rename is an inline header edit and does not recreate the PTY. A compact passive hint in the canvas bottom-right reflects the persisted bindings immediately and can be hidden from Appearance.
-- Snapping is enabled by default and can be disabled without changing existing window bounds. Edge panning remains off by default and exposes slow/normal/fast speed.
+- Snapping is enabled by default and can be disabled without changing existing window bounds. Edge panning remains off by default and exposes slow/normal/fast speed. Wheel direction is configurable separately for terminal scrolling and camera zoom. By default, wheel-down scrolls a live terminal down, while camera zoom preserves the original CanvasTTY direction.
+
 ## Visual system
 
 - Flat, large, pastel tiles; strong dark/light contrast; restrained shadows; no ornamental micro-controls or explanatory microcopy around self-evident controls.
@@ -31,7 +36,7 @@ This contract preserves the approved MVP concept and prevents feature ownership 
 - Terminal cards switch to semantic summary mode below `0.5×`. Summary typography counter-scales as the camera moves farther out so identical cards keep the same readable hierarchy instead of exposing tiny xterm text.
 - In semantic summary mode a card is a canvas navigation target: wheel input zooms the camera around it, and clicking the summary always selects it with a visible card outline. Camera focus follows only the configured Off/Single click/Double click mode. At normal scale the live terminal regains wheel ownership.
 - Every terminal edge and corner is a resize target. The minimum card size is `420 × 260`; resizing updates the xterm viewport and preserves the opposite edge.
-- Live terminal selection follows the visible pointer position at every canvas zoom. With a non-empty selection, `Ctrl+C`/`Ctrl+Shift+C` (or `Cmd+C`) copies it; `Ctrl+Shift+V`/`Cmd+V` and `Shift+Insert` paste from the system clipboard. Plain `Ctrl+C` without a selection remains the PTY interrupt.
+- Live terminal selection follows the visible pointer position at every canvas zoom. With a non-empty selection, `Ctrl+C`/`Ctrl+Shift+C` (or `Cmd+C`) copies it; `Ctrl+Shift+V`/`Cmd+V` and `Shift+Insert` paste from the system clipboard. Plain `Ctrl+C` without a selection remains the PTY interrupt. `Shift+Enter` sends a line-break sequence (`ESC [ 13 ; 2 u`) to the PTY instead of submitting the line.
 - Canvas plugin apps use the same movable card grammar, `54px` header, resize/snap behavior, and semantic summary below `0.5×`. A `window` contribution opens a separate CanvasTTY-owned sandboxed window; arbitrary native window embedding is not part of the contract.
 - The built-in Browser scaffold is a movable, resizable core canvas card, not a plugin contribution. Its trusted DOM chrome owns tabs, address/search input, back/forward/reload, and close; the remote page stays in a sandboxed native `WebContentsView` with a separate persistent browser profile. It is not currently exposed by a HOME launcher. Website permission requests and downloads are denied until future explicit user-facing policies exist. Below `0.5×`, during Edit HOME, and behind trusted dialogs, the native page is hidden rather than covering renderer UI.
 - With window snapping enabled, drag and resize use a hidden `10px` grid and a `10px` magnetic threshold for neighboring edges, centers, and a consistent `20px` gap.

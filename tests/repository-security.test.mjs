@@ -37,6 +37,7 @@ test("packaged app uses an explicit production allowlist", async () => {
 
   assert.match(config, /^files:\n(?:[\s\S]*?)^  - out\/\*\*\/\*$/m);
   assert.match(config, /^  - package\.json$/m);
+  assert.match(config, /^  - LICENSE$/m);
   assert.doesNotMatch(config, /^  - \*\*\/\*$/m);
   for (const privatePath of [".agents", ".codex", ".planning", "AGENTS.md", "IDEA-DRAFT.md"]) {
     assert.doesNotMatch(config, new RegExp(`^  - .*${escapeRegExp(privatePath)}`, "m"));
@@ -49,6 +50,8 @@ test("package manifest and lockfile publish the same version", async () => {
 
   assert.equal(lockfile.version, manifest.version);
   assert.equal(lockfile.packages[""].version, manifest.version);
+  assert.equal(manifest.license, "MIT");
+  assert.equal(lockfile.packages[""].license, manifest.license);
 });
 
 test("release workflow uploads installers only and keeps Windows targets distinct", async () => {

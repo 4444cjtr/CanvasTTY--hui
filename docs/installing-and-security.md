@@ -10,13 +10,13 @@ Each `v*` tag starts native GitHub-hosted builds for all three operating systems
 |:--|:--|:--|
 | Linux x86_64 | AppImage, deb | AppImage is a single-file package and requires a FUSE 2 compatibility library (`libfuse2t64` on Ubuntu 24.04); deb integrates with Debian-family desktops |
 | Windows x64 | NSIS installer, portable executable | The installer allows choosing a directory and creates Start Menu/Desktop shortcuts |
-| macOS arm64 (Apple Silicon) | dmg, zip | Both contain the graphical `.app` bundle; `1.0.0` does not include an Intel/x64 build |
+| macOS arm64 (Apple Silicon) | dmg, zip | Both contain the graphical `.app` bundle; `1.0.1` does not include an Intel/x64 build |
 
-Download artifacts only from the repository's [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) page. Version `1.0.0` does not have commercial code-signing certificates or Apple notarization. Windows SmartScreen and macOS Gatekeeper may therefore warn about an unknown developer. Verify the release tag and artifact name before acknowledging any warning.
+Download artifacts only from the repository's [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) page. Version `1.0.1` does not have commercial code-signing certificates or Apple notarization. Windows SmartScreen and macOS Gatekeeper may therefore warn about an unknown developer. Verify the release tag and artifact name before acknowledging any warning.
 
 ## What the distributable contains
 
-`electron-builder.yml` uses an explicit allowlist: production bundles under `out/`, `package.json`, and required production dependencies. Source docs, `.env`, local agent/planning folders, logs, settings, credentials, and release workspace files are not copied into the packaged application.
+`electron-builder.yml` uses an explicit allowlist: production bundles under `out/`, `package.json`, the MIT `LICENSE`, and required production dependencies. Source docs, `.env`, local agent/planning folders, logs, settings, credentials, and release workspace files are not copied into the packaged application.
 
 `node-pty` is rebuilt on the matching GitHub runner, so Linux, Windows, and macOS packages receive a native module for their own operating system. A package from one OS is never relabeled as another OS build.
 
@@ -28,6 +28,10 @@ Download artifacts only from the repository's [GitHub Releases](https://github.c
 | Provider credentials | The local credential store owned by the installed Codex, Claude, or Kimi CLI; CanvasTTY does not copy it |
 | PTY scrollback | Bounded main-process memory for the live app session; not saved in the repository |
 | Home media | The user's original local file; settings retain only its local path |
+| Runtime plugins | Static packages and the enabled registry below `userData/plugins`; isolated JSON storage below `userData/plugin-storage` is capped at 64 KB per plugin and removed on uninstall |
+| Plugin media grants | `userData/plugin-media-libraries.json`; stores the absolute paths of folders explicitly selected by the user and removes a plugin's grants on uninstall |
+| Plugin playlists | A plugin with confirmed write permission may create bounded files only below the selected library's `Playlists/` directory |
+| Built-in browser profile | Cookies, cache, and site storage in the persistent `canvastty-browser` Electron partition; the browser is not exposed from Home in `1.0.1` |
 | Logs | Local stdout/stderr only; CanvasTTY has no remote log collector or project-operated telemetry endpoint |
 
 Exact `userData` paths may vary with OS configuration. CanvasTTY asks Electron for the correct per-user directory and never uses the source checkout as runtime storage.

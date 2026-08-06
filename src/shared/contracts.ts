@@ -88,10 +88,14 @@ export interface AppSettings {
   palette: PaletteId;
   pattern: CanvasPatternId;
   snapToGrid: boolean;
+  invertTerminalWheel: boolean;
+  invertCanvasWheel: boolean;
   edgePan: boolean;
   edgePanSpeed: EdgePanSpeed;
   zoomSensitivity: ZoomSensitivity;
   focusActivation: FocusActivation;
+  hoverFocus: boolean;
+  hoverFocusSpeed: EdgePanSpeed;
   showShortcutHints: boolean;
   shortcuts: ShortcutBindings;
   mediaPath: string | null;

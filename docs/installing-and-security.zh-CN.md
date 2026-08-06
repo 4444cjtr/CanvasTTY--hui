@@ -10,13 +10,13 @@
 |:--|:--|:--|
 | Linux x86_64 | AppImage、deb | AppImage 是单文件包，需要 FUSE 2 兼容库（Ubuntu 24.04 上为 `libfuse2t64`）；deb 可集成到 Debian 系桌面环境 |
 | Windows x64 | NSIS 安装程序、便携版可执行文件 | 安装程序支持自定义安装目录，并会创建开始菜单/桌面快捷方式 |
-| macOS arm64（Apple Silicon） | dmg、zip | 两者都包含图形化的 `.app` bundle；`1.0.0` 暂不包含 Intel/x64 构建 |
+| macOS arm64（Apple Silicon） | dmg、zip | 两者都包含图形化的 `.app` bundle；`1.0.1` 暂不包含 Intel/x64 构建 |
 
-请只从本仓库的 [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) 页面下载产物。版本 `1.0.0` 没有商业代码签名证书，也未经过 Apple 公证（notarization）。因此 Windows SmartScreen 和 macOS Gatekeeper 可能会提示开发者未知。在确认任何警告之前，请先核对 release tag 和产物名称。
+请只从本仓库的 [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) 页面下载产物。版本 `1.0.1` 没有商业代码签名证书，也未经过 Apple 公证（notarization）。因此 Windows SmartScreen 和 macOS Gatekeeper 可能会提示开发者未知。在确认任何警告之前，请先核对 release tag 和产物名称。
 
 ## 分发包包含什么
 
-`electron-builder.yml` 采用显式的白名单（allowlist）：只打包 `out/` 下的 production bundle、`package.json` 和必需的 production dependencies。文档源文件、`.env`、本地的智能体/planning 目录、日志、设置、凭据以及发布工作目录中的文件都不会被复制进应用包。
+`electron-builder.yml` 采用显式的白名单（allowlist）：只打包 `out/` 下的 production bundle、`package.json`、MIT `LICENSE` 和必需的 production dependencies。文档源文件、`.env`、本地的智能体/planning 目录、日志、设置、凭据以及发布工作目录中的文件都不会被复制进应用包。
 
 `node-pty` 会在对应平台的 GitHub runner 上重新构建，因此 Linux、Windows 和 macOS 的包使用的都是各自平台的原生模块。一个系统的包绝不会被换个名字冒充另一个系统的构建。
 
@@ -28,6 +28,10 @@
 | 服务商凭据 | 由已安装的 Codex、Claude 或 Kimi CLI 自己管理的本地凭据存储，CanvasTTY 不会复制它 |
 | PTY 滚动缓冲区 | 应用会话存续期间主进程中的有界内存，不会写入仓库 |
 | Home 媒体 | 用户磁盘上的原始本地文件，设置中只保存它的本地路径 |
+| Runtime 插件 | `userData/plugins` 下的静态包和启用状态；`userData/plugin-storage` 下的隔离 JSON 存储限制为每个插件 64 KB，并在卸载时删除 |
+| 插件媒体目录授权 | `userData/plugin-media-libraries.json`；保存用户明确选择的绝对目录路径，并在卸载插件时删除其授权 |
+| 插件播放列表 | 获得写权限的插件只能在所选媒体库的 `Playlists/` 目录中创建受大小限制的文件 |
+| 内置浏览器配置 | 持久化 Electron partition `canvastty-browser` 中的 cookie、cache 与网站存储；`1.0.1` 尚未从 Home 暴露浏览器 |
 | 日志 | 仅本地的 stdout/stderr；CanvasTTY 没有远程日志收集器，也没有项目自营的遥测端点 |
 
 `userData` 的具体路径可能随系统配置而不同。CanvasTTY 会向 Electron 请求正确的每用户目录，绝不会把源码 checkout 当作运行时存储使用。
@@ -74,4 +78,4 @@ npm run package:mac
 4. 推送 `vX.Y.Z`，等待三个 GitHub Actions package job 全部完成。
 5. 在真实 Linux、Windows 和 macOS 设备上验证通过之前，将自动创建的 release 保持为预发布（prerelease）状态。
 
-安全问题请按照仓库的[安全策略](../SECURITY.md)进行报告。
+安全问题请按照仓库的[安全策略](../SECURITY.zh-CN.md)进行报告。

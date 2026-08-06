@@ -5,6 +5,7 @@ import type {
   LocaleId,
   PaletteId,
   Point,
+  EdgePanSpeed,
   FocusActivation,
   SessionBounds,
   SessionSnapshot
@@ -14,7 +15,12 @@ import { UiIcon } from "../../components/UiIcon";
 import { t } from "../../lib/i18n";
 import { sessionStatusLabel } from "../../lib/sessionStatus";
 import { attachTerminalMouseCoordinateAdapter } from "./terminalMouseCoordinates";
-import { shouldCopyTerminalSelection, shouldPasteTerminalClipboard } from "./terminalShortcuts";
+import {
+  SHIFT_ENTER_SEQUENCE,
+  shouldCopyTerminalSelection,
+  shouldPasteTerminalClipboard,
+  shouldSendTerminalLineBreak
+} from "./terminalShortcuts";
 import {
   constrainResize,
   snapMove,
@@ -29,11 +35,15 @@ interface TerminalCardProps {
   zoom: number;
   snapEnabled: boolean;
   focusActivation: FocusActivation;
+  hoverFocus: boolean;
+  hoverFocusSpeed: EdgePanSpeed;
+  invertTerminalWheel: boolean;
   selected: boolean;
   renaming: boolean;
   snapTargets: readonly SessionBounds[];
   onActivate(session: SessionSnapshot): void;
   onSelect(id: string): void;
+  onDeselect(id: string): void;
   onRename(id: string, title: string): Promise<void>;
   onRenameEnd(): void;
   onBoundsChange(id: string, bounds: SessionBounds): void;
@@ -51,6 +61,13 @@ interface ResizeState extends DragState {
 }
 
 const RESIZE_DIRECTIONS: ResizeDirection[] = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
+const HOVER_FOCUS_DELAYS: Record<EdgePanSpeed, number> = {
+  slow: 500,
+  normal: 250,
+  fast: 80
+};
+const TERMINAL_FOCUS_IN = "\u001b[I";
+const TERMINAL_FOCUS_OUT = "\u001b[O";
 
 export function TerminalCard({
   session,
@@ -59,11 +76,15 @@ export function TerminalCard({
   zoom,
   snapEnabled,
   focusActivation,
+  hoverFocus,
+  hoverFocusSpeed,
+  invertTerminalWheel,
   selected,
   renaming,
   snapTargets,
   onActivate,
   onSelect,
+  onDeselect,
   onRename,
   onRenameEnd,
   onBoundsChange,
@@ -73,6 +94,12 @@ export function TerminalCard({
   const terminalRef = useRef<Terminal | null>(null);
   const renameInput = useRef<HTMLInputElement>(null);
   const renameInFlight = useRef(false);
+  const hoverFocusTimer = useRef<number | null>(null);
+  const hoverFocusTransition = useRef<"focus" | "blur" | null>(null);
+  const hoverSelected = useRef(false);
+  const suppressFocusReport = useRef(false);
+  const invertTerminalWheelRef = useRef(invertTerminalWheel);
+  invertTerminalWheelRef.current = invertTerminalWheel;
   const dragState = useRef<DragState | null>(null);
   const resizeState = useRef<ResizeState | null>(null);
   const [position, setPosition] = useState(session.position);
@@ -107,6 +134,12 @@ export function TerminalCard({
     terminal.loadAddon(fitAddon);
     terminal.open(host);
     terminal.attachCustomKeyEventHandler((event) => {
+      if (shouldSendTerminalLineBreak(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+        window.canvasTTY.terminal.input(session.id, SHIFT_ENTER_SEQUENCE);
+        return false;
+      }
       if (shouldCopyTerminalSelection(event, terminal.hasSelection())) {
         event.preventDefault();
         event.stopPropagation();
@@ -126,7 +159,7 @@ export function TerminalCard({
     });
     const screen = terminal.element?.querySelector<HTMLElement>(".xterm-screen");
     const detachMouseCoordinateAdapter = screen
-      ? attachTerminalMouseCoordinateAdapter(screen)
+      ? attachTerminalMouseCoordinateAdapter(screen, () => invertTerminalWheelRef.current ? -1 : 1)
       : () => undefined;
     terminalRef.current = terminal;
     if (session.buffer) terminal.write(session.buffer);
@@ -142,7 +175,11 @@ export function TerminalCard({
     const resizeObserver = new ResizeObserver(fit);
     resizeObserver.observe(host);
 
-    const input = terminal.onData((data) => window.canvasTTY.terminal.input(session.id, data));
+    const input = terminal.onData((data) => {
+      // Hover focus routes keyboard input locally; it is not an OS focus change for the agent TUI.
+      if (suppressFocusReport.current && (data === TERMINAL_FOCUS_IN || data === TERMINAL_FOCUS_OUT)) return;
+      window.canvasTTY.terminal.input(session.id, data);
+    });
     const resize = terminal.onResize(({ cols, rows }) => window.canvasTTY.terminal.resize(session.id, cols, rows));
     const unsubscribe = window.canvasTTY.terminal.onData((event) => {
       if (event.id === session.id) terminal.write(event.data);
@@ -164,6 +201,31 @@ export function TerminalCard({
     const terminal = terminalRef.current;
     if (terminal) terminal.options.theme = terminalTheme(palette);
   }, [palette]);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    const transition = hoverFocusTransition.current;
+    suppressFocusReport.current = transition !== null || (!selected && hoverSelected.current);
+    if (selected && !renaming && !summaryMode) terminal.focus();
+    else if (!selected) {
+      terminal.blur();
+      renameInput.current?.blur();
+      hoverSelected.current = false;
+    }
+    suppressFocusReport.current = false;
+    hoverFocusTransition.current = null;
+  }, [renaming, selected, summaryMode]);
+
+  useEffect(() => () => {
+    if (hoverFocusTimer.current !== null) window.clearTimeout(hoverFocusTimer.current);
+  }, []);
+
+  useEffect(() => {
+    if (hoverFocus || hoverFocusTimer.current === null) return;
+    window.clearTimeout(hoverFocusTimer.current);
+    hoverFocusTimer.current = null;
+  }, [hoverFocus]);
 
   const bindRenameInput = useCallback((input: HTMLInputElement | null): void => {
     renameInput.current = input;
@@ -274,6 +336,30 @@ export function TerminalCard({
     onActivate(session);
   };
 
+  const scheduleHoverFocus = (): void => {
+    if (hoverFocusTimer.current !== null) window.clearTimeout(hoverFocusTimer.current);
+    hoverFocusTimer.current = null;
+    if (!hoverFocus || selected) return;
+    hoverFocusTimer.current = window.setTimeout(() => {
+      hoverFocusTimer.current = null;
+      hoverSelected.current = true;
+      hoverFocusTransition.current = "focus";
+      onSelect(session.id);
+    }, HOVER_FOCUS_DELAYS[hoverFocusSpeed]);
+  };
+
+  const scheduleHoverBlur = (): void => {
+    if (hoverFocusTimer.current !== null) window.clearTimeout(hoverFocusTimer.current);
+    hoverFocusTimer.current = null;
+    if (!hoverFocus || !selected) return;
+    hoverFocusTimer.current = window.setTimeout(() => {
+      hoverFocusTimer.current = null;
+      hoverFocusTransition.current = "blur";
+      hoverSelected.current = false;
+      onDeselect(session.id);
+    }, HOVER_FOCUS_DELAYS[hoverFocusSpeed]);
+  };
+
   const commitRename = async (): Promise<void> => {
     if (renameInFlight.current) return;
     const title = renameInput.current?.value.trim() ?? "";
@@ -296,7 +382,18 @@ export function TerminalCard({
       data-interactive="true"
       data-wheel-owner={summaryMode ? undefined : "local"}
       tabIndex={-1}
-      onPointerDownCapture={() => onSelect(session.id)}
+      onPointerDownCapture={(event) => {
+        if (hoverFocusTimer.current !== null) window.clearTimeout(hoverFocusTimer.current);
+        hoverFocusTimer.current = null;
+        if (hoverFocusTransition.current === "focus") hoverSelected.current = false;
+        hoverFocusTransition.current = null;
+        onSelect(session.id);
+        if (!renaming && !summaryMode && !(event.target as HTMLElement).closest("button, input")) {
+          terminalRef.current?.focus();
+        }
+      }}
+      onPointerEnter={scheduleHoverFocus}
+      onPointerLeave={scheduleHoverBlur}
       onClick={activateCard}
       onDoubleClick={activateCardDouble}
       style={{

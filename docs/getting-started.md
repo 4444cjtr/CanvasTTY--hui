@@ -30,6 +30,15 @@ npm run dev
 
 The **YOLO** profile disables provider safety prompts where the provider supports such a mode. CanvasTTY presents an explicit danger confirmation; use it only in a directory you are willing to let the agent modify.
 
+## Terminal input and controls
+
+- Press any live terminal card to select it. The selected card receives xterm keyboard focus immediately, so typing is sent to its PTY without a second press inside the text area.
+- Press empty canvas to clear the selection, keyboard focus, and visible outline.
+- **Settings → Controls → Focus on hover** can select the terminal under the pointer and clear it after leaving. The same delay applies in both directions: slow `500ms`, normal `250ms`, or fast `80ms`. It is off by default.
+- Terminal scrolling and canvas zoom have independent wheel-direction settings. By default, wheel-down scrolls down in a live terminal, while canvas zoom keeps the original CanvasTTY direction.
+- `Shift+Enter` sends a modified Enter sequence to insert a line break in compatible agent prompts without submitting. `Enter` keeps its normal PTY behavior.
+- With terminal text selected, `Ctrl+C`/`Ctrl+Shift+C` or `Cmd+C` copies it. Paste with `Ctrl+Shift+V`, `Cmd+V`, or `Shift+Insert`. Plain `Ctrl+C` without a selection remains the PTY interrupt.
+
 ## Useful commands
 
 | Command | Purpose |

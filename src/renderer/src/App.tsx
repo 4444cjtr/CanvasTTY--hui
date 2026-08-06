@@ -44,10 +44,14 @@ const FALLBACK_SETTINGS: AppSettings = {
   palette: "sage",
   pattern: "dots",
   snapToGrid: true,
+  invertTerminalWheel: true,
+  invertCanvasWheel: false,
   edgePan: false,
   edgePanSpeed: "normal",
   zoomSensitivity: "normal",
   focusActivation: "off",
+  hoverFocus: false,
+  hoverFocusSpeed: "normal",
   showShortcutHints: true,
   shortcuts: { ...DEFAULT_SHORTCUTS },
   mediaPath: null,
@@ -570,6 +574,8 @@ export function App(): React.JSX.Element {
           activeSessionId={activeSessionId}
           renamingSessionId={renamingSessionId}
           onSelectSession={setActiveSessionId}
+          onClearSessionSelection={() => setActiveSessionId(null)}
+          onDeselectSession={(id) => setActiveSessionId((current) => current === id ? null : current)}
           onRenameSession={renameSession}
           onRenameEnd={() => setRenamingSessionId(null)}
           onSessionBoundsChange={changeSessionBounds}

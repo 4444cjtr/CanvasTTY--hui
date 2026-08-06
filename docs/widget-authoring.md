@@ -42,7 +42,7 @@ New widgets should look native to CanvasTTY:
 - Model `loading`, `available`, `stale`, `unavailable`, and `error` explicitly. Do not turn missing data into an empty bar, zero, or false success.
 - Verify normal scale and zoomed-out semantic readability. Identical entities must keep identical typography and weight.
 
-Home has fixed ownership rules: media controls remain inside `HomeMediaWidget`; Settings owns locale, palette, canvas pattern, and window snapping only. Read the [UI contract](UI_CONTRACT.md) before changing either.
+Home has fixed ownership rules: media controls remain inside `HomeMediaWidget`. Settings owns user-facing configuration through General, Appearance, Controls, and Plugins; feature runtime behavior stays with its owning component or service. Read the [UI contract](UI_CONTRACT.md) before changing either.
 
 ## A brief for another AI coding agent
 

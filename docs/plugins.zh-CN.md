@@ -1,0 +1,179 @@
+# 运行时插件
+
+[English](plugins.md) · [Русский](plugins.ru.md) · [简体中文](plugins.zh-CN.md) · [文档首页](README.zh-CN.md)
+
+CanvasTTY 运行时插件是从 HTTPS GitHub 仓库安装的静态 web 包。一个插件可以贡献一个 HOME 小组件、一个可移动的画布应用、一个独立的应用窗口，或这三者的任意组合。插件的 HTML、CSS 和 JavaScript 运行在没有 Node.js 的 Electron sandbox 中。
+
+## 信任模型
+
+安装插件等同于允许第三方浏览器代码在本地运行。CanvasTTY 会压缩这一信任面，但无法让未知代码变得可信：
+
+- CanvasTTY 只下载 GitHub 仓库根 URL 对应默认分支的 tar 归档，绝不运行 `npm install`、构建钩子、原生模块或仓库脚本。
+- 包内不得包含符号链接，且限制为 500 个文件或目录 / 25 MB。单个对外提供的资源限制为 8 MB。
+- 插件 frame 拥有不透明的 sandbox origin，无法访问父级 DOM，没有 `window.canvasTTY`，也没有 Node.js API。
+- 独立窗口的 preload 不暴露任何 Node 原语。它通过一个带身份校验的 IPC handler 转发同样的 SDK 消息。
+- 每个特权 SDK 方法都由 manifest 中的权限把关。权限会在用户确认安装之前展示。
+- 服务商凭据、PTY 缓冲区、工作目录、原始服务商响应和文件系统访问绝不会跨越插件边界。
+- 禁用或卸载插件会立即停止提供其资源，并关闭其独立窗口。
+
+CanvasTTY 不嵌入任意的原生操作系统窗口。`window` 贡献是一个由 CanvasTTY 持有的 sandboxed `BrowserWindow`。原生 reparenting 在 Wayland、macOS、Windows、不同 DPI 模式、弹窗和 GPU surface 之间既不可移植也不可靠。
+
+## 包结构
+
+仓库根目录必须包含 `canvastty.plugin.json`。Entry 是相对的静态 HTML 文件；内联脚本会被插件的 Content Security Policy 拦截。
+
+```text
+canvastty.plugin.json
+shared/plugin.css
+widgets/status.html
+widgets/status.js
+apps/notes.html
+apps/notes.js
+windows/focus.html
+windows/focus.js
+```
+
+端到端示例见 [`examples/plugins/studio-kit`](../examples/plugins/studio-kit)。
+编辑器工具可以使用 [manifest JSON Schema](canvastty-plugin.schema.json) 和 [SDK TypeScript 声明](plugin-api.d.ts)。
+
+## Manifest v1
+
+```json
+{
+  "apiVersion": 1,
+  "id": "com.example.studio-kit",
+  "name": "Studio Kit",
+  "version": "1.0.0",
+  "description": "Small CanvasTTY surfaces backed by real host state.",
+  "permissions": ["storage", "sessions:read", "launcher:open"],
+  "contributions": [
+    {
+      "id": "session-status",
+      "kind": "home-widget",
+      "title": "Session status",
+      "entry": "widgets/status.html",
+      "defaultSize": { "columns": 4, "rows": 2 }
+    },
+    {
+      "id": "notes",
+      "kind": "canvas-app",
+      "title": "Notes",
+      "entry": "apps/notes.html",
+      "defaultSize": { "width": 680, "height": 440 }
+    },
+    {
+      "id": "focus",
+      "kind": "window",
+      "title": "Focus",
+      "entry": "windows/focus.html",
+      "defaultSize": { "width": 900, "height": 620 }
+    }
+  ]
+}
+```
+
+插件和 contribution 的 ID 是稳定的持久化键，发布后不要重命名。插件版本使用语义化版本文本。HOME 以宽敞的 16 × 12 逻辑网格起步，同时保留原有的 12 × 8 构图。编辑器可以把可见边界扩展到 48 × 36，且不缩小单元格尺寸；需要时添加小组件会自动扩展边界。画布应用使用世界坐标像素，并参与与终端卡片相同的吸附系统。
+
+## 权限
+
+| 权限 | SDK 能力 | 数据边界 |
+|:--|:--|:--|
+| `storage` | `storage.get`、`storage.set` | 隔离的 JSON 存储，每个插件 64 KB |
+| `sessions:read` | `sessions.list` | 仅限 ID、服务商、标题、状态、开始时间、退出码 |
+| `limits:read` | `limits.get` | 与 HOME 使用的同一个脱敏 `LimitsSnapshot` |
+| `launcher:open` | `launcher.open` | 打开内置服务商的 Focus Card 或终端动作；不会绕过用户的启动选择 |
+| `external:open` | `external.open` | 仅通过操作系统打开明确的 HTTP(S) URL |
+| `media:library` | `media.*` | 仅限用户选择的音乐文件夹；绝不暴露绝对路径，音频通过可 seek 的 `canvastty-media://` 流提供 |
+| `playlists:read` | `playlists.list`、`playlists.read` | 读取已授权音乐文件夹中的 `.m3u`、`.m3u8` 和 `.pls`，以及其 `Playlists/` 目录下的 `.json`，每个文件最大 4 MB |
+| `playlists:write` | `playlists.write` | 原子地写入一个命名播放列表到已授权文件夹的 `Playlists/` 目录，最大 4 MB |
+| `network` | 浏览器 `fetch` | 在插件 CSP 中允许 HTTPS 和 loopback 请求；不附带任何 CanvasTTY 凭据 |
+
+声明权限并不会暴露一个通用的 IPC 通道。未知的方法和权限会被拒绝。
+
+## SDK
+
+以外部脚本方式加载 host SDK：
+
+```html
+<script src='canvastty-plugin://host/sdk.js'></script>
+<script src='./index.js'></script>
+```
+
+SDK 会创建 `window.CanvasTTYPlugin`：
+
+```js
+const host = window.CanvasTTYPlugin;
+
+host.onContext(({ appearance, contribution }) => {
+  document.documentElement.dataset.palette = appearance.palette;
+  document.title = contribution.title;
+});
+
+const sessions = await host.request("sessions.list");
+await host.storage.set("draft", { text: "Local to this plugin" });
+const draft = await host.storage.get("draft");
+await host.request("launcher.open", { provider: "codex" });
+await host.request("window.open", { contributionId: "focus" });
+
+const library = await host.media.pickLibrary();
+if (library) {
+  const audio = document.querySelector("audio");
+  const tracks = await host.media.scanLibrary(library.id);
+  if (audio) audio.src = tracks[0]?.streamUrl ?? "";
+  const playlists = await host.playlists.list(library.id);
+  const text = playlists[0] ? await host.playlists.read(library.id, playlists[0].id) : "";
+  await host.playlists.write(library.id, "favorites.m3u8", text || "#EXTM3U\n");
+}
+```
+
+支持的方法有 `host.getContext`、`storage.*`、`sessions.list`、`limits.get`、`launcher.open`、`external.open`、`window.open`、`media.*` 和 `playlists.*`。`window.open` 只能以同一个插件声明的 `window` 贡献为目标。
+
+音乐库授权会跨重启持久化，并且只能由拥有它的插件列出或撤销。扫描会跳过符号链接，返回相对路径、元数据和不透明的流 URL，而不是库根目录的绝对路径。卸载插件会撤销其全部授权。播放列表内容按原始写法返回，刻意保持格式中立，因此播放器可以使用标准的 M3U/PLS 或自己的 JSON schema；导入的播放列表本身可能包含绝对路径。
+
+### 编写完整的播放器插件
+
+本地音乐库播放器通常声明：
+
+```json
+"permissions": ["storage", "media:library", "playlists:read", "playlists:write"]
+```
+
+仅在需要远程目录、电台、封面或流媒体时添加 `network`，仅在需要于系统浏览器中打开明确链接时添加 `external:open`。`storage` 用于播放器偏好、收藏、队列状态和其他小型 JSON 元数据；音频文件保留在用户选择的文件夹中。
+
+| SDK 调用 | 结果与预期用途 |
+|:--|:--|
+| `host.media.pickLibrary()` | 打开原生目录选择器并持久化授权；返回 `{ id, name }`，取消时返回 `null` |
+| `host.media.listLibraries()` | 重启后恢复此插件已授权的音乐库，不暴露绝对路径 |
+| `host.media.scanLibrary(libraryId)` | 递归返回最多 20,000 个受支持的曲目，包含 `id`、显示名、相对路径、大小、MIME 类型和 `streamUrl` |
+| `host.media.revokeLibrary(libraryId)` | 移除此插件对所选文件夹的授权 |
+| `host.playlists.list(libraryId)` | 列出已授权音乐库中最多 2,000 个可读取的播放列表文件 |
+| `host.playlists.read(libraryId, playlistId)` | 返回原始 UTF-8 播放列表文本，最大 4 MB |
+| `host.playlists.write(libraryId, name, content)` | 原子地写入 `.m3u`、`.m3u8`、`.pls` 或 `.json` 到音乐库的 `Playlists/` 目录，最大 4 MB |
+
+扫描的音频扩展名为 `.aac`、`.flac`、`.m4a`、`.mp3`、`.oga`、`.ogg`、`.opus`、`.wav` 和 `.webm`。可以把 `track.streamUrl` 直接赋给 `<audio>` 元素；host 支持 byte-range 响应，因此时长探测和 seek 都能正常工作。拥有 `media:library` 的插件在需要字节数据做浏览器端元数据解析时，也可以 `fetch(track.streamUrl)`。完整的方法重载和结果接口见 [`plugin-api.d.ts`](plugin-api.d.ts)。
+
+推荐的启动流程：调用 `listLibraries()`；仅在没有已授权文件夹时才通过 `pickLibrary()` 请求选择文件夹；扫描所选音乐库；从 `storage` 恢复队列和偏好；然后列出并解析播放列表。把已撤销或已移动的文件夹当作明确的不可用状态处理，并让用户重新选择。
+
+上下文更新包含当前 CanvasTTY 的语言环境和配色方案。插件自行负责其内部本地化和样式；应在 contribution 的预期尺寸下保持可读，且不得虚构加载进度、会话、状态、限额或遥测。
+
+## 安装与管理
+
+1. 把静态包发布到公开 GitHub 仓库的根目录。
+2. 打开 **Settings → Plugins**。
+3. 粘贴 `https://github.com/owner/repository` 并选择 **Inspect**。
+4. 查看 manifest 和请求的权限，然后确认 **Install**。
+5. 在同一个区块启用/禁用或卸载该包，也可以在那里添加或移除 HOME 小组件。
+6. 打开 **Settings → Appearance → HOME composition**，然后选择 **Edit HOME**，即可拖动磁贴、调整大小，或拉动 HOME 边界的右下角。Settings 磁贴会保留为恢复入口；其余所有核心磁贴和插件磁贴都是可选的。
+
+当前安装器会刻意拒绝私有仓库、GitHub `/tree/branch/subdirectory` 链接以及需要构建步骤的仓库。请把可直接运行的静态包发布到仓库根目录。
+
+## 作者检查清单
+
+- 只使用结构化的 host 数据和明确的 loading/unavailable/error 状态。
+- 请求最小的权限集合。
+- 所有脚本保持外部化；不要依赖内联脚本执行。
+- 不要指望 Node.js、文件系统路径、PTY 历史、服务商 token 或父级 DOM 访问。
+- 在声明的最小网格尺寸和画布缩放状态下测试 HOME 小组件。
+- 在低于 `0.5×` 的语义摘要模式下测试画布应用。
+- 在嵌入式和独立窗口两种 contribution 中测试相同的 SDK 调用。
+- 贡献示例或改动 host 时，运行 CanvasTTY 的 `npm test`、`npm run typecheck` 和 `npm run build`。

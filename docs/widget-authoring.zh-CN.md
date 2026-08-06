@@ -2,7 +2,7 @@
 
 [English](widget-authoring.md) · [Русский](widget-authoring.ru.md) · [简体中文](widget-authoring.zh-CN.md) · [文档首页](README.zh-CN.md)
 
-本指南介绍随 CanvasTTY 一起编译的可信源码级小组件。对于运行时安装的第三方包，请使用带权限模型的[运行时插件 API（英文）](plugins.md)。当功能需要新的可信主进程适配器或改变核心产品职责时，仍应采用源码级方式。
+本指南介绍随 CanvasTTY 一起编译的可信源码级小组件。对于运行时安装的第三方包，请使用带权限模型的[运行时插件 API](plugins.zh-CN.md)。当功能需要新的可信主进程适配器或改变核心产品职责时，仍应采用源码级方式。
 
 ## 选择最小的扩展形态
 
@@ -42,7 +42,7 @@
 - 明确建模 `loading`、`available`、`stale`、`unavailable` 和 `error` 状态。数据缺失不能显示成空进度条、零值或假成功。
 - 在正常比例和缩小状态下都要验证语义可读性。相同实体必须保持一致的字体和字重。
 
-Home 的职责划分是固定的：媒体控件留在 `HomeMediaWidget`；Settings 只负责语言、配色、画布图案和窗口吸附。改动这两处之前，请先阅读 [UI 契约](UI_CONTRACT.md)。
+Home 的职责划分是固定的：媒体控件留在 `HomeMediaWidget`。用户配置由 Settings 中的 General、Appearance、Controls 和 Plugins 管理；feature 的运行时行为仍由所属组件或服务负责。改动这些职责前，请先阅读 [UI 契约](UI_CONTRACT.zh-CN.md)。
 
 ## 给其他 AI 编程智能体的任务简报
 

@@ -13,6 +13,8 @@ CanvasTTY is a spatial Electron desktop for real local terminals and AI-agent CL
 | [Widget authoring](widget-authoring.md) | Source-level extension paths, visual grammar, process boundaries, and an AI-agent brief |
 | [Runtime plugins](plugins.md) | Manifest v1, permissions, HOME widgets, canvas apps, separate windows, player media/playlist APIs, SDK, and install flow |
 | [Metrics and telemetry](metrics-and-telemetry.md) | Subscription limits, session token usage, source priority, privacy, stale states, and tests |
+| [Security policy](../SECURITY.md) | Supported release, vulnerability reporting, local data boundaries, plugins, media grants, and browser storage |
+| [Changelog](../CHANGELOG.md) | User-visible fixes and features by release |
 
 ## Maintainer references
 
@@ -30,3 +32,5 @@ CanvasTTY supports static runtime plugins through manifest API v1. Untrusted UI 
 Never invent session status, counters, quota, token usage, cost, countdowns, or progress. Use a real structured source and surface `loading`, `stale`, `unavailable`, or `error` when the source cannot answer.
 
 Back to the [repository overview](../README.md).
+
+CanvasTTY is released under the [MIT License](../LICENSE).

@@ -8,6 +8,17 @@ interface TerminalKeyEvent {
   altKey: boolean;
 }
 
+export const SHIFT_ENTER_SEQUENCE = "\u001b[13;2u";
+
+export function shouldSendTerminalLineBreak(event: TerminalKeyEvent): boolean {
+  return event.type === "keydown"
+    && (event.key === "Enter" || event.code === "Enter" || event.code === "NumpadEnter")
+    && event.shiftKey
+    && !event.ctrlKey
+    && !event.metaKey
+    && !event.altKey;
+}
+
 export function shouldCopyTerminalSelection(event: TerminalKeyEvent, hasSelection: boolean): boolean {
   if (event.type !== "keydown" || !hasSelection || event.altKey) return false;
 

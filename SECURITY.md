@@ -1,8 +1,10 @@
 # Security policy
 
+[English](SECURITY.md) · [Русский](SECURITY.ru.md) · [简体中文](SECURITY.zh-CN.md)
+
 ## Supported version
 
-CanvasTTY `0.9.x` is the current public preview line. It is pre-1.0 software and its unsigned cross-platform packages require additional platform warnings to be acknowledged.
+CanvasTTY `1.0.1` is the current release and the only line receiving fixes. Its unsigned cross-platform packages require additional platform warnings to be acknowledged.
 
 ## Reporting a vulnerability
 
@@ -21,5 +23,7 @@ Include the CanvasTTY version, operating system, affected flow, impact, and mini
 - Provider usage requests go only to the matching provider adapter; sanitized limit snapshots cross IPC, never raw responses or credentials.
 - Runtime plugins are static GitHub packages stored below `userData/plugins`. CanvasTTY does not execute their repository scripts or expose Node.js. Plugin UI runs in sandboxed frames/windows and receives only the permissions confirmed during install. A plugin is still third-party code: inspect its source and requested `network`/`external:open` capabilities before installing it.
 - Plugin storage is isolated by plugin ID below `userData/plugin-storage`, capped at 64 KB, and is removed on uninstall. Session access excludes PTY buffers and working directories.
+- Plugin media grants are stored in `userData/plugin-media-libraries.json`. They contain selected absolute folder paths and are removed when the owning plugin is uninstalled. A plugin with playlist write permission may create bounded files inside the selected library's `Playlists/` directory.
+- The built-in browser scaffold uses the persistent `canvastty-browser` Electron partition for cookies, cache, and site storage. It is not exposed from Home in `1.0.1`; if enabled in a future release, browser data remains local below Electron `userData` unless a visited website transmits it.
 
 The repository runs `npm run audit:secrets` in CI and before packaging. This is a guardrail, not a reason to commit a secret temporarily: if a real secret ever reaches Git history, revoke it immediately and rewrite/purge the affected history before publishing.
