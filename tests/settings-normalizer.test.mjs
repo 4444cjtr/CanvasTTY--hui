@@ -20,6 +20,7 @@ const fallback = {
   edgePan: true,
   edgePanSpeed: "normal",
   zoomSensitivity: "normal",
+  zoomOverApplications: false,
   focusActivation: "off",
   hoverFocus: false,
   hoverFocusSpeed: "normal",
@@ -48,6 +49,7 @@ test("keeps valid wheel, edge pan, zoom, and focus values", () => {
       edgePan: false,
       edgePanSpeed: "fast",
       zoomSensitivity: "slow",
+      zoomOverApplications: true,
       hoverFocus: true,
       hoverFocusSpeed: "fast"
     },
@@ -58,6 +60,7 @@ test("keeps valid wheel, edge pan, zoom, and focus values", () => {
   assert.equal(normalized.edgePan, false);
   assert.equal(normalized.edgePanSpeed, "fast");
   assert.equal(normalized.zoomSensitivity, "slow");
+  assert.equal(normalized.zoomOverApplications, true);
   assert.equal(normalized.hoverFocus, true);
   assert.equal(normalized.hoverFocusSpeed, "fast");
 });
@@ -70,6 +73,7 @@ test("falls back when edge pan and zoom values are garbage", () => {
   assert.equal(normalized.edgePan, fallback.edgePan);
   assert.equal(normalized.edgePanSpeed, fallback.edgePanSpeed);
   assert.equal(normalized.zoomSensitivity, fallback.zoomSensitivity);
+  assert.equal(normalized.zoomOverApplications, fallback.zoomOverApplications);
   assert.equal(normalized.invertTerminalWheel, fallback.invertTerminalWheel);
   assert.equal(normalized.invertCanvasWheel, fallback.invertCanvasWheel);
   assert.equal(normalized.focusActivation, fallback.focusActivation);
@@ -86,6 +90,7 @@ test("older settings files without the new keys inherit defaults", () => {
   assert.equal(normalized.edgePan, fallback.edgePan);
   assert.equal(normalized.edgePanSpeed, fallback.edgePanSpeed);
   assert.equal(normalized.zoomSensitivity, fallback.zoomSensitivity);
+  assert.equal(normalized.zoomOverApplications, fallback.zoomOverApplications);
   assert.equal(normalized.invertTerminalWheel, fallback.invertTerminalWheel);
   assert.equal(normalized.invertCanvasWheel, fallback.invertCanvasWheel);
   assert.equal(normalized.hoverFocus, fallback.hoverFocus);
@@ -105,6 +110,7 @@ test("fresh installs keep optional navigation automation off", async () => {
     assert.equal(store.get().edgePan, false);
     assert.equal(store.get().edgePanSpeed, "normal");
     assert.equal(store.get().zoomSensitivity, "normal");
+    assert.equal(store.get().zoomOverApplications, false);
     assert.equal(store.get().invertTerminalWheel, true);
     assert.equal(store.get().invertCanvasWheel, false);
     assert.equal(store.get().focusActivation, "off");
