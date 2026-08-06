@@ -9,19 +9,20 @@ CanvasTTY 是一个基于 Electron 的空间画布桌面，用于承载真实的
 | 指南 | 内容 |
 |:--|:--|
 | [快速开始](getting-started.zh-CN.md) | 环境要求、本地启动、首个会话与验证命令 |
+| [内置浏览器与审计日志](browser.zh-CN.md) | 画布控制、设置、智能体访问、网站/文件边界、活动列表与持久化脱敏审计文件 |
 | [安装、发布与本地数据](installing-and-security.zh-CN.md) | 安装包格式、未签名预览版注意事项、凭据边界与发布检查 |
 | [编写小组件](widget-authoring.zh-CN.md) | 源码级扩展路径、视觉语言、进程边界与 AI 智能体任务简报 |
 | [运行时插件](plugins.zh-CN.md) | Manifest v1、权限、HOME 小组件、画布应用、独立窗口、播放器 media/playlist API、SDK 与安装流程 |
 | [指标与遥测](metrics-and-telemetry.zh-CN.md) | 订阅限额、会话 token 用量、数据源优先级、隐私、`stale` 状态与测试 |
-| [安全策略](../SECURITY.zh-CN.md) | 支持的版本、漏洞报告、本地数据边界、插件、媒体目录授权与浏览器存储 |
+| [安全策略](../SECURITY.zh-CN.md) | 支持的版本、漏洞报告、本地数据边界、插件、媒体目录授权、浏览器存储与审计日志 |
 | [更新日志](../CHANGELOG.zh-CN.md) | 各版本面向用户的修复与功能 |
 
 ## 维护者参考
 
 | 契约 | 改动以下内容前先阅读 |
 |:--|:--|
-| [架构](ARCHITECTURE.zh-CN.md) | IPC、PTY 生命周期、持久化、进程职责或服务商适配器 |
-| [UI 契约](UI_CONTRACT.zh-CN.md) | Home、启动流程、Settings、画布行为、终端卡片或视觉语义 |
+| [架构](ARCHITECTURE.zh-CN.md) | IPC、PTY/浏览器生命周期、持久化、进程职责、智能体传输或服务商适配器 |
+| [UI 契约](UI_CONTRACT.zh-CN.md) | Home、启动流程、Settings、画布行为、终端/浏览器卡片或视觉语义 |
 
 ## 当前扩展方式
 

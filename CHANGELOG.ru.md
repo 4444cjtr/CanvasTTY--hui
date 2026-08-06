@@ -2,6 +2,19 @@
 
 [English](CHANGELOG.md) · [Русский](CHANGELOG.ru.md) · [简体中文](CHANGELOG.zh-CN.md)
 
+## 1.0.2
+
+- Встроенный браузер открыт из HOME как перемещаемое и изменяемое по размеру canvas-приложение с доверенными tabs/navigation, downloads, site dialogs, безопасным восстановлением вкладок, очисткой browser data, semantic summaries и стабильной native-view geometry во время движения камеры/карточки.
+- Для сессий Claude Code, Codex и Kimi, запущенных через CanvasTTY, добавлена scoped browser automation через встроенный stdio MCP helper и аутентифицированный Unix socket текущего пользователя или защищённый Windows named pipe; TCP listener, remote-debugging port, произвольный JavaScript, cookie/storage API и raw CDP не открываются.
+- Добавлены badges/cursors подключённых агентов, изоляция activity по агентам, element refs с document revision, FIFO mutations по вкладкам, request deduplication, ограниченные concurrency/rate limits/timeouts, работа с dialogs/downloads и очищенные screenshots с fail-closed при невозможности надёжно закрыть чувствительные области.
+- Добавлен постоянный очищенный hash-chain аудит браузера в Electron `userData/browser/audit`: ротация при 100 МБ, retention ротированных файлов 30 дней, integrity checks и fail-closed agent mutations, если обязательный pre-action audit нельзя записать.
+- Карточка браузера интегрирована с terminal-equivalent выбором на канвасе, click/hover focus, снятием выбора по пустому канвасу, window actions, wheel zoom поверх приложений и стабильной renderer surface во время перемещения native view.
+- Windows agent transport усилен встроенным native named-pipe host, доступным только точному SID текущего пользователя; release pipeline дополнен реальными Electron/provider smoke tests.
+- Исправлен secret audit репозитория для linked Git worktree: имена repository metadata игнорируются до определения типа entry, при этом personal path в публикуемых файлах по-прежнему обнаруживается.
+- Документация браузера, безопасности, локальных данных, audit log и релиза синхронизирована на английском, русском и упрощённом китайском.
+
+Известная проблема: если главное окно CanvasTTY изначально открылось не maximized, запуск Browser может растянуть native browser view на всё окно и сделать управление канвасом недоступным. В этом prerelease запускайте CanvasTTY maximized до открытия Browser; исправление запланировано на следующий patch.
+
 ## 1.0.1
 
 - Добавлен перенос строки в терминале через `Shift+Enter` без отправки текущего промпта.

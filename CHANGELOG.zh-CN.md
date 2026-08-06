@@ -2,6 +2,19 @@
 
 [English](CHANGELOG.md) · [Русский](CHANGELOG.ru.md) · [简体中文](CHANGELOG.zh-CN.md)
 
+## 1.0.2
+
+- 内置浏览器现已从 HOME 提供，作为可移动、可调整大小的画布应用，包含可信标签/导航、下载、网站 dialog、安全标签恢复、浏览器数据清理、语义摘要，以及画布/卡片移动时稳定的 native-view geometry。
+- 为 CanvasTTY 启动的 Claude Code、Codex 与 Kimi 会话新增 scoped 浏览器自动化，通过内置 stdio MCP helper 和经过认证的当前用户 Unix socket 或受保护 Windows named pipe 接入；不会暴露 TCP listener、remote-debugging port、任意 JavaScript、cookie/storage API 或 raw CDP。
+- 新增已连接智能体 badge/cursor、按智能体隔离的活动、绑定 document revision 的 element ref、每标签页 FIFO mutation、request 去重、有上限的 concurrency/rate limit/timeout、dialog/download 处理，以及在无法可靠遮挡敏感区域时 fail closed 的脱敏截图。
+- 新增 Electron `userData/browser/audit` 下的持久化脱敏浏览器 hash-chain 审计：100 MB 轮转、轮转文件保留 30 天、integrity check，以及必需的 pre-action audit 无法写入时 fail-closed 的智能体 mutation。
+- 浏览器卡片现与终端共享画布选中、click/hover focus、点击空白画布取消选中、window action、应用上方滚轮缩放，以及 native view 重定位时的稳定 renderer surface。
+- Windows 智能体传输新增内置 native named-pipe host，仅允许当前用户准确 SID；release pipeline 新增真实 Electron/provider smoke 覆盖。
+- 修复 linked Git worktree 的仓库 secret audit：在判断 entry 类型之前忽略 repository metadata 名称，同时继续检测可发布文件中的个人路径。
+- 英语、俄语和简体中文的浏览器、安全、本地数据、审计日志与发布文档已同步。
+
+已知问题：如果 CanvasTTY 主窗口启动时没有 maximized，打开 Browser 可能会让 native browser view 覆盖整个窗口，导致画布控件无法使用。本 prerelease 请先 maximized 启动 CanvasTTY，再打开 Browser；修复计划在下一个 patch 中提供。
+
 ## 1.0.1
 
 - 新增终端 `Shift+Enter` 换行，不提交当前 prompt。

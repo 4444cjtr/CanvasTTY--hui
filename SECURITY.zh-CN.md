@@ -4,7 +4,7 @@
 
 ## 支持的版本
 
-CanvasTTY `1.0.1` 是当前版本，也是唯一持续接收修复的版本线。跨平台软件包尚未签名，因此操作系统可能要求额外确认后才能运行。
+CanvasTTY `1.0.2` 是当前版本，也是唯一持续接收修复的版本线。跨平台软件包尚未签名，因此操作系统可能要求额外确认后才能运行。
 
 ## 报告漏洞
 
@@ -24,6 +24,7 @@ CanvasTTY `1.0.1` 是当前版本，也是唯一持续接收修复的版本线�
 - Runtime 插件是存放在 `userData/plugins` 下的静态 GitHub 包。CanvasTTY 不执行其 repository scripts，也不提供 Node.js。插件 UI 在 sandbox frame/window 中运行，只获得安装时确认的权限。插件仍然是第三方代码；安装前请检查源码及其申请的 `network`/`external:open` 权限。
 - 插件存储按插件 ID 隔离在 `userData/plugin-storage` 下，限制为 64 KB，并在卸载时删除。会话访问不包含 PTY buffer 和工作目录。
 - 插件媒体目录授权保存在 `userData/plugin-media-libraries.json`，其中包含用户选择的绝对目录路径；卸载对应插件时会删除授权。拥有播放列表写权限的插件可以在所选媒体库的 `Playlists/` 目录中创建受大小限制的文件。
-- 内置浏览器框架使用持久化 Electron partition `canvastty-browser` 保存 cookie、cache 和网站存储。`1.0.1` 尚未从 Home 暴露浏览器；未来启用后，浏览器数据仍保存在 Electron `userData` 下，除非访问的网站主动把数据发送到网络。
+- 内置浏览器已在 `1.0.2` 从 HOME 提供，并使用持久化 Electron partition `canvastty-browser` 保存 cookie、cache 和网站存储。远程页面在 sandbox 中运行，不含 Node.js 或 CanvasTTY preload；导航仅限 HTTP(S)，且不会向智能体暴露 cookie、密码、authorization header、local storage、任意 JavaScript 或 raw CDP。除非访问的网站主动发送数据，否则浏览器数据留在 Electron `userData` 下。
+- 浏览器命令会写入 `userData/browser/audit` 下的脱敏本地 hash-chain 审计。活动文件达到 100 MB 时轮转；超过 30 天的轮转文件会在初始化或轮转时清理。日志不会存储输入/页面文本、截图、凭据、URL query/fragment、header、cookie 或 token。清除浏览器数据会刻意保留这些审计证据。
 
 仓库在 CI 和打包前运行 `npm run audit:secrets`。它只是防护措施，不代表可以“临时”提交秘密。如果真实秘密进入 Git 历史，请立即吊销，并在发布前重写或清理受影响的历史。

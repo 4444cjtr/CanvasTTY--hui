@@ -31,7 +31,7 @@ Launch a shell or agent in a project directory, move and resize its live termina
 
 ## Install
 
-Download the `1.0.1` release from [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases): AppImage/deb for Linux x86_64, installer/portable app for Windows x64, and dmg/zip for Apple Silicon macOS. Packages are not yet code-signed or notarized; Intel Mac builds are not included yet. Read [installing and local-data security](docs/installing-and-security.md).
+Download the `1.0.2` release from [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases): AppImage/deb for Linux x86_64, installer/portable app for Windows x64, and dmg/zip for Apple Silicon macOS. Packages are not yet code-signed or notarized; Intel Mac builds are not included yet. Read [installing and local-data security](docs/installing-and-security.md).
 
 Or run from source:
 
@@ -46,6 +46,7 @@ npm run dev
 |:--|:--|
 | [Documentation hub](docs/README.md) | [Widget authoring](docs/widget-authoring.md) |
 | [Getting started](docs/getting-started.md) | [Metrics and telemetry](docs/metrics-and-telemetry.md) |
+| [Built-in browser and audit log](docs/browser.md) | [Bundled agent browser skill](agent/browser/SKILL.md) |
 | [Install, releases, and local data](docs/installing-and-security.md) | [Security policy](SECURITY.md) |
 | [Architecture](docs/ARCHITECTURE.md) | [UI contract](docs/UI_CONTRACT.md) |
 | [Runtime plugin authoring](docs/plugins.md) | [Typed plugin SDK](docs/plugin-api.d.ts) |
@@ -59,7 +60,9 @@ CanvasTTY includes a permissioned runtime for ready-to-run static GitHub package
 
 CanvasTTY includes a core browser rather than a plugin capability: trusted React chrome backed by sandboxed Electron `WebContentsView` tabs in one persistent Chromium profile. It is available from HOME, restores safe HTTP(S) tabs, keeps website credentials inside Chromium, manages downloads/uploads, and exposes typed browser actions to Claude Code, Codex, and Kimi sessions launched by CanvasTTY.
 
-Agent access uses an authenticated local socket or named pipe and a bundled stdio MCP helper. It does not open a TCP or remote-debugging port and never exports cookies, passwords, auth headers, local storage, arbitrary JavaScript, or raw CDP. See [Architecture](docs/ARCHITECTURE.md) for the trust, audit, and concurrency boundaries.
+The browser card participates in the same canvas selection, hover-focus, drag, resize, and semantic-zoom model as terminals. Settings controls agent access, tab restore, recent downloads/activity, and browser-data clearing. Agent access uses an authenticated local socket or named pipe and a bundled stdio MCP helper; it does not open a TCP or remote-debugging port and never exports cookies, passwords, auth headers, local storage, arbitrary JavaScript, or raw CDP.
+
+Every browser command produces a redacted local activity record. Persistent JSONL audit files form a hash chain below Electron `userData/browser/audit`, rotate at 100 MB, and prune rotated files older than 30 days during store initialization or rotation. Typed/page text, screenshots, credentials, URL queries/fragments, headers, cookies, and tokens are not stored. See the [browser and audit-log guide](docs/browser.md) and [Architecture](docs/ARCHITECTURE.md).
 
 ## Quick checks
 

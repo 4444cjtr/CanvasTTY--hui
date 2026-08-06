@@ -9,19 +9,20 @@ CanvasTTY is a spatial Electron desktop for real local terminals and AI-agent CL
 | Guide | What it covers |
 |:--|:--|
 | [Getting started](getting-started.md) | Requirements, local launch, first session, and verification commands |
+| [Built-in browser and audit log](browser.md) | Canvas controls, settings, agent access, website/file boundaries, activity, and persistent redacted audit files |
 | [Installing, releases, and local data](installing-and-security.md) | Installer formats, unsigned-preview caveats, credential boundaries, and release checks |
 | [Widget authoring](widget-authoring.md) | Source-level extension paths, visual grammar, process boundaries, and an AI-agent brief |
 | [Runtime plugins](plugins.md) | Manifest v1, permissions, HOME widgets, canvas apps, separate windows, player media/playlist APIs, SDK, and install flow |
 | [Metrics and telemetry](metrics-and-telemetry.md) | Subscription limits, session token usage, source priority, privacy, stale states, and tests |
-| [Security policy](../SECURITY.md) | Supported release, vulnerability reporting, local data boundaries, plugins, media grants, and browser storage |
+| [Security policy](../SECURITY.md) | Supported release, vulnerability reporting, local data boundaries, plugins, media grants, browser storage, and audit logs |
 | [Changelog](../CHANGELOG.md) | User-visible fixes and features by release |
 
 ## Maintainer references
 
 | Contract | Read it before… |
 |:--|:--|
-| [Architecture](ARCHITECTURE.md) | changing IPC, PTY lifecycle, persistence, process ownership, or provider adapters |
-| [UI contract](UI_CONTRACT.md) | changing Home, launch flow, Settings, canvas behavior, terminal cards, or visual semantics |
+| [Architecture](ARCHITECTURE.md) | changing IPC, PTY/browser lifecycle, persistence, process ownership, agent transports, or provider adapters |
+| [UI contract](UI_CONTRACT.md) | changing Home, launch flow, Settings, canvas behavior, terminal/browser cards, or visual semantics |
 
 ## Current extension model
 

@@ -31,7 +31,7 @@
 
 ## Установка
 
-Скачайте релиз `1.0.1` из [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases): AppImage/deb для Linux x86_64, установщик и portable-версию для Windows x64, dmg/zip для macOS на Apple Silicon. Пакеты пока не имеют цифровой подписи и не заверены Apple (notarization); сборки для Intel Mac ещё нет. Сначала прочитайте про [установку и локальные данные](docs/installing-and-security.ru.md).
+Скачайте релиз `1.0.2` из [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases): AppImage/deb для Linux x86_64, установщик и portable-версию для Windows x64, dmg/zip для macOS на Apple Silicon. Пакеты пока не имеют цифровой подписи и не заверены Apple (notarization); сборки для Intel Mac ещё нет. Сначала прочитайте про [установку и локальные данные](docs/installing-and-security.ru.md).
 
 Или запустите из исходников:
 
@@ -46,6 +46,7 @@ npm run dev
 |:--|:--|
 | [Центр документации](docs/README.ru.md) | [Создание виджетов](docs/widget-authoring.ru.md) |
 | [Быстрый старт](docs/getting-started.ru.md) | [Метрики и телеметрия](docs/metrics-and-telemetry.ru.md) |
+| [Встроенный браузер и журнал аудита](docs/browser.ru.md) | [Встроенный browser skill агента](agent/browser/SKILL.md) |
 | [Установка, релизы и локальные данные](docs/installing-and-security.ru.md) | [Политика безопасности](SECURITY.ru.md) |
 | [Архитектура](docs/ARCHITECTURE.ru.md) | [UI-контракт](docs/UI_CONTRACT.ru.md) |
 | [Разработка runtime-плагинов](docs/plugins.ru.md) | [Типы SDK плагинов](docs/plugin-api.d.ts) |
@@ -55,9 +56,13 @@ npm run dev
 
 CanvasTTY включает permissioned runtime для готовых статических GitHub-пакетов: HOME widgets, canvas apps и отдельные sandboxed окна. Host SDK поддерживает постоянные разрешения на выбранные пользователем музыкальные папки, seekable-потоки локального аудио и ограниченный импорт/экспорт плейлистов — этого достаточно для полноценного плеера-плагина. См. [руководство автора и модель безопасности](docs/plugins.ru.md), [схему manifest](docs/canvastty-plugin.schema.json) и [TypeScript-типы SDK](docs/plugin-api.d.ts).
 
-## Заготовка встроенного браузера
+## Встроенный браузер для агентов
 
-В исходниках есть core-заготовка браузера, а не plugin capability: доверенная React-панель вкладок и навигации поверх sandboxed Electron `WebContentsView` с отдельным постоянным профилем. Из HOME браузер пока намеренно не запускается. Разрешения сайтов, загрузки файлов и browser automation для агентов остаются следующими этапами; текущие границы описаны в [архитектуре](docs/ARCHITECTURE.ru.md).
+CanvasTTY включает core-браузер, а не plugin capability: доверенная React-панель поверх sandboxed Electron `WebContentsView` с единым постоянным Chromium-профилем. Браузер запускается из HOME, восстанавливает безопасные HTTP(S)-вкладки, оставляет учётные данные сайтов внутри Chromium, управляет загрузками и даёт типизированные browser actions сессиям Claude Code, Codex и Kimi, запущенным через CanvasTTY.
+
+Карточка браузера использует ту же модель выбора, hover focus, перемещения, resize и semantic zoom, что и терминалы. В Settings находятся доступ агентов, восстановление вкладок, последние загрузки/действия и очистка browser data. Связь с агентами идёт через аутентифицированный локальный socket или named pipe и встроенный stdio MCP helper — без TCP, remote-debugging port, передачи cookies, паролей, auth headers, local storage, произвольного JavaScript или raw CDP.
+
+Каждая browser-команда оставляет очищенную локальную запись. Постоянные JSONL-файлы журнала образуют hash chain в Electron `userData/browser/audit`, ротируются при 100 МБ и при инициализации или ротации удаляют ротированные файлы старше 30 дней. В журнал не попадают введённый/страничный текст, screenshots, credentials, query/fragment URL, headers, cookies и tokens. Подробнее: [браузер и журнал аудита](docs/browser.ru.md), [архитектура](docs/ARCHITECTURE.ru.md).
 
 ## Быстрая проверка
 

@@ -31,7 +31,7 @@
 
 ## 安装
 
-从 [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) 下载 `1.0.1` 版本：Linux x86_64 提供 AppImage/deb，Windows x64 提供安装程序/便携版，Apple Silicon macOS 提供 dmg/zip。软件包尚未进行代码签名或公证，目前也不包含 Intel Mac 构建；请先阅读[安装与本地数据安全](docs/installing-and-security.zh-CN.md)。
+从 [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) 下载 `1.0.2` 版本：Linux x86_64 提供 AppImage/deb，Windows x64 提供安装程序/便携版，Apple Silicon macOS 提供 dmg/zip。软件包尚未进行代码签名或公证，目前也不包含 Intel Mac 构建；请先阅读[安装与本地数据安全](docs/installing-and-security.zh-CN.md)。
 
 也可以从源码运行：
 
@@ -46,6 +46,7 @@ npm run dev
 |:--|:--|
 | [文档中心](docs/README.zh-CN.md) | [编写小组件](docs/widget-authoring.zh-CN.md) |
 | [快速开始](docs/getting-started.zh-CN.md) | [指标与遥测](docs/metrics-and-telemetry.zh-CN.md) |
+| [内置浏览器与审计日志](docs/browser.zh-CN.md) | [内置智能体浏览器 skill](agent/browser/SKILL.md) |
 | [安装、发布与本地数据](docs/installing-and-security.zh-CN.md) | [安全策略](SECURITY.zh-CN.md) |
 | [架构](docs/ARCHITECTURE.zh-CN.md) | [UI 契约](docs/UI_CONTRACT.zh-CN.md) |
 | [运行时插件开发](docs/plugins.zh-CN.md) | [插件 SDK 类型](docs/plugin-api.d.ts) |
@@ -55,9 +56,13 @@ npm run dev
 
 CanvasTTY 已提供带权限模型的静态 GitHub 运行时插件，可扩展 HOME 小组件、画布应用和独立 sandbox 窗口。Host SDK 支持持久化的用户音乐目录授权、可 seek 的本地音频流，以及受限的播放列表导入与导出，可用于实现完整的播放器插件。参见[插件开发与安全指南](docs/plugins.zh-CN.md)、[manifest schema](docs/canvastty-plugin.schema.json)和[TypeScript SDK 类型](docs/plugin-api.d.ts)。
 
-## 内置浏览器框架
+## 面向智能体的内置浏览器
 
-源码中包含内置浏览器框架，而不是插件权限：受信任的 React 标签页与导航界面配合隔离的 Electron `WebContentsView` 和独立持久化 profile。它目前不会显示在 HOME 中。网站权限、下载和面向 agent 的 browser automation 仍是后续工作；当前边界见[架构文档](docs/ARCHITECTURE.zh-CN.md)。
+CanvasTTY 已提供核心内置浏览器，而不是插件权限：可信 React 外壳配合 sandboxed Electron `WebContentsView` 标签页，并使用一个持久化 Chromium profile。浏览器可从 HOME 打开，能够恢复安全的 HTTP(S) 标签页，把网站凭据留在 Chromium 内部，管理下载/上传，并向由 CanvasTTY 启动的 Claude Code、Codex 与 Kimi 会话提供类型化 browser action。
+
+浏览器卡片与终端共享画布的选中、悬停聚焦、拖动、调整大小和语义缩放模型。Settings 提供智能体访问、标签页恢复、最近下载/活动和浏览器数据清理。智能体通过经过认证的本地 socket 或 named pipe 以及内置 stdio MCP helper 接入；不会开放 TCP 或 remote-debugging port，也不会导出 cookie、密码、认证 header、local storage、任意 JavaScript 或 raw CDP。
+
+每条浏览器命令都会生成脱敏的本地活动记录。持久化 JSONL 审计文件位于 Electron `userData/browser/audit`，组成 hash chain，达到 100 MB 时轮转，并在 store 初始化或轮转时清理超过 30 天的轮转文件。日志不会保存输入/页面文本、截图、凭据、URL query/fragment、header、cookie 或 token。详见[浏览器与审计日志指南](docs/browser.zh-CN.md)和[架构文档](docs/ARCHITECTURE.zh-CN.md)。
 
 ## 快速检查
 

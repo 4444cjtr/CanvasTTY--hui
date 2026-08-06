@@ -10,9 +10,9 @@ Each `v*` tag starts native GitHub-hosted builds for all three operating systems
 |:--|:--|:--|
 | Linux x86_64 | AppImage, deb | AppImage is a single-file package and requires a FUSE 2 compatibility library (`libfuse2t64` on Ubuntu 24.04); deb integrates with Debian-family desktops |
 | Windows x64 | NSIS installer, portable executable | The installer allows choosing a directory and creates Start Menu/Desktop shortcuts |
-| macOS arm64 (Apple Silicon) | dmg, zip | Both contain the graphical `.app` bundle; `1.0.1` does not include an Intel/x64 build |
+| macOS arm64 (Apple Silicon) | dmg, zip | Both contain the graphical `.app` bundle; `1.0.2` does not include an Intel/x64 build |
 
-Download artifacts only from the repository's [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) page. Version `1.0.1` does not have commercial code-signing certificates or Apple notarization. Windows SmartScreen and macOS Gatekeeper may therefore warn about an unknown developer. Verify the release tag and artifact name before acknowledging any warning.
+Download artifacts only from the repository's [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) page. Version `1.0.2` does not have commercial code-signing certificates or Apple notarization. Windows SmartScreen and macOS Gatekeeper may therefore warn about an unknown developer. Verify the release tag and artifact name before acknowledging any warning.
 
 ## What the distributable contains
 
@@ -31,8 +31,10 @@ Download artifacts only from the repository's [GitHub Releases](https://github.c
 | Runtime plugins | Static packages and the enabled registry below `userData/plugins`; isolated JSON storage below `userData/plugin-storage` is capped at 64 KB per plugin and removed on uninstall |
 | Plugin media grants | `userData/plugin-media-libraries.json`; stores the absolute paths of folders explicitly selected by the user and removes a plugin's grants on uninstall |
 | Plugin playlists | A plugin with confirmed write permission may create bounded files only below the selected library's `Playlists/` directory |
-| Built-in browser profile | Cookies, cache, and site storage in the persistent `canvastty-browser` Electron partition; the browser is not exposed from Home in `1.0.1` |
-| Logs | Local stdout/stderr only; CanvasTTY has no remote log collector or project-operated telemetry endpoint |
+| Built-in browser profile | Cookies, cache, and site storage in the persistent `canvastty-browser` Electron partition; the browser is available from HOME in `1.0.2` |
+| Browser restore state | Safe HTTP(S) tab URLs, tab order, and active-tab ID in `userData/browser-state.json`; disabled/cleared when tab restore is turned off |
+| Browser audit log | Redacted hash-chain JSONL below `userData/browser/audit`; the active file rotates at 100 MB and rotated files older than 30 days are pruned during store initialization or rotation |
+| Other logs | Local stdout/stderr only; CanvasTTY has no remote log collector or project-operated telemetry endpoint |
 
 Exact `userData` paths may vary with OS configuration. CanvasTTY asks Electron for the correct per-user directory and never uses the source checkout as runtime storage.
 
@@ -49,7 +51,7 @@ npm run audit:secrets
 npm test
 ```
 
-The audit checks high-confidence provider/cloud token formats, private-key blocks, hard-coded secret assignments, sensitive filenames, and personal absolute home paths. `.gitignore` excludes local agent context, planning data, env files, credentials, logs, settings, dependencies, and generated packages. CI runs the audit before build and every release job runs it again before packaging.
+The audit checks high-confidence provider/cloud token formats, private-key blocks, hard-coded secret assignments, sensitive filenames, and personal absolute home paths. Repository metadata names are excluded before file-type inspection, so both a normal-clone `.git/` directory and a linked-worktree `.git` file are ignored without weakening personal-path detection in publishable files. `.gitignore` excludes local agent context, planning data, env files, credentials, logs, settings, dependencies, and generated packages. CI runs the audit before build and every release job runs it again before packaging.
 
 No scanner is perfect. Never commit a live secret “temporarily.” If one reaches Git history, revoke it first, then purge the history before making the repository public.
 
@@ -78,4 +80,4 @@ Run each platform script on its matching operating system. Cross-compilation is 
 4. Push `vX.Y.Z`; wait for all three GitHub Actions package jobs.
 5. Treat the automatically created release as a prerelease until real-device checks pass on Linux, Windows, and macOS.
 
-Security reports follow the repository [security policy](../SECURITY.md).
+Browser storage, agent access, and audit retention are documented in [Built-in browser and audit log](browser.md). Security reports follow the repository [security policy](../SECURITY.md).

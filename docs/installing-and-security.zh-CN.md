@@ -10,9 +10,9 @@
 |:--|:--|:--|
 | Linux x86_64 | AppImage、deb | AppImage 是单文件包，需要 FUSE 2 兼容库（Ubuntu 24.04 上为 `libfuse2t64`）；deb 可集成到 Debian 系桌面环境 |
 | Windows x64 | NSIS 安装程序、便携版可执行文件 | 安装程序支持自定义安装目录，并会创建开始菜单/桌面快捷方式 |
-| macOS arm64（Apple Silicon） | dmg、zip | 两者都包含图形化的 `.app` bundle；`1.0.1` 暂不包含 Intel/x64 构建 |
+| macOS arm64（Apple Silicon） | dmg、zip | 两者都包含图形化的 `.app` bundle；`1.0.2` 暂不包含 Intel/x64 构建 |
 
-请只从本仓库的 [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) 页面下载产物。版本 `1.0.1` 没有商业代码签名证书，也未经过 Apple 公证（notarization）。因此 Windows SmartScreen 和 macOS Gatekeeper 可能会提示开发者未知。在确认任何警告之前，请先核对 release tag 和产物名称。
+请只从本仓库的 [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) 页面下载产物。版本 `1.0.2` 没有商业代码签名证书，也未经过 Apple 公证（notarization）。因此 Windows SmartScreen 和 macOS Gatekeeper 可能会提示开发者未知。在确认任何警告之前，请先核对 release tag 和产物名称。
 
 ## 分发包包含什么
 
@@ -31,8 +31,10 @@
 | Runtime 插件 | `userData/plugins` 下的静态包和启用状态；`userData/plugin-storage` 下的隔离 JSON 存储限制为每个插件 64 KB，并在卸载时删除 |
 | 插件媒体目录授权 | `userData/plugin-media-libraries.json`；保存用户明确选择的绝对目录路径，并在卸载插件时删除其授权 |
 | 插件播放列表 | 获得写权限的插件只能在所选媒体库的 `Playlists/` 目录中创建受大小限制的文件 |
-| 内置浏览器配置 | 持久化 Electron partition `canvastty-browser` 中的 cookie、cache 与网站存储；`1.0.1` 尚未从 Home 暴露浏览器 |
-| 日志 | 仅本地的 stdout/stderr；CanvasTTY 没有远程日志收集器，也没有项目自营的遥测端点 |
+| 内置浏览器 profile | 持久化 Electron partition `canvastty-browser` 中的 cookie、cache 与网站存储；`1.0.2` 已从 HOME 提供浏览器 |
+| 浏览器恢复状态 | `userData/browser-state.json` 中的安全 HTTP(S) 标签 URL、顺序和活动标签 ID；关闭标签恢复时禁用/清除 |
+| 浏览器审计日志 | `userData/browser/audit` 下的脱敏 hash-chain JSONL；活动文件达到 100 MB 时轮转，超过 30 天的轮转文件会在 store 初始化或下一次轮转时清理 |
+| 其他日志 | 仅本地 stdout/stderr；CanvasTTY 没有远程日志收集器，也没有项目自营遥测端点 |
 
 `userData` 的具体路径可能随系统配置而不同。CanvasTTY 会向 Electron 请求正确的每用户目录，绝不会把源码 checkout 当作运行时存储使用。
 
@@ -49,7 +51,7 @@ npm run audit:secrets
 npm test
 ```
 
-审计会检查高置信度的服务商/云服务令牌格式、私钥块、硬编码的密钥赋值、敏感文件名以及个人 home 目录的绝对路径。`.gitignore` 排除了本地智能体上下文、planning 数据、env 文件、凭据、日志、设置、dependencies 和生成的软件包。CI 会在构建前运行审计，每个 release job 在打包前也会再运行一次。
+审计会检查高置信度的服务商/云服务令牌格式、私钥块、硬编码的密钥赋值、敏感文件名以及个人 home 目录的绝对路径。repository metadata 名称会在判断 entry 类型之前排除，因此普通 clone 的 `.git/` 目录和 linked worktree 的 `.git` 文件都会被忽略，同时可发布文件中的个人路径仍会被发现。`.gitignore` 排除了本地智能体上下文、planning 数据、env 文件、凭据、日志、设置、dependencies 和生成的软件包。CI 会在构建前运行审计，每个 release job 在打包前也会再运行一次。
 
 没有扫描器是万无一失的。永远不要“临时”提交真实密钥。如果密钥已经进入了 Git 历史，先吊销它，再清理历史记录，然后才公开仓库。
 
@@ -78,4 +80,4 @@ npm run package:mac
 4. 推送 `vX.Y.Z`，等待三个 GitHub Actions package job 全部完成。
 5. 在真实 Linux、Windows 和 macOS 设备上验证通过之前，将自动创建的 release 保持为预发布（prerelease）状态。
 
-安全问题请按照仓库的[安全策略](../SECURITY.zh-CN.md)进行报告。
+浏览器存储、智能体访问与日志保留策略见[内置浏览器与审计日志](browser.zh-CN.md)。安全问题请按照仓库的[安全策略](../SECURITY.zh-CN.md)进行报告。

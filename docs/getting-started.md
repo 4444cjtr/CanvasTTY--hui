@@ -24,9 +24,10 @@ npm run dev
 
 1. Open **Terminal** on Home to start a shell immediately in the last project directory.
 2. Open **Codex**, **Claude**, or **Kimi** to choose a project folder and launch profile for that fixed provider.
-3. Move the live terminal on the canvas or resize it from any edge or corner.
-4. Zoom out to use semantic summaries as navigation targets; zoom back in to interact with xterm.
-5. Return to Home to inspect real sessions and any provider quota windows that their adapters expose.
+3. Open **Browser** on Home to create or restore the built-in browser card. Agent sessions launched by CanvasTTY can use its open tabs while **Settings → Browser → Agent access** is enabled.
+4. Move or resize the live terminal and browser on the same canvas.
+5. Zoom out to use semantic summaries as navigation targets; zoom back in to interact with xterm or the native browser page.
+6. Return to Home to inspect real sessions, connected browser agents, and any provider quota windows that their adapters expose.
 
 The **YOLO** profile disables provider safety prompts where the provider supports such a mode. CanvasTTY presents an explicit danger confirmation; use it only in a directory you are willing to let the agent modify.
 
@@ -38,6 +39,14 @@ The **YOLO** profile disables provider safety prompts where the provider support
 - Terminal scrolling and canvas zoom have independent wheel-direction settings. By default, wheel-down scrolls down in a live terminal, while canvas zoom keeps the original CanvasTTY direction.
 - `Shift+Enter` sends a modified Enter sequence to insert a line break in compatible agent prompts without submitting. `Enter` keeps its normal PTY behavior.
 - With terminal text selected, `Ctrl+C`/`Ctrl+Shift+C` or `Cmd+C` copies it. Paste with `Ctrl+Shift+V`, `Cmd+V`, or `Shift+Insert`. Plain `Ctrl+C` without a selection remains the PTY interrupt.
+
+## Browser controls and activity
+
+- The browser follows the same configured click-selection and hover-focus behavior as terminal cards. Clicking empty canvas clears the active application.
+- Use the trusted tab strip and navigation bar for HTTP(S) pages. Hiding the card preserves tabs; **Close all** removes them after confirmation.
+- **Settings → Browser** controls agent access and tab restore and shows recent downloads and command activity.
+- **Clear browser data** removes tabs, site data, cache, auth cache, staged uploads, and the current download list. It deliberately keeps the persistent redacted audit log.
+- The audit log lives below Electron `userData/browser/audit`, rotates at 100 MB, and prunes rotated files older than 30 days during store initialization or rotation. Read [Built-in browser and audit log](browser.md) before handling or deleting it.
 
 ## Useful commands
 
@@ -53,7 +62,7 @@ Before handing off a change, run the test, typecheck, and build commands, then i
 
 ## Where local state lives
 
-Settings are validated and persisted by the main-process `SettingsStore`. Live terminal state and bounded scrollback belong to `TerminalManager`; the renderer is not the source of truth for PTY history. Provider credentials stay with the installed CLIs and trusted main-process adapters and are never returned over IPC.
+Settings are validated and persisted by the main-process `SettingsStore`. Live terminal state and bounded scrollback belong to `TerminalManager`; the renderer is not the source of truth for PTY history. Browser site data stays in its persistent Chromium partition, safe tab restore state stays in `userData/browser-state.json`, and the redacted hash-chain audit stays below `userData/browser/audit`. Provider credentials stay with the installed CLIs and trusted main-process adapters and are never returned over IPC.
 
 For the exact boundaries, read [Architecture](ARCHITECTURE.md). For interaction and visual rules, read the [UI contract](UI_CONTRACT.md).
 
@@ -71,4 +80,4 @@ A working CLI session and a readable subscription-quota API are separate capabil
 
 This is expected. A newly opened PTY is `idle`. Only a structured provider lifecycle signal may set `working` or `needs_approval`; terminal text and PTY existence are not activity telemetry.
 
-Next: [author a widget](widget-authoring.md) or study [metrics and telemetry](metrics-and-telemetry.md).
+Next: read the [browser and audit-log guide](browser.md), [author a widget](widget-authoring.md), or study [metrics and telemetry](metrics-and-telemetry.md).
