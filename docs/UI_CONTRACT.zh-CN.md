@@ -10,7 +10,7 @@
 - 左侧宽 tile 只包含 Codex、Claude、Kimi 限额行。每行优先显示服务商最长的真实默认配额窗口（若提供则为 weekly），仅在必要时 fallback 到另一个真实窗口。它显示该窗口 `resetsAt` 的倒计时及对应 usage rail。短于一天使用 `HH:MM`，更长时间使用 `Nд HHч`/`Nd HHh`。窗口长度保留在 accessible metadata 中；不可用数据必须明确标记，不得伪造 reset 或 percentage。
 - 右侧 tile 是唯一的 session list。Viewport 显示三行，真实会话更多时滚动，并且不丢弃任何行。每行显示 provider mark、本地化 semantic state 与 identity。这里不显示 session duration 或 limit-style progress rail。
 - Clock 是主导的中间 tile，只渲染 `HH:MM`。旁边的 media tile 是自治 widget：点击选择或替换 image/GIF；删除操作留在 widget 内。
-- 底部 dock 包含 Terminal、Codex、Claude、Kimi。Settings 是独立 tile。内置浏览器框架目前有意不从 HOME 暴露。
+- 底部 dock 包含 Terminal、Codex、Claude、Kimi 和 Browser。Settings 是独立 tile。Browser 打开或聚焦唯一的内置浏览器卡片，绝不启动外部浏览器。
 - 除 Settings 外，所有默认 tile 都可隐藏；Settings 保留为恢复入口。Edit HOME 显示完整 cell grid 与精确 HOME 边界，隐藏所有 terminal/canvas-plugin window，并在 Save 前把变化保留为 draft。Tile 移动时不得 overlap，可暂时跨越任意 HOME 边缘；只有全部 tile 完全位于边界内时才可 Save。任意 edge/corner 均可 resize 并保持对边不动；可见提示只放在左上与右下 corner。边界可在不穿过已摆放 widget 的前提下扩大或缩小。空间不足时添加 widget 会自动扩大 HOME。
 - Runtime HOME widget 使用同一 tile bounds 与 zoom behavior。其 UI 在 sandbox iframe 中运行，无法访问可信 renderer DOM 或 `window.canvasTTY`。
 
@@ -18,10 +18,10 @@
 
 - 点击服务商会打开该服务商的 Focus Card。服务商固定，不提供第二个 provider selector。
 - Focus Card 只包含 provider mark、project folder、Normal/YOLO profile、launch action 与上下文危险确认。
-- Settings 顶部使用 General、Appearance、Controls、Plugins 分区。General 负责语言；Appearance 负责 palette、background pattern、shortcut hint、system HOME tile 与 HOME editor 入口；Controls 负责 click focus、hover focus、window snapping、edge panning、zoom sensitivity、wheel direction 与 keyboard shortcut；Plugins 负责 install preview、permission review、installed-plugin list、enable/disable/uninstall 与 contribution action。Media control 不出现在这里。
+- Settings 顶部使用 General、Appearance、Controls、Browser、Plugins 分区。General 负责语言；Appearance 负责 palette、background pattern、shortcut hint、system HOME tile 与 HOME editor 入口；Controls 负责 click focus、hover focus、window snapping、edge panning、zoom sensitivity、wheel direction 与 keyboard shortcut；Browser 负责 agent access、tab restore、download、脱敏 activity 与 browser data 清理；Plugins 负责 install preview、permission review、installed-plugin list、enable/disable/uninstall 与 contribution action。Media control 不出现在这里。
 - Click focus 有 Off、Single click、Double click 三种明确模式，默认 Off。即使 camera focus 为 Off，selection 与可见 outline 仍然有效；Double click 模式不会在第一次点击时跳转 camera。
-- Selection 是排他的：点击空白 canvas 会清除选择。被选中的实时终端持有 xterm keyboard focus，取消选择时失去焦点。
-- Hover focus 是独立且默认关闭的 selection 模式。经过可配置延迟（慢速 `500ms`、正常 `250ms`、快速 `80ms`），指针下的终端被选中并获得 keyboard focus；离开卡片后以相同延迟取消选择。
+- Terminal 与内置 Browser 之间的 selection 是排他的：点击空白 canvas 会清除选择。被选中的实时界面持有 keyboard focus，取消选择时失去焦点。
+- Hover focus 是独立且默认关闭的 selection 模式。经过可配置延迟（慢速 `500ms`、正常 `250ms`、快速 `80ms`），指针下的终端或内置 Browser 被选中并获得 keyboard focus；离开卡片后以相同延迟取消选择。
 - Keyboard shortcut 可由用户重映射并在本地持久化。默认 `Home` 聚焦 Home 区域，`F2` 重命名选中的终端窗口。Rename 在 header 内联完成，不会重建 PTY。Canvas 右下角的紧凑被动提示立即反映持久化 binding，并可在 Appearance 中隐藏。
 - Snapping 默认开启，关闭时不改变现有 window bounds。Edge panning 默认关闭，速度可选 slow/normal/fast。Terminal scroll 与 camera zoom 的滚轮方向分别配置。默认滚轮向下会让实时终端向下滚动，camera zoom 保留 CanvasTTY 原有方向。
 
@@ -38,9 +38,9 @@
 - Terminal 任意 edge/corner 都是 resize target。最小 card size 为 `420 × 260`；resize 更新 xterm viewport 并保持对边不动。
 - 在任意 canvas zoom 下，实时终端 selection 都跟随可见指针位置。有文字选择时，`Ctrl+C`/`Ctrl+Shift+C` 或 `Cmd+C` 复制；`Ctrl+Shift+V`/`Cmd+V` 与 `Shift+Insert` 从系统剪贴板粘贴。没有选择时，普通 `Ctrl+C` 仍是 PTY interrupt。`Shift+Enter` 向 PTY 发送换行 sequence（`ESC [ 13 ; 2 u`），而不是提交当前行。
 - Canvas plugin app 使用同一 movable card grammar、`54px` header、resize/snap behavior，以及 `0.5×` 以下的 semantic summary。`window` contribution 打开 CanvasTTY 管理的独立 sandbox window；不支持嵌入任意原生窗口。
-- 内置 Browser 框架是可移动、可调整尺寸的 core canvas card，而不是 plugin contribution。可信 DOM chrome 负责 tab、address/search input、back/forward/reload 与 close；remote page 保持在独立 persistent browser profile 的 sandbox native `WebContentsView` 中。目前没有 HOME launcher。Website permission request 与 download 在未来出现明确 user-facing policy 前均被拒绝。低于 `0.5×`、Edit HOME 期间和可信 dialog 后方，native page 会隐藏而不是覆盖 renderer UI。
+- 内置 Browser 是唯一的可移动、可调整尺寸 core canvas card，而不是 plugin contribution。它使用与其他 canvas card 相同的 `54px` 外层窗口 header，将 identity 与 hide-card action 和下方内部 tab strip 分开。可信 DOM chrome 负责 tab/favicon、address/search、back/forward/reload、download、per-tab provider badge、site dialog 以及明确的 Close tab/Close all。隐藏卡片会保留 tab 与共享的已认证 Chromium profile。低于 `0.5×`、Edit HOME 期间、可信 dialog/popover 后方，以及卡片或 camera 移动时，native page 会隐藏并由稳定 semantic surface 替代，避免落后于 canvas 或覆盖 renderer UI。
 - Window snapping 开启时，drag/resize 使用隐藏 `10px` grid、相邻 edge/center 的 `10px` magnetic threshold，以及一致的 `20px` gap。
-- Wheel input 属于指针下真正滚动或消费 wheel 的界面。Session list 与 terminal/card surface 从不 zoom camera。Limits、clock、media 与 launcher 等被动 Home widget 仍允许 camera zoom，避免 Home 缩小可用 zoom area。
+- Wheel input 属于指针下真正滚动或消费 wheel 的界面。默认情况下 session list、terminal 与 Browser page 保留本地 wheel ownership。启用 Controls → Zoom over applications 后，terminal 与 native Browser 的 wheel input 会明确路由到 camera。Limits、clock、media 与 launcher 等被动 Home widget 仍允许 camera zoom，避免 Home 缩小可用 zoom area。
 - 指针停在空白 canvas 的 viewport edge `56px` 范围内时，canvas 以 RTS 风格 edge-pan；速度线性增加，到边缘达到 `900px/s`。Edge panning 默认关闭，在 Settings 启用。指针位于 interactive surface 或正在 drag-pan 时暂停。
 - Dialog close action 留在自己的 header/control row 内，使用一致 inset，不覆盖 field、outline 或 panel boundary。
 
@@ -54,4 +54,4 @@
 - Plugin install 在确认前总会显示已校验 manifest 与 requested permission；绝不执行 repository script。
 - 新打开 PTY 从 `idle` 开始。只有结构化服务商 lifecycle signal 能设置 `working` 或 `needs_approval`；PTY 是否存在和终端文字都不是 activity signal。
 - 只有结构化 provider-adapter signal 才能显示 `needs_approval`；绝不解析 terminal output 来伪造状态。
-- Build 后已在真实 Electron 窗口检查 Home、Focus Card、Settings 和至少一个实时终端。
+- Build 后已在隔离的真实 Electron 窗口检查 Home、Focus Card、Settings、至少一个实时终端与内置 Browser。

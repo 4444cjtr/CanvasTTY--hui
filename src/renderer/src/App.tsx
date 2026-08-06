@@ -90,6 +90,7 @@ export function App(): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [homeEditDraft, setHomeEditDraft] = useState<HomeEditDraft | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [browserSelected, setBrowserSelected] = useState(false);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -297,6 +298,8 @@ export function App(): React.JSX.Element {
   const focusPluginCanvas = useCallback((id: string): void => {
     const instance = settings.pluginCanvas.find((candidate) => candidate.id === id);
     if (!instance) return;
+    setActiveSessionId(null);
+    setBrowserSelected(false);
     isHomeCamera.current = false;
     setCamera(focusCamera(instance.position, instance.size));
   }, [settings.pluginCanvas]);
@@ -320,6 +323,8 @@ export function App(): React.JSX.Element {
       setBrowser(snapshot);
       if (!settings.browserCanvas) await saveSettings({ browserCanvas });
       setSettingsOpen(false);
+      setActiveSessionId(null);
+      setBrowserSelected(true);
       isHomeCamera.current = false;
       setCamera(focusCamera(browserCanvas.position, browserCanvas.size));
     } catch (error) {
@@ -333,6 +338,7 @@ export function App(): React.JSX.Element {
       if (!browserApi) return;
       await browserApi.close();
       await saveSettings({ browserCanvas: null });
+      setBrowserSelected(false);
     } catch (error) {
       showToast(error instanceof Error ? error.message : t(settings.locale, "browserActionFailed"));
     }
@@ -340,6 +346,8 @@ export function App(): React.JSX.Element {
 
   const focusBrowser = useCallback((): void => {
     if (!settings.browserCanvas) return;
+    setActiveSessionId(null);
+    setBrowserSelected(true);
     isHomeCamera.current = false;
     setCamera(focusCamera(settings.browserCanvas.position, settings.browserCanvas.size));
   }, [settings.browserCanvas]);
@@ -352,6 +360,7 @@ export function App(): React.JSX.Element {
   }, []);
 
   const focusSession = useCallback((session: SessionSnapshot): void => {
+    setBrowserSelected(false);
     setActiveSessionId(session.id);
     isHomeCamera.current = false;
     setCamera(focusCamera(session.position, session.size));
@@ -583,10 +592,22 @@ export function App(): React.JSX.Element {
           onFocusPluginCanvas={focusPluginCanvas}
           onFocusSession={focusSession}
           activeSessionId={activeSessionId}
+          browserSelected={browserSelected}
           renamingSessionId={renamingSessionId}
-          onSelectSession={setActiveSessionId}
-          onClearSessionSelection={() => setActiveSessionId(null)}
+          onSelectSession={(id) => {
+            setBrowserSelected(false);
+            setActiveSessionId(id);
+          }}
+          onSelectBrowser={() => {
+            setActiveSessionId(null);
+            setBrowserSelected(true);
+          }}
+          onClearCanvasSelection={() => {
+            setActiveSessionId(null);
+            setBrowserSelected(false);
+          }}
           onDeselectSession={(id) => setActiveSessionId((current) => current === id ? null : current)}
+          onDeselectBrowser={() => setBrowserSelected(false)}
           onRenameSession={renameSession}
           onRenameEnd={() => setRenamingSessionId(null)}
           onSessionBoundsChange={changeSessionBounds}

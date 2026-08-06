@@ -368,6 +368,14 @@ export interface BrowserCanvasWheelEvent {
   deltaY: number;
 }
 
+export interface BrowserCanvasPointerEvent {
+  tabId: string;
+  type: "down" | "up" | "enter" | "leave";
+  clientX: number;
+  clientY: number;
+  clickCount: number;
+}
+
 export type BrowserErrorCode =
   | "AUTH_INVALID"
   | "BRIDGE_UNAVAILABLE"
@@ -632,10 +640,12 @@ export interface CanvasTTYApi {
     execute(command: BrowserCommand): Promise<BrowserResult>;
     getActivity(sinceSequence?: number): Promise<BrowserActivityEvent[]>;
     clearData(): Promise<BrowserSnapshot>;
+    focus(): void;
     setViewport(bounds: BrowserViewportBounds): void;
     onState(listener: (event: BrowserStateEvent) => void): () => void;
     onActivity(listener: (event: BrowserActivityStateEvent) => void): () => void;
     onCanvasWheel(listener: (event: BrowserCanvasWheelEvent) => void): () => void;
+    onCanvasPointer(listener: (event: BrowserCanvasPointerEvent) => void): () => void;
   };
   terminal: {
     list(): Promise<SessionSnapshot[]>;
@@ -698,10 +708,12 @@ export const IPC = {
   browserExecute: "browser:execute",
   browserGetActivity: "browser:get-activity",
   browserClearData: "browser:clear-data",
+  browserFocus: "browser:focus",
   browserSetViewport: "browser:set-viewport",
   browserState: "browser:state",
   browserActivity: "browser:activity",
   browserCanvasWheel: "browser:canvas-wheel",
+  browserCanvasPointer: "browser:canvas-pointer",
   terminalList: "terminal:list",
   terminalCreate: "terminal:create",
   terminalInput: "terminal:input",

@@ -42,7 +42,7 @@ Electron main process
 
 Доступ плагина к музыке основан на capabilities, а не на общем доступе к файловой системе. Media scan возвращает library IDs, относительные пути, metadata и `canvastty-media://` stream URLs; сырой текст плейлиста остаётся единственным format-neutral содержимым файла. Media URL разрешается только включённому плагину-владельцу и только внутри ранее выбранного root библиотеки. Удаление плагина отзывает сохранённые folder grants.
 
-Встроенный браузер разделён между поверхностями: `BrowserCard` рисует вкладки и навигацию в React scene, а `BrowserService` размещает активный native view поверх измеренного viewport карточки. View скрывается в semantic summary, при редактировании HOME и за доверенными modal surfaces. Agent browser-control tools не входят в первоначальную заготовку.
+Встроенный браузер разделён между поверхностями: `BrowserCard` рисует доверенный внешний chrome окна, вкладки, навигацию, agent badges, downloads, dialogs и canvas geometry, а `BrowserService` размещает активный native view поверх измеренного viewport карточки. Native view скрывается в semantic summary, при редактировании HOME, за trusted modal surfaces и во время движения canvas/карточки; до стабилизации geometry область страницы заполняет стабильная renderer surface. Дробные renderer bounds расширяются до охватывающих device-independent pixels, а активный tab view переподключается только при фактической смене вкладки. Typed pointer bridge возвращает click/hover activity native page в canvas selection, не блокируя ввод самой страницы.
 
 ## Границы renderer
 
@@ -80,7 +80,7 @@ Batching вывода — граница IPC/rendering, а не истории: 
 
 Координаты указателя терминала преобразуются из визуально трансформированного rectangle канваса обратно в layout coordinates xterm до selection/wheel handling. Направления колеса терминала и канваса независимо нормализуются из сохранённых settings. Выделенный текст копируется через типизированный clipboard bridge по `Ctrl+C`, `Ctrl+Shift+C` или `Cmd+C`; вставка использует `Ctrl+Shift+V`, `Cmd+V` или `Shift+Insert` и входит в xterm через `Terminal.paste`, а не synthetic keystrokes. `Shift+Enter` отправляет CSI-u modified Enter напрямую в PTY.
 
-Application shortcuts нормализуются в `SettingsStore`, сопоставляются в `App` и отображаются из тех же сохранённых bindings в canvas hint. `App` владеет selected session для действий вроде rename; `TerminalCard` владеет xterm focus и только inline editor. Нажатие на пустой canvas снимает selection. Опциональный hover focus использует одну настраиваемую задержку для entry/exit; focus-in/focus-out sequences программного перехода подавляются до PTY input, чтобы TUI агента не сбрасывал позицию истории.
+Application shortcuts нормализуются в `SettingsStore`, сопоставляются в `App` и отображаются из тех же сохранённых bindings в canvas hint. `App` владеет эксклюзивным selection canvas application и выбранной terminal session для действий вроде rename. `TerminalCard` владеет xterm focus и inline editor, `BrowserService` — focus native page. Нажатие на пустой canvas снимает любой selection. Опциональный hover focus использует одинаковую настроенную задержку entry/exit для терминалов и встроенного Browser; focus-in/focus-out sequences программного перехода терминала подавляются до PTY input, чтобы TUI агента не сбрасывал позицию истории.
 
 Session counters, progress bars и statuses всегда выводятся из настоящих `SessionSnapshot`. UI не синтезирует telemetry.
 

@@ -42,7 +42,7 @@ Runtime 插件代码绝不会导入主进程或可信 renderer bundle。HOME wid
 
 插件音乐访问基于 capability，而不是通用文件系统权限。媒体扫描返回 library ID、相对路径、metadata 与 `canvastty-media://` stream URL；原始 playlist 文本是唯一暴露的 format-neutral 文件内容。媒体 URL 只为对应且已启用的插件解析，并且必须位于用户此前选择的 library root 下。卸载插件会撤销其持久化目录授权。
 
-内置浏览器跨两个界面分工：`BrowserCard` 在 React scene 中渲染 tab/navigation，`BrowserService` 把活动 native view 定位到卡片测量出的 viewport 上。Semantic summary、编辑 HOME 和可信 modal 出现时会隐藏 view。初始浏览器框架不包含智能体 browser-control tool。
+内置浏览器跨两个界面分工：`BrowserCard` 渲染可信的外层 window chrome、tab、navigation、agent badge、download、dialog 与 canvas geometry；`BrowserService` 把活动 native view 定位到卡片测量出的 viewport 上。Semantic summary、编辑 HOME、可信 modal，以及 canvas/card 移动时会隐藏 native view；geometry 稳定前由稳定 renderer surface 填充页面区域。Fractional renderer bounds 扩展到完整覆盖的 device-independent pixel；只有活动 tab 实际变化时才重新挂接 view。Typed pointer bridge 把 native page 的 click/hover activity 返回 canvas selection，同时不阻止页面自身输入。
 
 ## Renderer 边界
 
@@ -80,7 +80,7 @@ App
 
 终端指针坐标在 selection/wheel handling 前，从画布视觉变换后的矩形转换回 xterm layout 坐标。终端与画布滚轮方向从持久化设置中独立规范化。选中文字通过类型化 clipboard bridge 使用 `Ctrl+C`、`Ctrl+Shift+C` 或 `Cmd+C` 复制；使用 `Ctrl+Shift+V`、`Cmd+V` 或 `Shift+Insert` 粘贴，并通过 `Terminal.paste` 而非 synthetic keystroke 进入 xterm。`Shift+Enter` 直接向 PTY 发送 CSI-u modified Enter。
 
-Application shortcut 在 `SettingsStore` 中规范化，在 `App` 中匹配，并从同一持久化 binding 渲染到 canvas hint。`App` 拥有窗口 rename 等操作使用的 selected session；`TerminalCard` 拥有 xterm focus 与 inline editor。点击空白 canvas 会清除 selection。可选 hover focus 在进入/离开时使用相同的配置延迟；程序化切换产生的 focus-in/focus-out sequence 会在进入 PTY input 前被抑制，避免智能体 TUI 重置历史位置。
+Application shortcut 在 `SettingsStore` 中规范化，在 `App` 中匹配，并从同一持久化 binding 渲染到 canvas hint。`App` 拥有排他的 canvas application selection，以及窗口 rename 等操作使用的 selected terminal session；`TerminalCard` 拥有 xterm focus 与 inline editor，`BrowserService` 拥有 native page focus。点击空白 canvas 会清除任一 selection。可选 hover focus 对终端与内置 Browser 使用相同的进入/离开配置延迟；终端程序化切换产生的 focus-in/focus-out sequence 会在进入 PTY input 前被抑制，避免智能体 TUI 重置历史位置。
 
 Session counter、progress bar 与 status 必须来自真实 `SessionSnapshot`，UI 不得合成 telemetry。
 

@@ -26,6 +26,7 @@ import {
   snapMove,
   snapResize
 } from "../workspace/snap";
+import { HOVER_FOCUS_DELAYS, shouldActivateCanvasFromClick } from "../workspace/focus";
 import type { ResizeDirection } from "../workspace/snap";
 
 interface TerminalCardProps {
@@ -62,11 +63,6 @@ interface ResizeState extends DragState {
 }
 
 const RESIZE_DIRECTIONS: ResizeDirection[] = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
-const HOVER_FOCUS_DELAYS: Record<EdgePanSpeed, number> = {
-  slow: 500,
-  normal: 250,
-  fast: 80
-};
 const TERMINAL_FOCUS_IN = "\u001b[I";
 const TERMINAL_FOCUS_OUT = "\u001b[O";
 
@@ -326,21 +322,21 @@ export function TerminalCard({
     event.stopPropagation();
     event.currentTarget.closest<HTMLElement>(".terminal-card")?.focus({ preventScroll: true });
     onSelect(session.id);
-    if (focusActivation === "single") onActivate(session);
+    if (shouldActivateCanvasFromClick(focusActivation, 1)) onActivate(session);
   };
 
   const activateSummaryDouble = (event: React.MouseEvent<HTMLButtonElement>): void => {
     event.stopPropagation();
-    if (focusActivation === "double") onActivate(session);
+    if (shouldActivateCanvasFromClick(focusActivation, 2)) onActivate(session);
   };
 
   const activateCard = (event: React.MouseEvent<HTMLElement>): void => {
-    if (focusActivation !== "single" || isCardControl(event.target)) return;
+    if (!shouldActivateCanvasFromClick(focusActivation, 1) || isCardControl(event.target)) return;
     onActivate(session);
   };
 
   const activateCardDouble = (event: React.MouseEvent<HTMLElement>): void => {
-    if (focusActivation !== "double" || isCardControl(event.target)) return;
+    if (!shouldActivateCanvasFromClick(focusActivation, 2) || isCardControl(event.target)) return;
     onActivate(session);
   };
 

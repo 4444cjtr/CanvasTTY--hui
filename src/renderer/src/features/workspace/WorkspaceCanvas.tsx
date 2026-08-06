@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   AgentProviderId,
   AppSettings,
@@ -43,10 +43,13 @@ interface WorkspaceCanvasProps {
   onOpenBrowser(): void;
   onFocusSession(session: SessionSnapshot): void;
   activeSessionId: string | null;
+  browserSelected: boolean;
   renamingSessionId: string | null;
   onSelectSession(id: string): void;
-  onClearSessionSelection(): void;
+  onSelectBrowser(): void;
+  onClearCanvasSelection(): void;
   onDeselectSession(id: string): void;
+  onDeselectBrowser(): void;
   onRenameSession(id: string, title: string): Promise<void>;
   onRenameEnd(): void;
   onRequestMedia(): Promise<void>;
@@ -91,10 +94,13 @@ export function WorkspaceCanvas({
   onOpenBrowser,
   onFocusSession,
   activeSessionId,
+  browserSelected,
   renamingSessionId,
   onSelectSession,
-  onClearSessionSelection,
+  onSelectBrowser,
+  onClearCanvasSelection,
   onDeselectSession,
+  onDeselectBrowser,
   onRenameSession,
   onRenameEnd,
   onRequestMedia,
@@ -116,6 +122,7 @@ export function WorkspaceCanvas({
   const viewport = useRef<HTMLDivElement>(null);
   const panState = useRef<PanState | null>(null);
   const [panning, setPanning] = useState(false);
+  const [cameraMoving, setCameraMoving] = useState(false);
   const cameraRef = useRef(camera);
   cameraRef.current = camera;
   const settingsRef = useRef(settings);
@@ -127,6 +134,18 @@ export function WorkspaceCanvas({
   useEffect(() => () => {
     if (edgeFrame.current !== null) cancelAnimationFrame(edgeFrame.current);
   }, []);
+
+  useLayoutEffect(() => {
+    setCameraMoving(true);
+    let settledFrame: number | null = null;
+    const movementFrame = requestAnimationFrame(() => {
+      settledFrame = requestAnimationFrame(() => setCameraMoving(false));
+    });
+    return () => {
+      cancelAnimationFrame(movementFrame);
+      if (settledFrame !== null) cancelAnimationFrame(settledFrame);
+    };
+  }, [camera.x, camera.y, camera.zoom]);
 
   const edgePanStep = (time: number): void => {
     edgeFrame.current = null;
@@ -238,7 +257,7 @@ export function WorkspaceCanvas({
       ref={viewport}
       className={`workspace pattern-${settings.pattern} ${panning ? "workspace--panning" : ""}`}
       onPointerDownCapture={(event) => {
-        if (!(event.target as HTMLElement).closest(".terminal-card")) onClearSessionSelection();
+        if (!(event.target as HTMLElement).closest(".terminal-card, .browser-card")) onClearCanvasSelection();
       }}
       onPointerDown={startPan}
       onPointerMove={(event) => {
@@ -361,6 +380,11 @@ export function WorkspaceCanvas({
               camera={camera}
               visible={browserViewVisible && !homeEditing}
               snapEnabled={settings.snapToGrid}
+              focusActivation={settings.focusActivation}
+              hoverFocus={settings.hoverFocus}
+              hoverFocusSpeed={settings.hoverFocusSpeed}
+              selected={browserSelected}
+              canvasMoving={cameraMoving || panning}
               zoomOverApplications={settings.zoomOverApplications}
               snapTargets={[
                 homeBounds,
@@ -369,6 +393,8 @@ export function WorkspaceCanvas({
               ]}
               onBoundsChange={onBrowserBoundsChange}
               onActivate={onFocusBrowser}
+              onSelect={onSelectBrowser}
+              onDeselect={onDeselectBrowser}
               onClose={onCloseBrowser}
               onError={onPluginError}
             />

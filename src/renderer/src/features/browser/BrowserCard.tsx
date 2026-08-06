@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentPresenceSnapshot,
   BrowserCanvasState,
@@ -6,6 +6,8 @@ import type {
   BrowserSnapshot,
   BrowserTabSnapshot,
   CameraState,
+  EdgePanSpeed,
+  FocusActivation,
   LocaleId,
   Point,
   SessionBounds
@@ -13,6 +15,7 @@ import type {
 import { BROWSER_PROVIDER_COLORS } from "../../../../shared/contracts";
 import { UiIcon } from "../../components/UiIcon";
 import { t } from "../../lib/i18n";
+import { HOVER_FOCUS_DELAYS, shouldActivateCanvasFromClick } from "../workspace/focus";
 import { snapMove, snapResize, type ResizeDirection } from "../workspace/snap";
 
 interface BrowserCardProps {
@@ -23,10 +26,17 @@ interface BrowserCardProps {
   camera: CameraState;
   visible: boolean;
   snapEnabled: boolean;
+  focusActivation: FocusActivation;
+  hoverFocus: boolean;
+  hoverFocusSpeed: EdgePanSpeed;
+  selected: boolean;
+  canvasMoving: boolean;
   zoomOverApplications: boolean;
   snapTargets: readonly SessionBounds[];
   onBoundsChange(bounds: BrowserCanvasState): void;
   onActivate(): void;
+  onSelect(): void;
+  onDeselect(): void;
   onClose(): void;
   onError(message: string): void;
 }
@@ -53,17 +63,27 @@ export function BrowserCard({
   camera,
   visible,
   snapEnabled,
+  focusActivation,
+  hoverFocus,
+  hoverFocusSpeed,
+  selected,
+  canvasMoving,
   zoomOverApplications,
   snapTargets,
   onBoundsChange,
   onActivate,
+  onSelect,
+  onDeselect,
   onClose,
   onError
 }: BrowserCardProps): React.JSX.Element {
   const dragState = useRef<DragState | null>(null);
   const resizeState = useRef<ResizeState | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
+  const viewportFrame = useRef<number | null>(null);
+  const hoverFocusTimer = useRef<number | null>(null);
   const addressFocused = useRef(false);
+  const [manipulating, setManipulating] = useState(false);
   const [position, setPosition] = useState(bounds.position);
   const [size, setSize] = useState(bounds.size);
   const liveBounds = useRef<SessionBounds>(bounds);
@@ -87,6 +107,8 @@ export function BrowserCard({
   const pageUnavailable = activeTab?.status === "crashed";
   const nativeViewVisible = visible
     && !summaryMode
+    && !canvasMoving
+    && !manipulating
     && panel === null
     && browser.pendingDialog === null
     && !pageUnavailable
@@ -106,37 +128,65 @@ export function BrowserCard({
     setDialogPrompt(browser.pendingDialog?.defaultPrompt ?? "");
   }, [browser.pendingDialog?.defaultPrompt, browser.pendingDialog?.openedAt]);
 
+  const viewportState = useRef({ nativeViewVisible, zoom, zoomOverApplications });
+  viewportState.current = { nativeViewVisible, zoom, zoomOverApplications };
+
+  const reportViewport = useCallback((): void => {
+    const element = viewport.current;
+    if (!element) return;
+    if (viewportFrame.current !== null) cancelAnimationFrame(viewportFrame.current);
+    viewportFrame.current = requestAnimationFrame(() => {
+      viewportFrame.current = null;
+      const rect = element.getBoundingClientRect();
+      const state = viewportState.current;
+      window.canvasTTY.browser.setViewport({
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
+        visible: state.nativeViewVisible,
+        canvasScale: state.zoom,
+        captureCanvasWheel: state.zoomOverApplications
+      });
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (nativeViewVisible) {
+      reportViewport();
+      return;
+    }
+    if (viewportFrame.current !== null) {
+      cancelAnimationFrame(viewportFrame.current);
+      viewportFrame.current = null;
+    }
+    const rect = viewport.current?.getBoundingClientRect();
+    window.canvasTTY.browser.setViewport({
+      x: rect?.left ?? 0,
+      y: rect?.top ?? 0,
+      width: rect?.width ?? 0,
+      height: rect?.height ?? 0,
+      visible: false,
+      canvasScale: zoom,
+      captureCanvasWheel: zoomOverApplications
+    });
+  }, [camera.x, camera.y, nativeViewVisible, position, reportViewport, size, zoom, zoomOverApplications]);
+
   useLayoutEffect(() => {
     const element = viewport.current;
     if (!element) return;
-    let frame = 0;
-    const report = (): void => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const rect = element.getBoundingClientRect();
-        window.canvasTTY.browser.setViewport({
-          x: rect.left,
-          y: rect.top,
-          width: rect.width,
-          height: rect.height,
-          visible: nativeViewVisible,
-          canvasScale: zoom,
-          captureCanvasWheel: zoomOverApplications
-        });
-      });
-    };
-    report();
-    const observer = new ResizeObserver(report);
+    const observer = new ResizeObserver(reportViewport);
     observer.observe(element);
-    window.addEventListener("resize", report);
+    window.addEventListener("resize", reportViewport);
     return () => {
-      cancelAnimationFrame(frame);
       observer.disconnect();
-      window.removeEventListener("resize", report);
+      window.removeEventListener("resize", reportViewport);
     };
-  }, [camera.x, camera.y, nativeViewVisible, position, size, zoom, zoomOverApplications]);
+  }, [reportViewport]);
 
   useEffect(() => () => {
+    if (viewportFrame.current !== null) cancelAnimationFrame(viewportFrame.current);
+    if (hoverFocusTimer.current !== null) window.clearTimeout(hoverFocusTimer.current);
     window.canvasTTY.browser.setViewport({
       x: 0,
       y: 0,
@@ -148,9 +198,64 @@ export function BrowserCard({
     });
   }, []);
 
+  const clearHoverFocusTimer = useCallback((): void => {
+    if (hoverFocusTimer.current === null) return;
+    window.clearTimeout(hoverFocusTimer.current);
+    hoverFocusTimer.current = null;
+  }, []);
+
+  const scheduleHoverFocus = useCallback((): void => {
+    clearHoverFocusTimer();
+    if (!hoverFocus || selected) return;
+    hoverFocusTimer.current = window.setTimeout(() => {
+      hoverFocusTimer.current = null;
+      onSelect();
+      window.canvasTTY.browser.focus();
+    }, HOVER_FOCUS_DELAYS[hoverFocusSpeed]);
+  }, [clearHoverFocusTimer, hoverFocus, hoverFocusSpeed, onSelect, selected]);
+
+  const scheduleHoverBlur = useCallback((): void => {
+    clearHoverFocusTimer();
+    if (!hoverFocus || !selected) return;
+    hoverFocusTimer.current = window.setTimeout(() => {
+      hoverFocusTimer.current = null;
+      onDeselect();
+    }, HOVER_FOCUS_DELAYS[hoverFocusSpeed]);
+  }, [clearHoverFocusTimer, hoverFocus, hoverFocusSpeed, onDeselect, selected]);
+
+  useEffect(() => window.canvasTTY.browser.onCanvasPointer((event) => {
+    if (event.tabId !== browser.activeTabId) return;
+    if (event.type === "enter") {
+      scheduleHoverFocus();
+      return;
+    }
+    if (event.type === "leave") {
+      scheduleHoverBlur();
+      return;
+    }
+    if (event.type === "down") {
+      clearHoverFocusTimer();
+      onSelect();
+      return;
+    }
+    if (shouldActivateCanvasFromClick(focusActivation, event.clickCount)) onActivate();
+  }), [browser.activeTabId, clearHoverFocusTimer, focusActivation, onActivate, onSelect, scheduleHoverBlur, scheduleHoverFocus]);
+
+  useEffect(() => {
+    if (hoverFocus) return;
+    clearHoverFocusTimer();
+  }, [clearHoverFocusTimer, hoverFocus]);
+
+  useEffect(() => {
+    if (!selected || !nativeViewVisible) return;
+    const frame = requestAnimationFrame(() => window.canvasTTY.browser.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [nativeViewVisible, selected]);
+
   const startDrag = (event: React.PointerEvent<HTMLElement>): void => {
     if ((event.target as HTMLElement).closest("button, input, [data-browser-action]")) return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    setManipulating(true);
     dragState.current = {
       pointerId: event.pointerId,
       startClient: { x: event.clientX, y: event.clientY },
@@ -175,12 +280,14 @@ export function BrowserCard({
     if (dragState.current?.pointerId !== event.pointerId) return;
     dragState.current = null;
     onBoundsChange(liveBounds.current);
+    setManipulating(false);
   };
 
   const startResize = (event: React.PointerEvent<HTMLDivElement>, direction: ResizeDirection): void => {
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
+    setManipulating(true);
     resizeState.current = {
       pointerId: event.pointerId,
       direction,
@@ -220,6 +327,7 @@ export function BrowserCard({
     event.stopPropagation();
     resizeState.current = null;
     onBoundsChange(liveBounds.current);
+    setManipulating(false);
   };
 
   const applyBounds = (next: SessionBounds): void => {
@@ -264,12 +372,42 @@ export function BrowserCard({
     });
   };
 
+  const activateSummary = (event: React.MouseEvent<HTMLButtonElement>): void => {
+    event.stopPropagation();
+    onSelect();
+    if (shouldActivateCanvasFromClick(focusActivation, 1)) onActivate();
+  };
+
+  const activateSummaryDouble = (event: React.MouseEvent<HTMLButtonElement>): void => {
+    event.stopPropagation();
+    if (shouldActivateCanvasFromClick(focusActivation, 2)) onActivate();
+  };
+
+  const activateCard = (event: React.MouseEvent<HTMLElement>): void => {
+    if (isBrowserCardControl(event.target)) return;
+    if (shouldActivateCanvasFromClick(focusActivation, 1)) onActivate();
+  };
+
+  const activateCardDouble = (event: React.MouseEvent<HTMLElement>): void => {
+    if (isBrowserCardControl(event.target)) return;
+    if (shouldActivateCanvasFromClick(focusActivation, 2)) onActivate();
+  };
+
   return (
     <article
-      className={`browser-card ${summaryMode ? "browser-card--summary" : ""}`}
+      className={`browser-card ${summaryMode ? "browser-card--summary" : ""} ${selected ? "browser-card--selected" : ""} ${manipulating || canvasMoving ? "browser-card--moving" : ""}`}
       data-interactive="true"
       data-canvas-zoom-surface="application"
       data-wheel-owner={summaryMode ? undefined : "local"}
+      tabIndex={-1}
+      onPointerDownCapture={() => {
+        clearHoverFocusTimer();
+        onSelect();
+      }}
+      onPointerEnter={scheduleHoverFocus}
+      onPointerLeave={scheduleHoverBlur}
+      onClick={activateCard}
+      onDoubleClick={activateCardDouble}
       style={{
         width: size.width,
         height: size.height,
@@ -278,15 +416,25 @@ export function BrowserCard({
       } as React.CSSProperties}
     >
       <header
-        className="browser-card__tabs"
+        className="browser-card__header"
         onPointerDown={startDrag}
         onPointerMove={drag}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
       >
-        <span className="browser-card__identity" title={t(locale, "browser")}>
-          <UiIcon name="browser" size={17} />
+        <span className="browser-card__title">
+          <UiIcon name="browser" size={22} />
+          <span>
+            <strong>{t(locale, "browser")}</strong>
+            <small title={activeTab?.title}>{activeTab?.title || t(locale, "newTab")}</small>
+          </span>
         </span>
+        <button className="browser-card__hide" type="button" onClick={onClose} title={t(locale, "hideBrowser")} aria-label={t(locale, "hideBrowser")}>
+          <UiIcon name="close" size={16} />
+        </button>
+      </header>
+
+      <div className="browser-card__tabs">
         <div className="browser-card__tab-list" role="tablist" aria-label={t(locale, "browserTabs")}>
           {browser.tabs.map((tab) => (
             <div
@@ -335,10 +483,7 @@ export function BrowserCard({
         >
           {t(locale, "closeAllTabsShort")}
         </button>
-        <button className="browser-card__close" type="button" onClick={onClose} title={t(locale, "hideBrowser")} aria-label={t(locale, "hideBrowser")}>
-          <UiIcon name="close" size={16} />
-        </button>
-      </header>
+      </div>
 
       <nav className="browser-card__navigation" aria-label={t(locale, "browserNavigation")}>
         <button className="browser-card__back" type="button" disabled={!activeTab?.canGoBack} onClick={() => activeTab && run(() => window.canvasTTY.browser.back(activeTab.id))} title={t(locale, "back")}>
@@ -376,6 +521,13 @@ export function BrowserCard({
 
       <div ref={viewport} className="browser-card__viewport" />
 
+      {(manipulating || canvasMoving) && activeTab && !summaryMode && (
+        <div className="browser-card__motion-surface" aria-hidden="true">
+          <TabFavicon tab={activeTab} large />
+          <strong>{activeTab.title || t(locale, "browser")}</strong>
+        </div>
+      )}
+
       {!activeTab && (
         <div className="browser-card__page-state">
           <UiIcon name="browser" size={36} />
@@ -393,7 +545,14 @@ export function BrowserCard({
         </div>
       )}
 
-      <button className="browser-card__summary" type="button" onClick={onActivate} aria-label={t(locale, "browser")}>
+      <button
+        className="browser-card__summary"
+        type="button"
+        onClick={activateSummary}
+        onDoubleClick={activateSummaryDouble}
+        data-focus-activation={focusActivation}
+        aria-label={t(locale, "browser")}
+      >
         <span className="browser-card__summary-content">
           <TabFavicon tab={activeTab} large />
           <strong>{activeTab?.title || t(locale, "browser")}</strong>
@@ -402,7 +561,7 @@ export function BrowserCard({
         </span>
       </button>
 
-      {summaryMode && <AgentCursorLayer agents={activeAgents} width={size.width} height={size.height - 100} />}
+      {summaryMode && <AgentCursorLayer agents={activeAgents} width={size.width} height={size.height - 54} />}
 
       {panel === "downloads" && (
         <section className="browser-card__popover browser-card__download-panel" data-browser-action="true" data-wheel-owner="local">
@@ -574,6 +733,11 @@ function mergeAgents(...groups: AgentPresenceSnapshot[][]): AgentPresenceSnapsho
 
 function agentColor(agent: AgentPresenceSnapshot): string {
   return BROWSER_PROVIDER_COLORS[agent.provider];
+}
+
+function isBrowserCardControl(target: EventTarget | null): boolean {
+  return target instanceof Element
+    && target.closest("button, input, form, [data-browser-action]") !== null;
 }
 
 function constrainBrowserResize(bounds: SessionBounds, direction: ResizeDirection): SessionBounds {

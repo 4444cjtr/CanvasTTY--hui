@@ -22,6 +22,7 @@ test("privileged browser IPC validates the trusted main renderer", async () => {
     "browserBack",
     "browserForward",
     "browserReload",
+    "browserFocus",
     "browserSetViewport"
   ]) {
     const handler = source.slice(source.indexOf(`IPC.${channel}`), source.indexOf(`IPC.${channel}`) + 320);

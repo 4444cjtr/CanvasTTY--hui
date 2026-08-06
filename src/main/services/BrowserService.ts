@@ -14,6 +14,7 @@ import type {
   AgentPresenceSnapshot,
   BrowserActivityEvent,
   BrowserActor,
+  BrowserCanvasPointerEvent,
   BrowserCanvasWheelEvent,
   BrowserCommand,
   BrowserDialogSnapshot,
@@ -30,6 +31,7 @@ import { AgentRegistry } from "./browser/AgentRegistry.ts";
 import { BrowserAutomationService, type BrowserPointerResult } from "./browser/BrowserAutomationService.ts";
 import { BrowserAuditStore } from "./browser/BrowserAuditStore.ts";
 import { toCanvasWheelDeltaY } from "./browser/BrowserCanvasWheel.ts";
+import { normalizeBrowserViewportBounds } from "./browser/BrowserViewport.ts";
 import { BrowserCore, type BrowserCoreHost, type BrowserCoreTab } from "./browser/BrowserCore.ts";
 import { BrowserKernelError } from "./browser/BrowserErrors.ts";
 import {
@@ -110,6 +112,8 @@ export class BrowserService {
   private disposed = false;
   private restoreTabsEnabled: boolean;
   private clipOwnerId: number | null = null;
+  private clipTabId: string | null = null;
+  private pointerTabId: string | null = null;
   private presenceWindow: BrowserWindow | null = null;
   private presenceWindowReady: Promise<void> | null = null;
 
@@ -198,6 +202,13 @@ export class BrowserService {
     this.hideClipView();
     this.destroyPresenceWindow();
     this.emit();
+  }
+
+  focus(): void {
+    if (!this.visible || !this.viewport.visible || !this.activeTabId) return;
+    const active = this.tabs.get(this.activeTabId);
+    if (!active || active.view.webContents.isDestroyed()) return;
+    active.view.webContents.focus();
   }
 
   async setRestoreTabs(enabled: boolean): Promise<void> {
@@ -320,17 +331,9 @@ export class BrowserService {
   }
 
   setViewport(bounds: BrowserViewportBounds): void {
-    if (!bounds || typeof bounds !== "object") return;
-    if (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) return;
-    this.viewport = {
-      x: Math.round(bounds.x),
-      y: Math.round(bounds.y),
-      width: Math.max(0, Math.round(bounds.width)),
-      height: Math.max(0, Math.round(bounds.height)),
-      visible: Boolean(bounds.visible),
-      ...(Number.isFinite(bounds.canvasScale) ? { canvasScale: bounds.canvasScale } : {}),
-      captureCanvasWheel: bounds.captureCanvasWheel === true
-    };
+    const normalized = normalizeBrowserViewportBounds(bounds);
+    if (!normalized) return;
+    this.viewport = normalized;
     this.syncViews();
   }
 
@@ -550,16 +553,34 @@ export class BrowserService {
     });
     contents.on("will-attach-webview", (event) => event.preventDefault());
     contents.on("before-mouse-event", (event, mouse) => {
-      if (
-        mouse.type !== "mouseWheel"
-        || !this.viewport.captureCanvasWheel
-        || !this.viewport.visible
-        || this.activeTabId !== tab.id
-      ) return;
-      const deltaY = toCanvasWheelDeltaY(mouse as Electron.MouseWheelInputEvent);
-      if (deltaY === null) return;
+      if (!this.viewport.visible || this.activeTabId !== tab.id) return;
       const owner = this.getOwner();
       if (!owner || owner.isDestroyed()) return;
+
+      const pointerType = mouse.type === "mouseDown" && mouse.button === "left"
+        ? "down"
+        : mouse.type === "mouseUp" && mouse.button === "left"
+          ? "up"
+          : mouse.type === "mouseEnter" || (mouse.type === "mouseMove" && this.pointerTabId !== tab.id)
+            ? "enter"
+            : mouse.type === "mouseLeave"
+              ? "leave"
+              : null;
+      if (pointerType) {
+        this.pointerTabId = pointerType === "leave" ? null : tab.id;
+        const payload: BrowserCanvasPointerEvent = {
+          tabId: tab.id,
+          type: pointerType,
+          clientX: this.viewport.x + mouse.x,
+          clientY: this.viewport.y + mouse.y,
+          clickCount: pointerType === "down" || pointerType === "up" ? Math.max(1, mouse.clickCount ?? 1) : 0
+        };
+        owner.webContents.send(IPC.browserCanvasPointer, payload);
+      }
+
+      if (mouse.type !== "mouseWheel" || !this.viewport.captureCanvasWheel) return;
+      const deltaY = toCanvasWheelDeltaY(mouse as Electron.MouseWheelInputEvent);
+      if (deltaY === null) return;
       const payload: BrowserCanvasWheelEvent = {
         tabId: tab.id,
         clientX: this.viewport.x + mouse.x,
@@ -825,6 +846,8 @@ export class BrowserService {
   private destroyTab(tab: BrowserTab): void {
     this.automation.unregister(tab.id);
     this.clipView.removeChildView(tab.view);
+    if (this.clipTabId === tab.id) this.clipTabId = null;
+    if (this.pointerTabId === tab.id) this.pointerTabId = null;
     tab.view.setVisible(false);
     if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close({ waitForBeforeUnload: false });
   }
@@ -850,9 +873,15 @@ export class BrowserService {
     }
 
     for (const tab of this.tabs.values()) {
-      if (tab.id === active.id) continue;
-      this.clipView.removeChildView(tab.view);
-      tab.view.setVisible(false);
+      if (tab.id !== active.id) tab.view.setVisible(false);
+    }
+    if (this.clipTabId !== active.id) {
+      if (this.clipTabId) {
+        const previous = this.tabs.get(this.clipTabId);
+        if (previous) this.clipView.removeChildView(previous.view);
+      }
+      this.clipView.addChildView(active.view);
+      this.clipTabId = active.id;
     }
     this.clipView.setBounds({ x: left, y: top, width: right - left, height: bottom - top });
     active.view.setBounds({
@@ -862,7 +891,6 @@ export class BrowserService {
       height: this.viewport.height
     });
     active.view.setVisible(true);
-    this.clipView.addChildView(active.view);
     this.clipView.setVisible(true);
     if (this.clipOwnerId !== owner.id) {
       owner.contentView.addChildView(this.clipView);
@@ -872,14 +900,11 @@ export class BrowserService {
   }
 
   private hideClipView(): void {
+    this.pointerTabId = null;
     for (const tab of this.tabs.values()) {
-      this.clipView.removeChildView(tab.view);
       tab.view.setVisible(false);
     }
     this.clipView.setVisible(false);
-    const owner = this.getOwner();
-    if (owner && !owner.isDestroyed() && this.clipOwnerId === owner.id) owner.contentView.removeChildView(this.clipView);
-    this.clipOwnerId = null;
   }
 
   private observeOwner(owner: BrowserWindow): void {

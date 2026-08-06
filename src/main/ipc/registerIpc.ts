@@ -322,6 +322,10 @@ export function registerIpc({
     assertMainRenderer(event, getMainWindow);
     return browser.clearData();
   });
+  ipcMain.on(IPC.browserFocus, (event) => {
+    assertMainRenderer(event, getMainWindow);
+    browser.focus();
+  });
   ipcMain.on(IPC.browserSetViewport, (event, bounds) => {
     assertMainRenderer(event, getMainWindow);
     browser.setViewport(bounds);
