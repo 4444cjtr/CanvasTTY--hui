@@ -92,7 +92,7 @@ async function relaySelfTest(hostPath) {
       throw new Error("The relay self-test host-to-client payload was corrupted.");
     }
 
-    const closed = once(socket, "close");
+    const closed = waitForServerClose(socket);
     relay.stdin.write(encodeFrame(17, connected.connectionId, Buffer.alloc(0)));
     await bounded(Promise.all([closed, frames.next(4)]));
     const exited = once(relay, "exit");
@@ -104,6 +104,34 @@ async function relaySelfTest(hostPath) {
     clearTimeout(timeout);
     if (relay.exitCode === null && relay.signalCode === null) relay.kill();
   }
+}
+
+function waitForServerClose(socket) {
+  return new Promise((resolve, reject) => {
+    let expectedPipeError = false;
+    const cleanup = () => {
+      socket.off("error", onError);
+      socket.off("close", onClose);
+    };
+    const onError = (error) => {
+      if (error?.code === "EPIPE" || error?.code === "ECONNRESET") {
+        expectedPipeError = true;
+        return;
+      }
+      cleanup();
+      reject(error);
+    };
+    const onClose = (hadError) => {
+      cleanup();
+      if (hadError && !expectedPipeError) {
+        reject(new Error("The relay self-test socket closed with an unexpected pipe error."));
+        return;
+      }
+      resolve();
+    };
+    socket.once("error", onError);
+    socket.once("close", onClose);
+  });
 }
 
 function frameReader(stream) {
