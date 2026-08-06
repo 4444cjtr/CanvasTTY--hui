@@ -538,44 +538,60 @@ bool VerifyPipeDacl(HANDLE pipe, PSID expected_sid) {
   return valid;
 }
 
+bool SelfTestFailure(const char* stage, DWORD error = ERROR_SUCCESS) {
+  std::fprintf(stderr, "CanvasTTY pipe host self-test failed at %s (win32=%lu).\n",
+               stage, static_cast<unsigned long>(error));
+  return false;
+}
+
 bool SelfTest() {
   CurrentUserSecurity security;
-  if (!security.Initialize()) return false;
+  if (!security.Initialize()) return SelfTestFailure("security.initialize", GetLastError());
   const std::wstring name = RandomPipeName();
-  if (name.empty()) return false;
+  if (name.empty()) return SelfTestFailure("pipe.random-name");
   HANDLE first = CreateSecurePipe(name, security, true);
-  if (first == INVALID_HANDLE_VALUE) return false;
+  if (first == INVALID_HANDLE_VALUE) return SelfTestFailure("pipe.create-first", GetLastError());
   if (!VerifyPipeDacl(first, security.user_sid())) {
     CloseHandle(first);
-    return false;
+    return SelfTestFailure("pipe.verify-dacl");
   }
   HANDLE duplicate_first = CreateSecurePipe(name, security, true);
   if (duplicate_first != INVALID_HANDLE_VALUE) {
     CloseHandle(duplicate_first);
     CloseHandle(first);
-    return false;
+    return SelfTestFailure("pipe.duplicate-first-succeeded");
   }
-  if (GetLastError() != ERROR_ACCESS_DENIED) {
+  const DWORD duplicate_error = GetLastError();
+  if (duplicate_error != ERROR_ACCESS_DENIED) {
     CloseHandle(first);
-    return false;
+    return SelfTestFailure("pipe.duplicate-first-error", duplicate_error);
   }
   HANDLE second = CreateSecurePipe(name, security, false);
   if (second == INVALID_HANDLE_VALUE) {
+    const DWORD error = GetLastError();
     CloseHandle(first);
-    return false;
+    return SelfTestFailure("pipe.create-second", error);
   }
   CloseHandle(second);
 
   std::atomic<bool> client_ok{false};
   std::thread client([&]() {
-    if (!WaitNamedPipeW(name.c_str(), 2'000)) return;
+    if (!WaitNamedPipeW(name.c_str(), 2'000)) {
+      SelfTestFailure("client.wait", GetLastError());
+      return;
+    }
     HANDLE handle = CreateFileW(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
                                 OPEN_EXISTING, 0, nullptr);
-    if (handle == INVALID_HANDLE_VALUE) return;
+    if (handle == INVALID_HANDLE_VALUE) {
+      SelfTestFailure("client.connect", GetLastError());
+      return;
+    }
     constexpr char kPing[] = "ping";
     DWORD written = 0;
     if (!WriteFile(handle, kPing, 4, &written, nullptr) || written != 4) {
+      const DWORD error = GetLastError();
       CloseHandle(handle);
+      SelfTestFailure("client.write", error);
       return;
     }
     char response[4]{};
@@ -583,11 +599,14 @@ bool SelfTest() {
     if (ReadFile(handle, response, 4, &read, nullptr) && read == 4 &&
         std::memcmp(response, "pong", 4) == 0) {
       client_ok.store(true);
+    } else {
+      SelfTestFailure("client.read", GetLastError());
     }
     CloseHandle(handle);
   });
 
   bool server_ok = ConnectPipe(first);
+  if (!server_ok) SelfTestFailure("server.connect", GetLastError());
   if (server_ok) {
     std::array<char, 4> request{};
     OVERLAPPED read_overlapped{};
@@ -600,6 +619,7 @@ bool SelfTest() {
         server_ok = WaitForOverlapped(first, read_overlapped, &read);
       }
       server_ok = server_ok && read == 4 && std::memcmp(request.data(), "ping", 4) == 0;
+      if (!server_ok) SelfTestFailure("server.read", GetLastError());
       CloseHandle(read_overlapped.hEvent);
     }
     if (server_ok) {
@@ -613,6 +633,7 @@ bool SelfTest() {
           server_ok = WaitForOverlapped(first, write_overlapped, &written);
         }
         server_ok = server_ok && written == 4;
+        if (!server_ok) SelfTestFailure("server.write", GetLastError());
         CloseHandle(write_overlapped.hEvent);
       }
     }
@@ -620,6 +641,7 @@ bool SelfTest() {
   client.join();
   DisconnectNamedPipe(first);
   CloseHandle(first);
+  if (!client_ok.load()) SelfTestFailure("client.exchange");
   return server_ok && client_ok.load();
 }
 
