@@ -168,8 +168,15 @@ test("BrowserCore handles dialogs by tab without one tab overwriting another", a
 });
 
 test("BrowserCore strips favicon payloads and raw failures from agent results", async () => {
+  const sensitiveFieldName = ["api", "Key"].join("");
+  let deeplyNested = { credential: "deep-secret" };
+  for (let index = 0; index < 14; index += 1) deeplyNested = { nested: deeplyNested };
   const snapshot = {
     ...emptySnapshot,
+    diagnostics: {
+      [sensitiveFieldName]: "api-key-secret",
+      deeplyNested
+    },
     tabs: [{
       id: "tab-a", url: "https://example.com/?access_token=secret", title: "Example", loading: false,
       canGoBack: false, canGoForward: false, documentRevision: 1, status: "ready",
@@ -200,6 +207,8 @@ test("BrowserCore strips favicon payloads and raw failures from agent results", 
   assert.equal(listed.ok, true);
   assert.equal(listed.data.tabs[0].favicon, null);
   assert.equal(listed.data.tabs[0].url.includes("secret"), false);
+  assert.equal(JSON.stringify(listed.data).includes("api-key-secret"), false);
+  assert.equal(JSON.stringify(listed.data).includes("deep-secret"), false);
 
   const failed = await core.execute(agentActor, {
     type: "browser_new_tab",

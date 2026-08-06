@@ -430,10 +430,11 @@ function dataForActor(actor: BrowserActor, value: unknown): unknown {
 }
 
 function sanitizeAgentValue(value: unknown, key = "", depth = 0): unknown {
-  if (depth > 12 || value === null || typeof value === "number" || typeof value === "boolean") return value;
+  if (depth > 12) return "[REDACTED]";
+  if (value === null || typeof value === "number" || typeof value === "boolean") return value;
   const normalizedKey = key.toLowerCase();
   if (normalizedKey === "favicon") return null;
-  if (/(?:password|passwd|secret|cookie|authorization|authheader|token|localstorage|sessionstorage)/i.test(normalizedKey)) {
+  if (/(?:password|passwd|passcode|secret|cookie|authorization|authheader|credential|token|api[-_]?key|localstorage|sessionstorage)/i.test(normalizedKey)) {
     return "[REDACTED]";
   }
   if (typeof value === "string") return normalizedKey.endsWith("url") ? safeAgentUrl(value) : value;
