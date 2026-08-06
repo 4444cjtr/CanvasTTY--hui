@@ -1,7 +1,9 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
+  accessSync,
   chmodSync,
   closeSync,
+  constants,
   copyFileSync,
   existsSync,
   fstatSync,
@@ -16,7 +18,7 @@ import {
   writeFileSync
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   APPROVED_BROWSER_TOOL_NAMES,
@@ -67,7 +69,9 @@ export class ProviderLaunchAdapters {
   constructor(options: ProviderLaunchOptions) {
     validateStdioHelperLaunch(options.helper);
     this.options = options;
-    this.kimiHomeDirectory = options.kimiHomeDirectory ?? join(homedir(), ".kimi-code");
+    this.kimiHomeDirectory = validateKimiHomeDirectory(
+      options.kimiHomeDirectory ?? join(homedir(), ".kimi-code")
+    );
     this.kimiCommand = options.kimiCommand ?? "kimi";
     this.probe = options.probeKimiPerRunConfig ?? probeKimiPerRunMcpConfig;
   }
@@ -180,6 +184,7 @@ export function codexMcpArgs(helper: StdioHelperLaunch): string[] {
     `env=${tomlStringTable(helper.env ?? {})}`,
     "enabled=true",
     "required=true",
+    'default_tools_approval_mode="approve"',
     `enabled_tools=${tomlStringArray([...APPROVED_BROWSER_TOOL_NAMES])}`,
     "disabled_tools=[]"
   ].join(",");
@@ -201,6 +206,36 @@ export function recoverKimiConfigurationOnStartup(
   kimiHomeDirectory = join(homedir(), ".kimi-code")
 ): void {
   KimiTemporaryConfiguration.recover(kimiHomeDirectory);
+}
+
+export function resolveKimiHomeDirectory(
+  environment: Readonly<Record<string, string | undefined>> = process.env
+): string {
+  const configured = environment.KIMI_CODE_HOME;
+  const directory = configured && configured.trim().length > 0
+    ? configured
+    : join(homedir(), ".kimi-code");
+  return validateKimiHomeDirectory(directory);
+}
+
+function validateKimiHomeDirectory(directory: string): string {
+  if (!isAbsolute(directory)) {
+    throw new Error("KIMI_CODE_HOME must be an absolute path.");
+  }
+
+  let existingPath = directory;
+  while (!existsSync(existingPath)) {
+    const parent = dirname(existingPath);
+    if (parent === existingPath) {
+      throw new Error("KIMI_CODE_HOME has no accessible parent directory.");
+    }
+    existingPath = parent;
+  }
+  if (!statSync(existingPath).isDirectory()) {
+    throw new Error("KIMI_CODE_HOME must resolve beneath a directory.");
+  }
+  accessSync(existingPath, constants.W_OK);
+  return directory;
 }
 
 interface KimiTemporaryConfigurationOptions {

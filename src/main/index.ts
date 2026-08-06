@@ -17,7 +17,10 @@ import {
   WINDOWS_AGENT_GATEWAY_UNAVAILABLE,
   supportsAgentGatewayPlatform
 } from "./services/agent-browser";
-import { recoverKimiConfigurationOnStartup } from "./services/agent-browser/ProviderLaunch";
+import {
+  recoverKimiConfigurationOnStartup,
+  resolveKimiHomeDirectory
+} from "./services/agent-browser/ProviderLaunch";
 import { startupPageUrl } from "./startupPage";
 
 protocol.registerSchemesAsPrivileged([
@@ -96,7 +99,8 @@ async function initializeServices(): Promise<void> {
   augmentCliPath();
   // Recovery is independent of gateway availability: an interrupted Kimi fallback
   // must be restored before any new terminal can launch, including on Windows.
-  recoverKimiConfigurationOnStartup();
+  const kimiHomeDirectory = resolveKimiHomeDirectory();
+  recoverKimiConfigurationOnStartup(kimiHomeDirectory);
   const userDataPath = app.getPath("userData");
   const settings = new SettingsStore(userDataPath, app.getLocale());
   await settings.load();
@@ -129,7 +133,8 @@ async function initializeServices(): Promise<void> {
         args: [helperPath],
         env: { ELECTRON_RUN_AS_NODE: "1" }
       },
-      runtimeDirectory
+      runtimeDirectory,
+      kimiHomeDirectory
     });
   } else {
     console.warn(WINDOWS_AGENT_GATEWAY_UNAVAILABLE);

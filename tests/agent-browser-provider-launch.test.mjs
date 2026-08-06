@@ -15,7 +15,8 @@ import {
   ProviderLaunchAdapters,
   claudeMcpArgs,
   codexMcpArgs,
-  recoverKimiConfigurationOnStartup
+  recoverKimiConfigurationOnStartup,
+  resolveKimiHomeDirectory
 } from "../src/main/services/agent-browser/ProviderLaunch.ts";
 
 const helper = Object.freeze({
@@ -62,9 +63,19 @@ test("codexMcpArgs returns one complete table that replaces a same-name global s
   const prefix = `mcp_servers.${MCP_SERVER_NAME}`;
   const expected = [
     "-c",
-    `${prefix}={command=${JSON.stringify(helper.command)},args=[${helper.args.map(JSON.stringify).join(",")}],env={\"ELECTRON_RUN_AS_NODE\"=\"1\"},enabled=true,required=true,enabled_tools=[${APPROVED_BROWSER_TOOL_NAMES.map(JSON.stringify).join(",")}],disabled_tools=[]}`
+    `${prefix}={command=${JSON.stringify(helper.command)},args=[${helper.args.map(JSON.stringify).join(",")}],env={\"ELECTRON_RUN_AS_NODE\"=\"1\"},enabled=true,required=true,default_tools_approval_mode=\"approve\",enabled_tools=[${APPROVED_BROWSER_TOOL_NAMES.map(JSON.stringify).join(",")}],disabled_tools=[]}`
   ];
   assert.deepEqual(codexMcpArgs(helper), expected);
+});
+
+test("KIMI_CODE_HOME selects the exact writable configuration directory", async (t) => {
+  const root = await fixture(t, "canvastty-kimi-home-");
+  const nested = join(root, "custom", "kimi");
+  assert.equal(resolveKimiHomeDirectory({ KIMI_CODE_HOME: nested }), nested);
+  assert.throws(
+    () => resolveKimiHomeDirectory({ KIMI_CODE_HOME: "relative/kimi" }),
+    /must be an absolute path/
+  );
 });
 
 test("helper environment is validated before argv or filesystem artifacts are created", async (t) => {
