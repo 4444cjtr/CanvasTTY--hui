@@ -213,8 +213,10 @@ test("KimiTemporaryConfiguration removes files that were absent before launch", 
 
   assert.equal(await exists(paths.mcp), true);
   assert.equal(await exists(paths.config), true);
-  assert.equal((await stat(paths.mcp)).mode & 0o777, 0o600);
-  assert.equal((await stat(paths.config)).mode & 0o777, 0o600);
+  if (process.platform !== "win32") {
+    assert.equal((await stat(paths.mcp)).mode & 0o777, 0o600);
+    assert.equal((await stat(paths.config)).mode & 0o777, 0o600);
+  }
   temporary.cleanup();
 
   assert.equal(await exists(paths.mcp), false);

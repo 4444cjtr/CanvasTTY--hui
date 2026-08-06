@@ -22,6 +22,12 @@ import {
   parseClientMessage
 } from "../src/main/services/agent-browser/protocol.ts";
 
+const POSIX_GATEWAY_TEST = {
+  skip: process.platform === "win32"
+    ? "POSIX socket behavior is covered on Unix; Windows named pipes have dedicated transport tests."
+    : false
+};
+
 async function fixture(t, prefix) {
   const root = await mkdtemp(join(tmpdir(), prefix));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -262,7 +268,7 @@ test("agent bridge enforces the 512 KB cap by UTF-8 bytes for requests and respo
   }), assertBridgeError("PAYLOAD_TOO_LARGE"));
 });
 
-test("AgentGateway uses a mode-0600 local socket instead of a TCP listener", async (t) => {
+test("AgentGateway uses a mode-0600 local socket instead of a TCP listener", POSIX_GATEWAY_TEST, async (t) => {
   const runtimeDirectory = await fixture(t, "canvastty-gateway-mode-");
   const gateway = await startedGateway(t, core(), { runtimeDirectory });
 
@@ -280,7 +286,7 @@ test("AgentGateway supports Windows only when the secure native pipe host is sup
   assert.throws(() => gateway.address, /has not started/i);
 });
 
-test("AgentGateway accepts a capability once and rejects token replay", async (t) => {
+test("AgentGateway accepts a capability once and rejects token replay", POSIX_GATEWAY_TEST, async (t) => {
   const gateway = await startedGateway(t, core());
   const { capability } = await authenticateClient(t, gateway);
 
@@ -292,7 +298,7 @@ test("AgentGateway accepts a capability once and rejects token replay", async (t
   assert.equal(response.error.retryable, false);
 });
 
-test("AgentGateway rejects expired and identity-mismatched capabilities", async (t) => {
+test("AgentGateway rejects expired and identity-mismatched capabilities", POSIX_GATEWAY_TEST, async (t) => {
   let now = 1_000;
   const gateway = await startedGateway(t, core(), { capabilityTtlMs: 100, now: () => now });
 
@@ -321,7 +327,7 @@ test("AgentGateway rejects expired and identity-mismatched capabilities", async 
   await assert.rejects(expired.authenticated, /expired/i);
 });
 
-test("AgentGateway heartbeat uses server time and expires silent authenticated clients", async (t) => {
+test("AgentGateway heartbeat uses server time and expires silent authenticated clients", POSIX_GATEWAY_TEST, async (t) => {
   let now = 10_000;
   const heartbeats = [];
   const disconnects = [];
@@ -344,7 +350,7 @@ test("AgentGateway heartbeat uses server time and expires silent authenticated c
   assert.equal(disconnects[0].reason, "expired");
 });
 
-test("AgentGateway allows eight inflight commands and rejects the ninth", async (t) => {
+test("AgentGateway allows eight inflight commands and rejects the ninth", POSIX_GATEWAY_TEST, async (t) => {
   const pending = [];
   const gateway = await startedGateway(t, core({
     execute: async (_actor, command) => {
@@ -387,7 +393,7 @@ test("AgentGateway allows eight inflight commands and rejects the ninth", async 
   }
 });
 
-test("AgentGateway cancellation aborts the original in-flight request id", async (t) => {
+test("AgentGateway cancellation aborts the original in-flight request id", POSIX_GATEWAY_TEST, async (t) => {
   const started = deferred();
   const gateway = await startedGateway(t, core({
     execute: async (_actor, command, signal) => {
@@ -417,7 +423,7 @@ test("AgentGateway cancellation aborts the original in-flight request id", async
   assert.equal(response.error.code, "CANCELED");
 });
 
-test("AgentGateway kill switch closes every socket even when a host callback throws", async (t) => {
+test("AgentGateway kill switch closes every socket even when a host callback throws", POSIX_GATEWAY_TEST, async (t) => {
   let disconnectCalls = 0;
   const gateway = await startedGateway(t, core({
     agentDisconnected: () => {

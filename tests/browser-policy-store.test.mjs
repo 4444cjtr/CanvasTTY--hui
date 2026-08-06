@@ -193,7 +193,9 @@ test("BrowserStore safely restores, atomically normalizes, and persists only the
   const store = new BrowserStore(root);
 
   assert.deepEqual(await store.load(), { version: BROWSER_STORE_VERSION, tabs: [], activeTabId: null });
-  assert.equal((await stat(store.filePath)).mode & 0o777, 0o600);
+  if (process.platform !== "win32") {
+    assert.equal((await stat(store.filePath)).mode & 0o777, 0o600);
+  }
 
   const replacements = Array.from({ length: 12 }, (_, index) => store.replace([
     { id: `tab-${index}-a`, url: `https://${index}.example/a` },
