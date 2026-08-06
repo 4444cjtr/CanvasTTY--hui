@@ -33,6 +33,9 @@ jobs:
       - name: Smoke-test the real Chromium browser core
         timeout-minutes: 2
         run: xvfb-run -a npm run smoke:browser
+      - name: Smoke-test the local MCP helper and one-time capability
+        timeout-minutes: 2
+        run: xvfb-run -a npm run smoke:browser:provider-helper
 
   windows-pipe-host:
     runs-on: windows-latest

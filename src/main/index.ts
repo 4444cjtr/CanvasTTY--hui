@@ -11,6 +11,10 @@ import { PluginMediaService } from "./services/PluginMediaService";
 import { BrowserService } from "./services/BrowserService";
 import { runBrowserElectronSmoke } from "./services/browser/BrowserElectronSmoke";
 import {
+  runProviderElectronSmoke,
+  type ProviderSmokeTarget
+} from "./services/browser/ProviderElectronSmoke";
+import {
   AgentBrowserBridge,
   AgentGateway,
   WINDOWS_PIPE_HOST_FILENAME,
@@ -21,6 +25,7 @@ import {
   recoverKimiConfigurationOnStartup,
   resolveKimiHomeDirectory
 } from "./services/agent-browser/ProviderLaunch";
+import type { StdioHelperLaunch } from "./services/agent-browser/ProviderLaunch";
 import { startupPageUrl } from "./startupPage";
 
 protocol.registerSchemesAsPrivileged([
@@ -61,6 +66,7 @@ let pluginMediaService: PluginMediaService | null = null;
 let browserService: BrowserService | null = null;
 let agentGateway: AgentGateway | null = null;
 let agentBrowserBridge: AgentBrowserBridge | null = null;
+let agentBrowserHelper: StdioHelperLaunch | null = null;
 const pluginWindows = new Map<BrowserWindow, string>();
 let servicesReady = false;
 let startupRunning = false;
@@ -134,14 +140,18 @@ async function initializeServices(): Promise<void> {
     const helperPath = app.isPackaged
       ? join(process.resourcesPath, "agent-browser", "mcp-helper.mjs")
       : join(app.getAppPath(), "src", "agent-browser", "mcp-helper.mjs");
+    agentBrowserHelper = {
+      command: process.execPath,
+      args: [helperPath],
+      env: { ELECTRON_RUN_AS_NODE: "1" }
+    };
     agentBrowserBridge = new AgentBrowserBridge(agentGateway, {
-      helper: {
-        command: process.execPath,
-        args: [helperPath],
-        env: { ELECTRON_RUN_AS_NODE: "1" }
-      },
+      helper: agentBrowserHelper,
       runtimeDirectory,
-      kimiHomeDirectory
+      kimiHomeDirectory,
+      ...(process.env.CANVASTTY_PROVIDER_SMOKE_KIMI_COMMAND
+        ? { kimiCommand: process.env.CANVASTTY_PROVIDER_SMOKE_KIMI_COMMAND }
+        : {})
     });
   } else {
     console.warn(WINDOWS_AGENT_GATEWAY_UNAVAILABLE);
@@ -201,6 +211,41 @@ async function loadApplication(window: BrowserWindow): Promise<void> {
     console.log("CANVASTTY_BROWSER_SMOKE_READY");
     app.quit();
   }
+  const providerSmoke = process.env.CANVASTTY_PROVIDER_SMOKE;
+  if (providerSmoke) {
+    if (!agentBrowserBridge || !agentBrowserHelper) {
+      throw new Error("Provider smoke requires the local agent browser gateway.");
+    }
+    const targets = parseProviderSmokeTargets(providerSmoke);
+    await runProviderElectronSmoke({
+      bridge: agentBrowserBridge,
+      helper: agentBrowserHelper,
+      cwd: process.env.CANVASTTY_PROVIDER_SMOKE_CWD || app.getPath("temp"),
+      targets,
+      commands: {
+        ...(process.env.CANVASTTY_PROVIDER_SMOKE_KIMI_COMMAND
+          ? { kimi: process.env.CANVASTTY_PROVIDER_SMOKE_KIMI_COMMAND }
+          : {}),
+        ...(process.env.CANVASTTY_PROVIDER_SMOKE_CLAUDE_COMMAND
+          ? { claude: process.env.CANVASTTY_PROVIDER_SMOKE_CLAUDE_COMMAND }
+          : {}),
+        ...(process.env.CANVASTTY_PROVIDER_SMOKE_CODEX_COMMAND
+          ? { codex: process.env.CANVASTTY_PROVIDER_SMOKE_CODEX_COMMAND }
+          : {})
+      }
+    });
+    console.log("CANVASTTY_PROVIDER_SMOKE_READY");
+    app.quit();
+  }
+}
+
+function parseProviderSmokeTargets(value: string): ProviderSmokeTarget[] {
+  const allowed = new Set<ProviderSmokeTarget>(["direct", "claude", "codex", "kimi"]);
+  const targets = value.split(",").map((target) => target.trim()).filter(Boolean);
+  if (targets.length === 0 || targets.some((target) => !allowed.has(target as ProviderSmokeTarget))) {
+    throw new Error("CANVASTTY_PROVIDER_SMOKE contains an unsupported target.");
+  }
+  return targets as ProviderSmokeTarget[];
 }
 
 async function startApplication(): Promise<void> {
