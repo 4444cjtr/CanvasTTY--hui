@@ -182,7 +182,7 @@ export async function runBrowserElectronSmoke(
     ));
     const tabs = await execute<{ tabs: Array<{ id: string; url: string }> }>("browser_list_tabs");
     const safeUrl = tabs.data?.tabs.find((tab) => tab.id === tabId)?.url ?? "";
-    if (!safeUrl.includes("q=visible") || safeUrl.includes("access_token") || safeUrl.includes("fragment")) {
+    if (safeUrl !== `${origin}/next`) {
       throw new Error(`Agent tab URL was not sanitized: ${safeUrl}`);
     }
 

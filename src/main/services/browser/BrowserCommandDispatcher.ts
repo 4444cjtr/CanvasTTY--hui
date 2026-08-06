@@ -16,6 +16,8 @@ const MAX_AGENT_COMMANDS_PER_WINDOW = 100;
 const RATE_WINDOW_MS = 10_000;
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 120_000;
+const SHUTDOWN_DRAIN_TIMEOUT_MS = 5_000;
+const RESULT_AUDIT_TIMEOUT_MS = 1_000;
 
 const MUTATIONS = new Set<BrowserCommand["type"]>([
   "browser_new_tab", "browser_close_tab", "browser_activate_tab", "browser_navigate",
@@ -62,8 +64,10 @@ export class BrowserCommandDispatcher {
   private readonly rateWindows = new Map<string, number[]>();
   private readonly inflight = new Map<string, number>();
   private readonly activeRuns = new Set<Promise<BrowserResult>>();
+  private readonly shutdownController = new AbortController();
   private closing = false;
   private sequence = 0;
+  private activitySequence = 0;
 
   constructor(options: BrowserCommandDispatcherOptions) {
     this.audit = options.audit;
@@ -148,8 +152,22 @@ export class BrowserCommandDispatcher {
 
   async closeAndDrain(): Promise<void> {
     this.closing = true;
-    while (this.activeRuns.size > 0) {
-      await Promise.allSettled([...this.activeRuns]);
+    this.shutdownController.abort();
+    const drain = (async () => {
+      while (this.activeRuns.size > 0) {
+        await Promise.allSettled([...this.activeRuns]);
+      }
+    })();
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        drain,
+        new Promise<void>((resolve) => {
+          timeout = setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS);
+        })
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
     }
   }
 
@@ -180,7 +198,7 @@ export class BrowserCommandDispatcher {
     let revisionBefore = tabId ? this.getRevision(tabId) : null;
     const origin = tabId ? this.getOrigin(tabId) : null;
     const targetHash = commandTargetHash(command);
-    const timed = createTimedSignal(outerSignal, commandTimeout(command));
+    const timed = createTimedSignal(outerSignal, this.shutdownController.signal, commandTimeout(command));
     const actorKey = browserActorKey(actor);
     let result: BrowserResult;
     this.incrementInflight(actorKey);
@@ -197,8 +215,14 @@ export class BrowserCommandDispatcher {
           details: { expectedRevision: command.expectedRevision, currentRevision: revisionBefore }
         });
       }
-      await this.auditAttempt(actor, command, tabId, revisionBefore, targetHash, origin);
-      const execution = await this.executeCommand(actor, command, timed.signal);
+      await raceWithAbort(
+        () => this.auditAttempt(actor, command, tabId, revisionBefore, targetHash, origin),
+        timed.signal
+      );
+      const execution = await raceWithAbort(
+        () => this.executeCommand(actor, command, timed.signal),
+        timed.signal
+      );
       const actualTabId = execution.tabId === undefined ? tabId : execution.tabId;
       const revisionAfter = actualTabId ? this.getRevision(actualTabId) : null;
       result = {
@@ -231,7 +255,7 @@ export class BrowserCommandDispatcher {
     }
 
     const event: BrowserActivityEvent = {
-      sequence: commandSequence,
+      sequence: ++this.activitySequence,
       timestamp: startedAt,
       requestId: result.requestId,
       actorKind: actor.kind,
@@ -249,9 +273,19 @@ export class BrowserCommandDispatcher {
       errorCode: result.error?.code ?? null
     };
     this.recordActivity(event);
-    await this.auditResult(actor, command, result, event).catch((error) => {
-      console.warn("CanvasTTY browser audit result could not be recorded.", error);
-    });
+    const resultAudit = createTimedSignal(undefined, this.shutdownController.signal, RESULT_AUDIT_TIMEOUT_MS);
+    try {
+      await raceWithAbort(
+        () => this.auditResult(actor, command, result, event),
+        resultAudit.signal
+      );
+    } catch (error) {
+      if (!this.shutdownController.signal.aborted) {
+        console.warn("CanvasTTY browser audit result could not be recorded.", error);
+      }
+    } finally {
+      resultAudit.dispose();
+    }
     return result;
   }
 
@@ -432,7 +466,11 @@ function commandTimeout(command: BrowserCommand): number {
     : DEFAULT_TIMEOUT_MS;
 }
 
-function createTimedSignal(outer: AbortSignal | undefined, timeoutMs: number): {
+function createTimedSignal(
+  outer: AbortSignal | undefined,
+  shutdown: AbortSignal,
+  timeoutMs: number
+): {
   signal: AbortSignal;
   timedOut: boolean;
   dispose(): void;
@@ -448,11 +486,29 @@ function createTimedSignal(outer: AbortSignal | undefined, timeoutMs: number): {
     controller.abort();
   }, timeoutMs);
   const abort = () => controller.abort();
-  if (outer?.aborted) abort();
-  else outer?.addEventListener("abort", abort, { once: true });
+  if (outer?.aborted || shutdown.aborted) abort();
+  else {
+    outer?.addEventListener("abort", abort, { once: true });
+    shutdown.addEventListener("abort", abort, { once: true });
+  }
   state.dispose = () => {
     clearTimeout(timeout);
     outer?.removeEventListener("abort", abort);
+    shutdown.removeEventListener("abort", abort);
   };
   return state;
+}
+
+function raceWithAbort<T>(start: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(abortError());
+  const operation = start();
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(abortError());
+    signal.addEventListener("abort", abort, { once: true });
+    void operation.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+function abortError(): DOMException {
+  return new DOMException("Browser command was canceled.", "AbortError");
 }

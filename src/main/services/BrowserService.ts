@@ -205,7 +205,7 @@ export class BrowserService {
     if (this.disposed) return;
     await this.readyPromise.catch(() => undefined);
     this.disposed = true;
-    await this.core.shutdown();
+    const draining = this.core.shutdown();
     await this.persistRuntime().catch(() => undefined);
     this.visible = false;
     clearInterval(this.presenceTimer);
@@ -216,7 +216,7 @@ export class BrowserService {
       this.cleanupDownloadWaiter(waiter);
       waiter.reject(new BrowserKernelError("BRIDGE_UNAVAILABLE", "Browser service is shutting down."));
     }
-    await this.policy.clearStagedUploads().catch(() => undefined);
+    await Promise.allSettled([draining, this.policy.clearStagedUploads()]);
   }
 
   async closeAllTabs(): Promise<BrowserSnapshot> {
@@ -565,11 +565,11 @@ export class BrowserService {
       if (tab.status !== "crashed" && tab.status !== "error") tab.status = "ready";
       this.emit();
     });
-    contents.on("did-fail-load", (_event, errorCode, errorDescription, _url, isMainFrame) => {
+    contents.on("did-fail-load", (_event, errorCode, _errorDescription, _url, isMainFrame) => {
       if (!isMainFrame || errorCode === -3) return;
       tab.loading = false;
       tab.status = "error";
-      tab.crashState = errorDescription.slice(0, 160);
+      tab.crashState = "load-failed";
       this.emit();
     });
     contents.on("page-title-updated", () => this.emit());
@@ -1082,6 +1082,7 @@ function remoteBrowserWebPreferences(): WebPreferences {
     plugins: false,
     devTools: false,
     navigateOnDragDrop: false,
+    backgroundThrottling: false,
     spellcheck: true
   };
 }

@@ -178,7 +178,7 @@ test("BrowserCore strips favicon payloads and raw failures from agent results", 
       deeplyNested
     },
     tabs: [{
-      id: "tab-a", url: "https://example.com/?access_token=secret", title: "Example", loading: false,
+      id: "tab-a", url: "https://example.com/?q=public&X-Amz-Signature=portable-secret", title: "Example", loading: false,
       canGoBack: false, canGoForward: false, documentRevision: 1, status: "ready",
       favicon: `data:image/png;base64,${"A".repeat(300_000)}`, agents: [], crashState: null
     }],
@@ -207,6 +207,7 @@ test("BrowserCore strips favicon payloads and raw failures from agent results", 
   assert.equal(listed.ok, true);
   assert.equal(listed.data.tabs[0].favicon, null);
   assert.equal(listed.data.tabs[0].url.includes("secret"), false);
+  assert.equal(listed.data.tabs[0].url, "https://example.com/");
   assert.equal(JSON.stringify(listed.data).includes("api-key-secret"), false);
   assert.equal(JSON.stringify(listed.data).includes("deep-secret"), false);
 
@@ -219,4 +220,63 @@ test("BrowserCore strips favicon payloads and raw failures from agent results", 
   assert.equal(failed.error.message, "Browser bridge is unavailable.");
   assert.equal(JSON.stringify(failed).includes("raw-secret"), false);
   assert.equal(JSON.stringify(failed).includes("/Users/private"), false);
+});
+
+test("canceling one shared-tab read does not detach another agent", async () => {
+  const snapshot = { ...emptySnapshot, activeTabId: "tab-a" };
+  const host = {
+    getSnapshot: () => snapshot,
+    getTab: (tabId) => ({
+      id: tabId,
+      url: `https://${tabId}.example/`,
+      documentRevision: 1,
+      status: "ready"
+    }),
+    ensureRuntime: async () => {},
+    newTab: async () => snapshot,
+    closeTab: async () => snapshot,
+    activateTab: async () => snapshot,
+    navigateTab: async () => snapshot,
+    back: async () => snapshot,
+    forward: async () => snapshot,
+    reload: async () => snapshot,
+    pendingDialog: () => null,
+    waitForDownload: async () => { throw new Error("unused"); },
+    touchActor: () => {}, heartbeatActor: () => {}, disconnectActor: () => {}
+  };
+  const gates = [];
+  let detachCalls = 0;
+  const automation = {
+    readPage: async (_tabId, _revision, options) => new Promise((resolve) => {
+      gates.push({ signal: options.signal, resolve });
+    }),
+    cancelPending: () => { detachCalls += 1; }
+  };
+  const audit = { append: async (input) => ({ ...input, hash: "hash", previousHash: null, sequence: 1, version: 1 }) };
+  const core = new BrowserCore({ host, automation, policy: {}, audit });
+  const firstAbort = new AbortController();
+  const first = core.execute(actor("first-reader"), {
+    type: "browser_read_page",
+    requestId: "first-shared-read",
+    tabId: "tab-a"
+  }, firstAbort.signal);
+  const second = core.execute(actor("second-reader"), {
+    type: "browser_read_page",
+    requestId: "second-shared-read",
+    tabId: "tab-a"
+  });
+  while (gates.length < 2) await new Promise((resolve) => setImmediate(resolve));
+
+  firstAbort.abort();
+  const firstResult = await first;
+  assert.equal(firstResult.ok, false);
+  assert.equal(firstResult.error.code, "CANCELED");
+  assert.equal(detachCalls, 0);
+
+  gates[1].resolve({ text: "second completed" });
+  const secondResult = await second;
+  assert.equal(secondResult.ok, true);
+  assert.equal(secondResult.data.text, "second completed");
+  assert.equal(detachCalls, 0);
+  gates[0].resolve({ text: "late first completion" });
 });

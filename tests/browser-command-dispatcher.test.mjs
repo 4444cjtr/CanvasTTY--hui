@@ -155,6 +155,32 @@ test("BrowserCommandDispatcher deduplicates request IDs per connection", async (
   assert.equal(executions, 2);
 });
 
+test("BrowserCommandDispatcher activity cursors follow completion order without gaps", async () => {
+  const gates = new Map();
+  const service = dispatcher({
+    execute: async (_actor, command) => {
+      const gate = deferred();
+      gates.set(command.requestId, gate);
+      return gate.promise;
+    }
+  });
+  const first = service.execute(human, { type: "browser_list_tabs", requestId: "activity-first" });
+  const second = service.execute(human, { type: "browser_list_tabs", requestId: "activity-second" });
+  await until(() => gates.size === 2);
+
+  gates.get("activity-second").resolve({ tabId: null });
+  const secondResult = await second;
+  const firstPage = service.getActivity(0);
+  assert.equal(secondResult.commandSequence, 2);
+  assert.deepEqual(firstPage.map((event) => [event.sequence, event.requestId]), [[1, "activity-second"]]);
+
+  gates.get("activity-first").resolve({ tabId: null });
+  const firstResult = await first;
+  const nextPage = service.getActivity(firstPage[0].sequence);
+  assert.equal(firstResult.commandSequence, 1);
+  assert.deepEqual(nextPage.map((event) => [event.sequence, event.requestId]), [[2, "activity-first"]]);
+});
+
 test("BrowserCommandDispatcher releases completed reads but retains completed agent mutations", async () => {
   let executions = 0;
   const service = dispatcher({
@@ -309,4 +335,77 @@ test("BrowserCommandDispatcher fails closed only for unaudited agent mutations",
   } finally {
     console.warn = originalWarn;
   }
+});
+
+test("BrowserCommandDispatcher times out even when protected execution never settles", async () => {
+  const service = dispatcher({
+    execute: async () => new Promise(() => {})
+  });
+  const startedAt = Date.now();
+  const result = await service.execute(human, {
+    type: "browser_list_tabs",
+    requestId: "stalled-timeout",
+    timeoutMs: 50
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "TIMEOUT");
+  assert.equal(Date.now() - startedAt < 1_000, true);
+});
+
+test("BrowserCommandDispatcher aborts stalled execution and drains on shutdown", async () => {
+  let executionSignal;
+  const service = dispatcher({
+    execute: async (_actor, _command, signal) => {
+      executionSignal = signal;
+      return new Promise(() => {});
+    }
+  });
+  const pending = service.execute(human, {
+    type: "browser_list_tabs",
+    requestId: "stalled-shutdown"
+  });
+  await until(() => Boolean(executionSignal));
+
+  await Promise.race([
+    service.closeAndDrain(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("shutdown did not drain")), 1_000))
+  ]);
+  assert.equal(executionSignal.aborted, true);
+  const result = await pending;
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "CANCELED");
+
+  const rejected = await service.execute(human, {
+    type: "browser_list_tabs",
+    requestId: "after-shutdown"
+  });
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.error.code, "BRIDGE_UNAVAILABLE");
+});
+
+test("BrowserCommandDispatcher bounds a stalled result audit during shutdown", async () => {
+  const resultAuditStarted = deferred();
+  const service = dispatcher({
+    audit: audit({
+      append: async (input) => {
+        if (input.phase === "result") {
+          resultAuditStarted.resolve();
+          return new Promise(() => {});
+        }
+        return {};
+      }
+    })
+  });
+  const pending = service.execute(human, {
+    type: "browser_list_tabs",
+    requestId: "stalled-result-audit"
+  });
+  await resultAuditStarted.promise;
+
+  await Promise.race([
+    service.closeAndDrain(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("shutdown did not bound result audit")), 1_000))
+  ]);
+  assert.equal((await pending).ok, true);
 });

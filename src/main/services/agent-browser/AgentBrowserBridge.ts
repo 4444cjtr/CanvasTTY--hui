@@ -1,16 +1,9 @@
 import type { AgentGateway } from "./AgentGateway.ts";
 import { ProviderLaunchAdapters } from "./ProviderLaunch.ts";
 import type { ProviderLaunchOptions } from "./ProviderLaunch.ts";
-import type { AgentProvider } from "./protocol.ts";
+import { AGENT_BROWSER_ENV, type AgentProvider } from "./protocol.ts";
 
-export const AGENT_BROWSER_ENV = Object.freeze({
-  address: "CANVASTTY_AGENT_BROWSER_ADDRESS",
-  agentId: "CANVASTTY_AGENT_ID",
-  connectionId: "CANVASTTY_AGENT_CONNECTION_ID",
-  terminalSessionId: "CANVASTTY_TERMINAL_SESSION_ID",
-  provider: "CANVASTTY_AGENT_PROVIDER",
-  capabilityToken: "CANVASTTY_AGENT_CAPABILITY"
-});
+export { AGENT_BROWSER_ENV } from "./protocol.ts";
 
 export interface PrepareAgentBrowserLaunchInput {
   terminalSessionId: string;

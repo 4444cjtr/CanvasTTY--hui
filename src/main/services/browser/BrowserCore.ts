@@ -163,6 +163,7 @@ export class BrowserCore {
     }
 
     const revision = tab.documentRevision;
+    throwIfAborted(signal);
     switch (command.type) {
       case "browser_close_tab":
       {
@@ -453,11 +454,10 @@ function safeAgentUrl(value: string): string {
     if (url.protocol !== "http:" && url.protocol !== "https:") return "";
     url.username = "";
     url.password = "";
-    for (const key of [...url.searchParams.keys()]) {
-      if (/(?:token|auth|code|session|secret|password|passwd|api[-_]?key|access[-_]?token|refresh[-_]?token)/i.test(key)) {
-        url.searchParams.delete(key);
-      }
-    }
+    // Query strings can carry credentials under arbitrary provider-specific
+    // names (signed URLs, SAML responses, tickets). Agents receive no query or
+    // fragment rather than relying on a bypassable key-name blacklist.
+    url.search = "";
     url.hash = "";
     return url.toString();
   } catch {

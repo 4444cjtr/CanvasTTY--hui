@@ -8,6 +8,7 @@ import {
   existsSync,
   fstatSync,
   fsyncSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -25,7 +26,7 @@ import {
   MCP_SERVER_NAME,
   canonicalStringify
 } from "../../../agent-browser/tool-catalog.mjs";
-import type { AgentProvider } from "./protocol.ts";
+import { AGENT_BROWSER_ENV, type AgentProvider } from "./protocol.ts";
 
 const KIMI_RULE_PATTERN = `mcp__${MCP_SERVER_NAME}__*`;
 const CLAUDE_RULE_PATTERN = `mcp__${MCP_SERVER_NAME}__*`;
@@ -54,6 +55,7 @@ export interface ProviderLaunchOptions {
 }
 
 interface ConfigurationLockHooks {
+  beforeReclaim?(path: string, nonce: string): void;
   beforeRelease?(path: string, nonce: string): void;
 }
 
@@ -182,6 +184,7 @@ export function codexMcpArgs(helper: StdioHelperLaunch): string[] {
     `command=${tomlString(helper.command)}`,
     `args=${tomlStringArray(helper.args)}`,
     `env=${tomlStringTable(helper.env ?? {})}`,
+    `env_vars=${tomlStringArray(Object.values(AGENT_BROWSER_ENV))}`,
     "enabled=true",
     "required=true",
     'default_tools_approval_mode="approve"',
@@ -273,7 +276,7 @@ export class KimiTemporaryConfiguration {
     validateStdioHelperLaunch(options.helper);
     mkdirSync(options.homeDirectory, { recursive: true, mode: CONFIG_DIRECTORY_MODE });
     const paths = kimiPaths(options.homeDirectory);
-    const lock = acquireLock(paths.lock);
+    const lock = acquireLock(paths.lock, options.lockHooks);
     try {
       this.recoverLocked(paths);
       const ownershipId = randomUUID();
@@ -572,16 +575,44 @@ interface KimiConfigurationLock {
   inode: number;
 }
 
-function acquireLock(path: string): KimiConfigurationLock {
-  let descriptor: number;
-  try {
-    descriptor = openSync(path, "wx", CONFIG_FILE_MODE);
-  } catch (error) {
-    if (!error || typeof error !== "object" || !("code" in error) || error.code !== "EEXIST") throw error;
-    // Never infer that an existing lock is stale from its PID or age. Only its
-    // owner can remove it after proving ownership with the nonce.
-    throw new Error("Another CanvasTTY process is updating Kimi configuration.");
+interface KimiConfigurationLockFile {
+  version: 1;
+  pid: number;
+  createdAt: number;
+  nonce: string;
+}
+
+interface ExistingKimiConfigurationLock {
+  value: KimiConfigurationLockFile;
+  raw: string;
+  device: number;
+  inode: number;
+}
+
+const MAX_LOCK_FILE_BYTES = 4 * 1024;
+const MAX_STALE_LOCK_RETRIES = 3;
+
+function acquireLock(path: string, hooks?: ConfigurationLockHooks): KimiConfigurationLock {
+  for (let attempt = 0; attempt < MAX_STALE_LOCK_RETRIES; attempt += 1) {
+    try {
+      return createLock(path);
+    } catch (error) {
+      if (!hasErrorCode(error, "EEXIST")) throw error;
+      const existing = readExistingLock(path);
+      const state = lockOwnerState(existing.value.pid);
+      if (state === "live") {
+        throw new Error("Another CanvasTTY process is updating Kimi configuration.");
+      }
+      hooks?.beforeReclaim?.(path, existing.value.nonce);
+      if (!unlinkDeadLock(path, existing)) continue;
+    }
   }
+  throw new Error("CanvasTTY could not acquire the Kimi configuration lock safely.");
+}
+
+function createLock(path: string): KimiConfigurationLock {
+  let descriptor: number;
+  descriptor = openSync(path, "wx", CONFIG_FILE_MODE);
   const identity = fstatSync(descriptor);
   const nonce = randomBytes(16).toString("hex");
   try {
@@ -604,6 +635,108 @@ function acquireLock(path: string): KimiConfigurationLock {
     // safer than unlinking a path that may have been replaced concurrently.
     throw error;
   }
+}
+
+function readExistingLock(path: string): ExistingKimiConfigurationLock {
+  let descriptor: number | null = null;
+  try {
+    const pathIdentity = lstatSync(path);
+    if (!pathIdentity.isFile() || pathIdentity.isSymbolicLink() || pathIdentity.size > MAX_LOCK_FILE_BYTES) {
+      throw invalidLockError();
+    }
+    descriptor = openSync(path, "r");
+    const descriptorIdentity = fstatSync(descriptor);
+    if (
+      !descriptorIdentity.isFile()
+      || descriptorIdentity.size > MAX_LOCK_FILE_BYTES
+      || descriptorIdentity.dev !== pathIdentity.dev
+      || descriptorIdentity.ino !== pathIdentity.ino
+    ) throw invalidLockError();
+    const raw = readFileSync(descriptor, "utf8");
+    const finalIdentity = lstatSync(path);
+    if (
+      !finalIdentity.isFile()
+      || finalIdentity.isSymbolicLink()
+      || finalIdentity.dev !== descriptorIdentity.dev
+      || finalIdentity.ino !== descriptorIdentity.ino
+    ) throw changedLockError();
+    return {
+      value: parseLockFile(raw),
+      raw,
+      device: descriptorIdentity.dev,
+      inode: descriptorIdentity.ino
+    };
+  } catch (error) {
+    if (hasErrorCode(error, "ENOENT")) {
+      throw changedLockError();
+    }
+    throw error;
+  } finally {
+    if (descriptor !== null) closeSync(descriptor);
+  }
+}
+
+function parseLockFile(raw: string): KimiConfigurationLockFile {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw invalidLockError();
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidLockError();
+  const record = value as Record<string, unknown>;
+  if (
+    Reflect.ownKeys(record).length !== 4
+    || record.version !== 1
+    || !Number.isSafeInteger(record.pid)
+    || (record.pid as number) <= 0
+    || typeof record.createdAt !== "number"
+    || !Number.isFinite(record.createdAt)
+    || typeof record.nonce !== "string"
+    || !/^[0-9a-f]{32}$/iu.test(record.nonce)
+  ) throw invalidLockError();
+  return record as unknown as KimiConfigurationLockFile;
+}
+
+function lockOwnerState(pid: number): "live" | "dead" {
+  try {
+    process.kill(pid, 0);
+    return "live";
+  } catch (error) {
+    if (hasErrorCode(error, "EPERM")) return "live";
+    if (hasErrorCode(error, "ESRCH")) return "dead";
+    throw new Error("CanvasTTY Kimi configuration lock owner status is ambiguous.");
+  }
+}
+
+function unlinkDeadLock(path: string, existing: ExistingKimiConfigurationLock): boolean {
+  try {
+    const current = readExistingLock(path);
+    if (
+      current.device !== existing.device
+      || current.inode !== existing.inode
+      || current.raw !== existing.raw
+    ) throw changedLockError();
+    // The path is reopened, read and identity-checked synchronously immediately
+    // before unlink. A detected replacement is always retained.
+    unlinkSync(path);
+    return true;
+  } catch (error) {
+    if (hasErrorCode(error, "ENOENT")) return false;
+    throw error;
+  }
+}
+
+function invalidLockError(): Error {
+  return new Error("CanvasTTY Kimi configuration lock is invalid or foreign.");
+}
+
+function changedLockError(): Error {
+  return new Error("CanvasTTY Kimi configuration lock changed during stale recovery.");
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === code);
 }
 
 function releaseLock(path: string, lock: KimiConfigurationLock): void {

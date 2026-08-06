@@ -46,6 +46,13 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 
+// macOS native occlusion can defer a child WebContentsView's CDP input ACK for
+// several seconds even when that view disables renderer background throttling.
+// Agent-controlled tabs must remain responsive while the canvas is covered.
+if (process.platform === "darwin") {
+  app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+}
+
 let mainWindow: BrowserWindow | null = null;
 let terminalManager: TerminalManager | null = null;
 let limitsService: LimitsService | null = null;

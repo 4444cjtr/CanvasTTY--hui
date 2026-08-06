@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { unlinkSync, writeFileSync } from "node:fs";
 import { access, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { tmpdir } from "node:os";
@@ -40,6 +41,66 @@ async function exists(path) {
   }
 }
 
+async function crashWhileHoldingKimiLock(home) {
+  const providerLaunchUrl = new URL(
+    "../src/main/services/agent-browser/ProviderLaunch.ts",
+    import.meta.url
+  ).href;
+  const source = [
+    `import { KimiTemporaryConfiguration } from ${JSON.stringify(providerLaunchUrl)};`,
+    `const helper = ${JSON.stringify(helper)};`,
+    `KimiTemporaryConfiguration.begin({`,
+    `  homeDirectory: ${JSON.stringify(home)},`,
+    "  helper,",
+    "  includeMcpEntry: true,",
+    "  lockHooks: { beforeRelease() { process.exit(73); } }",
+    "});",
+    "process.exit(74);"
+  ].join("\n");
+  const child = spawn(process.execPath, ["--input-type=module", "--eval", source], {
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const pid = child.pid;
+  assert.ok(pid && pid > 0);
+  let stderr = "";
+  let bytes = 0;
+  const consume = (chunk) => {
+    bytes += chunk.byteLength;
+    stderr = `${stderr}${chunk.toString("utf8")}`.slice(-16_384);
+    if (bytes > 64 * 1024) child.kill("SIGKILL");
+  };
+  child.stdout.on("data", consume);
+  child.stderr.on("data", consume);
+  const result = await waitForChild(child, 10_000);
+  return { pid, ...result, stderr };
+}
+
+async function exitedChildPid() {
+  const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+  const pid = child.pid;
+  assert.ok(pid && pid > 0);
+  const result = await waitForChild(child, 5_000);
+  assert.equal(result.code, 0);
+  return pid;
+}
+
+function waitForChild(child, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error("Kimi lock fixture child timed out."));
+    }, timeoutMs);
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("exit", (code, signal) => {
+      clearTimeout(timer);
+      resolve({ code, signal });
+    });
+  });
+}
+
 function kimiPaths(home) {
   return {
     mcp: join(home, "mcp.json"),
@@ -63,7 +124,7 @@ test("codexMcpArgs returns one complete table that replaces a same-name global s
   const prefix = `mcp_servers.${MCP_SERVER_NAME}`;
   const expected = [
     "-c",
-    `${prefix}={command=${JSON.stringify(helper.command)},args=[${helper.args.map(JSON.stringify).join(",")}],env={\"ELECTRON_RUN_AS_NODE\"=\"1\"},enabled=true,required=true,default_tools_approval_mode=\"approve\",enabled_tools=[${APPROVED_BROWSER_TOOL_NAMES.map(JSON.stringify).join(",")}],disabled_tools=[]}`
+    `${prefix}={command=${JSON.stringify(helper.command)},args=[${helper.args.map(JSON.stringify).join(",")}],env={\"ELECTRON_RUN_AS_NODE\"=\"1\"},env_vars=[\"CANVASTTY_AGENT_BROWSER_ADDRESS\",\"CANVASTTY_AGENT_ID\",\"CANVASTTY_AGENT_CONNECTION_ID\",\"CANVASTTY_TERMINAL_SESSION_ID\",\"CANVASTTY_AGENT_PROVIDER\",\"CANVASTTY_AGENT_CAPABILITY\"],enabled=true,required=true,default_tools_approval_mode=\"approve\",enabled_tools=[${APPROVED_BROWSER_TOOL_NAMES.map(JSON.stringify).join(",")}],disabled_tools=[]}`
   ];
   assert.deepEqual(codexMcpArgs(helper), expected);
 });
@@ -273,14 +334,37 @@ test("Kimi cleanup fails closed on duplicate ownership markers", async (t) => {
   assert.equal(MCP_SERVER_NAME in JSON.parse(await readFile(paths.mcp, "utf8")).mcpServers, true);
 });
 
-test("Kimi crash recovery never reclaims an existing lock automatically", async (t) => {
-  const home = await fixture(t, "canvastty-kimi-stale-lock-");
+test("Kimi crash recovery reclaims a strict lock from a dead real child", async (t) => {
+  const home = await fixture(t, "canvastty-kimi-crashed-child-");
+  const paths = kimiPaths(home);
+  const originalMcp = '{"mcpServers":{"keep":{"command":"original"}}}\n';
+  const originalConfig = 'model = "kimi"\n';
+  await writeFile(paths.mcp, originalMcp);
+  await writeFile(paths.config, originalConfig);
+
+  const crashed = await crashWhileHoldingKimiLock(home);
+  assert.equal(crashed.code, 73, crashed.stderr);
+  const staleLock = JSON.parse(await readFile(paths.lock, "utf8"));
+  assert.equal(staleLock.pid, crashed.pid);
+  assert.match(staleLock.nonce, /^[0-9a-f]{32}$/u);
+  assert.equal(await exists(paths.journal), true);
+
+  recoverKimiConfigurationOnStartup(home);
+  assert.equal(await readFile(paths.mcp, "utf8"), originalMcp);
+  assert.equal(await readFile(paths.config, "utf8"), originalConfig);
+  assert.equal(await exists(paths.lock), false);
+  assert.equal(await exists(paths.journal), false);
+  assert.equal(await exists(paths.backupRoot), false);
+});
+
+test("Kimi crash recovery retains a strict lock whose owner is live", async (t) => {
+  const home = await fixture(t, "canvastty-kimi-live-lock-");
   const paths = kimiPaths(home);
   const lockContent = `${JSON.stringify({
     version: 1,
-    pid: 2_147_483_647,
-    createdAt: Date.now() - 60_000,
-    nonce: "stale-test-owner"
+    pid: process.pid,
+    createdAt: Date.now(),
+    nonce: "a".repeat(32)
   })}\n`;
   await writeFile(paths.lock, lockContent, { flag: "wx", mode: 0o600 });
 
@@ -289,6 +373,58 @@ test("Kimi crash recovery never reclaims an existing lock automatically", async 
     /Another CanvasTTY process is updating Kimi configuration/
   );
   assert.equal(await readFile(paths.lock, "utf8"), lockContent);
+  assert.deepEqual(await readdir(home), [".canvastty-browser.lock"]);
+});
+
+test("Kimi crash recovery rejects invalid or foreign lock files", async (t) => {
+  const home = await fixture(t, "canvastty-kimi-foreign-lock-");
+  const paths = kimiPaths(home);
+  const lockContent = `${JSON.stringify({
+    version: 1,
+    pid: process.pid,
+    createdAt: Date.now(),
+    nonce: "foreign-owner"
+  })}\n`;
+  await writeFile(paths.lock, lockContent, { flag: "wx", mode: 0o600 });
+
+  assert.throws(
+    () => KimiTemporaryConfiguration.recover(home),
+    /lock is invalid or foreign/
+  );
+  assert.equal(await readFile(paths.lock, "utf8"), lockContent);
+});
+
+test("Kimi stale-lock reclaim retains a replacement created during verification", async (t) => {
+  const home = await fixture(t, "canvastty-kimi-reclaim-race-");
+  const paths = kimiPaths(home);
+  const deadPid = await exitedChildPid();
+  const staleLock = `${JSON.stringify({
+    version: 1,
+    pid: deadPid,
+    createdAt: Date.now() - 1_000,
+    nonce: "b".repeat(32)
+  })}\n`;
+  const replacement = `${JSON.stringify({
+    version: 1,
+    pid: process.pid,
+    createdAt: Date.now(),
+    nonce: "c".repeat(32)
+  })}\n`;
+  await writeFile(paths.lock, staleLock, { flag: "wx", mode: 0o600 });
+
+  assert.throws(() => KimiTemporaryConfiguration.begin({
+    homeDirectory: home,
+    helper,
+    includeMcpEntry: true,
+    lockHooks: {
+      beforeReclaim(path) {
+        unlinkSync(path);
+        writeFileSync(path, replacement, { flag: "wx", mode: 0o600 });
+      }
+    }
+  }), /lock changed during stale recovery/);
+
+  assert.equal(await readFile(paths.lock, "utf8"), replacement);
   assert.deepEqual(await readdir(home), [".canvastty-browser.lock"]);
 });
 
