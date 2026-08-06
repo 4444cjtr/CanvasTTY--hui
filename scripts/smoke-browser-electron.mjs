@@ -21,7 +21,12 @@ let child;
 let output = "";
 
 try {
-  child = spawn(electronPath, [PROJECT_ROOT, `--user-data-dir=${userDataPath}`, "--disable-gpu"], {
+  const electronArgs = [PROJECT_ROOT, `--user-data-dir=${userDataPath}`, "--disable-gpu"];
+  // GitHub hosted Linux runners cannot install Electron's chrome-sandbox with
+  // root ownership and mode 4755. Product WebContents security is asserted by
+  // unit tests; only this isolated CI process disables the outer Chromium sandbox.
+  if (process.platform === "linux" && process.env.CI === "true") electronArgs.push("--no-sandbox");
+  child = spawn(electronPath, electronArgs, {
     env: {
       ...process.env,
       CANVASTTY_BROWSER_SMOKE_URL: fixture.origin
