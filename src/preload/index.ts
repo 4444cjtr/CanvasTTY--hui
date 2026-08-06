@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   AppSettings,
   BrowserActivityStateEvent,
+  BrowserCanvasWheelEvent,
   BrowserCommand,
   BrowserStateEvent,
   BrowserViewportBounds,
@@ -76,7 +77,8 @@ const api: CanvasTTYApi = {
     clearData: () => ipcRenderer.invoke(IPC.browserClearData),
     setViewport: (bounds: BrowserViewportBounds) => ipcRenderer.send(IPC.browserSetViewport, bounds),
     onState: (listener: (event: BrowserStateEvent) => void) => subscribe(IPC.browserState, listener),
-    onActivity: (listener: (event: BrowserActivityStateEvent) => void) => subscribe(IPC.browserActivity, listener)
+    onActivity: (listener: (event: BrowserActivityStateEvent) => void) => subscribe(IPC.browserActivity, listener),
+    onCanvasWheel: (listener: (event: BrowserCanvasWheelEvent) => void) => subscribe(IPC.browserCanvasWheel, listener)
   },
   terminal: {
     list: () => ipcRenderer.invoke(IPC.terminalList),

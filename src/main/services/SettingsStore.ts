@@ -98,6 +98,7 @@ function createDefaults(systemLocale: string): AppSettings {
     edgePan: false,
     edgePanSpeed: "normal",
     zoomSensitivity: "normal",
+    zoomOverApplications: false,
     focusActivation: "off",
     hoverFocus: false,
     hoverFocusSpeed: "normal",
@@ -163,6 +164,9 @@ export function normalizeSettings(candidate: unknown, fallback: AppSettings): Ap
     zoomSensitivity: ZOOM_SENSITIVITIES.has(source.zoomSensitivity as ZoomSensitivity)
       ? source.zoomSensitivity as ZoomSensitivity
       : fallback.zoomSensitivity,
+    zoomOverApplications: typeof source.zoomOverApplications === "boolean"
+      ? source.zoomOverApplications
+      : fallback.zoomOverApplications,
     focusActivation: FOCUS_ACTIVATIONS.has(source.focusActivation as FocusActivation)
       ? source.focusActivation as FocusActivation
       : fallback.focusActivation,

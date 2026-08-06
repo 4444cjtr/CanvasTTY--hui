@@ -93,6 +93,7 @@ export interface AppSettings {
   edgePan: boolean;
   edgePanSpeed: EdgePanSpeed;
   zoomSensitivity: ZoomSensitivity;
+  zoomOverApplications: boolean;
   focusActivation: FocusActivation;
   hoverFocus: boolean;
   hoverFocusSpeed: EdgePanSpeed;
@@ -277,6 +278,7 @@ export interface BrowserViewportBounds extends Size {
   y: number;
   visible: boolean;
   canvasScale?: number;
+  captureCanvasWheel?: boolean;
 }
 
 export type BrowserTabStatus = "loading" | "ready" | "error" | "crashed";
@@ -357,6 +359,13 @@ export interface BrowserSnapshot {
 
 export interface BrowserStateEvent {
   snapshot: BrowserSnapshot;
+}
+
+export interface BrowserCanvasWheelEvent {
+  tabId: string;
+  clientX: number;
+  clientY: number;
+  deltaY: number;
 }
 
 export type BrowserErrorCode =
@@ -626,6 +635,7 @@ export interface CanvasTTYApi {
     setViewport(bounds: BrowserViewportBounds): void;
     onState(listener: (event: BrowserStateEvent) => void): () => void;
     onActivity(listener: (event: BrowserActivityStateEvent) => void): () => void;
+    onCanvasWheel(listener: (event: BrowserCanvasWheelEvent) => void): () => void;
   };
   terminal: {
     list(): Promise<SessionSnapshot[]>;
@@ -691,6 +701,7 @@ export const IPC = {
   browserSetViewport: "browser:set-viewport",
   browserState: "browser:state",
   browserActivity: "browser:activity",
+  browserCanvasWheel: "browser:canvas-wheel",
   terminalList: "terminal:list",
   terminalCreate: "terminal:create",
   terminalInput: "terminal:input",

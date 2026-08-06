@@ -14,6 +14,7 @@ import type {
   AgentPresenceSnapshot,
   BrowserActivityEvent,
   BrowserActor,
+  BrowserCanvasWheelEvent,
   BrowserCommand,
   BrowserDialogSnapshot,
   BrowserDownloadSnapshot,
@@ -28,6 +29,7 @@ import { IPC } from "../../shared/contracts.ts";
 import { AgentRegistry } from "./browser/AgentRegistry.ts";
 import { BrowserAutomationService, type BrowserPointerResult } from "./browser/BrowserAutomationService.ts";
 import { BrowserAuditStore } from "./browser/BrowserAuditStore.ts";
+import { toCanvasWheelDeltaY } from "./browser/BrowserCanvasWheel.ts";
 import { BrowserCore, type BrowserCoreHost, type BrowserCoreTab } from "./browser/BrowserCore.ts";
 import { BrowserKernelError } from "./browser/BrowserErrors.ts";
 import {
@@ -93,7 +95,14 @@ export class BrowserService {
   private readonly presenceTimer: NodeJS.Timeout;
   private browserSession: Session | null = null;
   private activeTabId: string | null = null;
-  private viewport: BrowserViewportBounds = { x: 0, y: 0, width: 0, height: 0, visible: false };
+  private viewport: BrowserViewportBounds = {
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    visible: false,
+    captureCanvasWheel: false
+  };
   private persisted: PersistedBrowserState = { version: 1, tabs: [], activeTabId: null };
   private downloads: BrowserDownloadSnapshot[] = [];
   private readonly pendingDialogs = new Map<string, BrowserDialogSnapshot>();
@@ -319,7 +328,8 @@ export class BrowserService {
       width: Math.max(0, Math.round(bounds.width)),
       height: Math.max(0, Math.round(bounds.height)),
       visible: Boolean(bounds.visible),
-      ...(Number.isFinite(bounds.canvasScale) ? { canvasScale: bounds.canvasScale } : {})
+      ...(Number.isFinite(bounds.canvasScale) ? { canvasScale: bounds.canvasScale } : {}),
+      captureCanvasWheel: bounds.captureCanvasWheel === true
     };
     this.syncViews();
   }
@@ -539,6 +549,26 @@ export class BrowserService {
       if (!isSafeBrowserUrl(url)) event.preventDefault();
     });
     contents.on("will-attach-webview", (event) => event.preventDefault());
+    contents.on("before-mouse-event", (event, mouse) => {
+      if (
+        mouse.type !== "mouseWheel"
+        || !this.viewport.captureCanvasWheel
+        || !this.viewport.visible
+        || this.activeTabId !== tab.id
+      ) return;
+      const deltaY = toCanvasWheelDeltaY(mouse as Electron.MouseWheelInputEvent);
+      if (deltaY === null) return;
+      const owner = this.getOwner();
+      if (!owner || owner.isDestroyed()) return;
+      const payload: BrowserCanvasWheelEvent = {
+        tabId: tab.id,
+        clientX: this.viewport.x + mouse.x,
+        clientY: this.viewport.y + mouse.y,
+        deltaY
+      };
+      event.preventDefault();
+      owner.webContents.send(IPC.browserCanvasWheel, payload);
+    });
     contents.on("login", (event, _details, _authInfo, callback) => {
       event.preventDefault();
       callback();

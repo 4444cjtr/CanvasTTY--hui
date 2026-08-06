@@ -23,6 +23,7 @@ interface BrowserCardProps {
   camera: CameraState;
   visible: boolean;
   snapEnabled: boolean;
+  zoomOverApplications: boolean;
   snapTargets: readonly SessionBounds[];
   onBoundsChange(bounds: BrowserCanvasState): void;
   onActivate(): void;
@@ -52,6 +53,7 @@ export function BrowserCard({
   camera,
   visible,
   snapEnabled,
+  zoomOverApplications,
   snapTargets,
   onBoundsChange,
   onActivate,
@@ -118,7 +120,8 @@ export function BrowserCard({
           width: rect.width,
           height: rect.height,
           visible: nativeViewVisible,
-          canvasScale: zoom
+          canvasScale: zoom,
+          captureCanvasWheel: zoomOverApplications
         });
       });
     };
@@ -131,10 +134,18 @@ export function BrowserCard({
       observer.disconnect();
       window.removeEventListener("resize", report);
     };
-  }, [camera.x, camera.y, nativeViewVisible, position, size, zoom]);
+  }, [camera.x, camera.y, nativeViewVisible, position, size, zoom, zoomOverApplications]);
 
   useEffect(() => () => {
-    window.canvasTTY.browser.setViewport({ x: 0, y: 0, width: 0, height: 0, visible: false, canvasScale: 1 });
+    window.canvasTTY.browser.setViewport({
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+      visible: false,
+      canvasScale: 1,
+      captureCanvasWheel: false
+    });
   }, []);
 
   const startDrag = (event: React.PointerEvent<HTMLElement>): void => {
@@ -257,6 +268,7 @@ export function BrowserCard({
     <article
       className={`browser-card ${summaryMode ? "browser-card--summary" : ""}`}
       data-interactive="true"
+      data-canvas-zoom-surface="application"
       data-wheel-owner={summaryMode ? undefined : "local"}
       style={{
         width: size.width,

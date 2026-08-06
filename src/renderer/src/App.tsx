@@ -49,6 +49,7 @@ const FALLBACK_SETTINGS: AppSettings = {
   edgePan: false,
   edgePanSpeed: "normal",
   zoomSensitivity: "normal",
+  zoomOverApplications: false,
   focusActivation: "off",
   hoverFocus: false,
   hoverFocusSpeed: "normal",

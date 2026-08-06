@@ -263,6 +263,16 @@ export function SettingsPanel({
                   onChange={(value) => void onChange({ zoomSensitivity: value as ZoomSensitivity })}
                 />
               </SettingGroup>
+              <SettingGroup
+                label={t(locale, "zoomOverApplications")}
+                description={t(locale, "zoomOverApplicationsDescription")}
+              >
+                <Segmented
+                  value={settings.zoomOverApplications ? "on" : "off"}
+                  options={[["on", t(locale, "on")], ["off", t(locale, "off")]]}
+                  onChange={(value) => void onChange({ zoomOverApplications: value === "on" })}
+                />
+              </SettingGroup>
               <SettingGroup label={t(locale, "terminalWheelDirection")}>
                 <Segmented
                   value={settings.invertTerminalWheel ? "inverted" : "normal"}
