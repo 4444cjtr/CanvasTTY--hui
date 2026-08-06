@@ -174,7 +174,7 @@ std::string NarrowPipeName(const std::wstring& value) {
 
 HANDLE CreateSecurePipe(const std::wstring& name, CurrentUserSecurity& security,
                         bool first_instance) {
-  DWORD open_mode = PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | READ_CONTROL;
+  DWORD open_mode = PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED;
   if (first_instance) open_mode |= FILE_FLAG_FIRST_PIPE_INSTANCE;
   return CreateNamedPipeW(
       name.c_str(), open_mode,
@@ -194,6 +194,19 @@ bool WaitForOverlapped(HANDLE handle, OVERLAPPED& overlapped, DWORD* transferred
   WaitForSingleObject(overlapped.hEvent, INFINITE);
   GetOverlappedResult(handle, &overlapped, transferred, FALSE);
   SetLastError(ERROR_OPERATION_ABORTED);
+  return false;
+}
+
+bool FinishOverlapped(HANDLE handle, OVERLAPPED& overlapped, BOOL completed,
+                      DWORD start_error, DWORD* transferred,
+                      HANDLE connection_close_event = nullptr) {
+  if (completed) {
+    return GetOverlappedResult(handle, &overlapped, transferred, FALSE) != FALSE;
+  }
+  if (start_error == ERROR_IO_PENDING) {
+    return WaitForOverlapped(handle, overlapped, transferred, connection_close_event);
+  }
+  SetLastError(start_error);
   return false;
 }
 
@@ -301,10 +314,11 @@ bool WriteConnection(const std::shared_ptr<Connection>& connection, const std::u
     overlapped.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (overlapped.hEvent == nullptr) return false;
     DWORD written = 0;
-    bool success = WriteFile(connection->pipe, payload + offset, length - offset, &written, &overlapped) != FALSE;
-    if (!success && GetLastError() == ERROR_IO_PENDING) {
-      success = WaitForOverlapped(connection->pipe, overlapped, &written, connection->close_event);
-    }
+    const BOOL completed = WriteFile(
+        connection->pipe, payload + offset, length - offset, nullptr, &overlapped);
+    const DWORD start_error = completed ? ERROR_SUCCESS : GetLastError();
+    const bool success = FinishOverlapped(
+        connection->pipe, overlapped, completed, start_error, &written, connection->close_event);
     CloseHandle(overlapped.hEvent);
     if (!success || written == 0) return false;
     offset += written;
@@ -362,11 +376,11 @@ void ReadClient(const std::shared_ptr<Connection>& connection) {
     overlapped.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (overlapped.hEvent == nullptr) break;
     DWORD bytes_read = 0;
-    bool success = ReadFile(connection->pipe, buffer.data(), static_cast<DWORD>(buffer.size()),
-                            &bytes_read, &overlapped) != FALSE;
-    if (!success && GetLastError() == ERROR_IO_PENDING) {
-      success = WaitForOverlapped(connection->pipe, overlapped, &bytes_read, connection->close_event);
-    }
+    const BOOL completed = ReadFile(
+        connection->pipe, buffer.data(), static_cast<DWORD>(buffer.size()), nullptr, &overlapped);
+    const DWORD start_error = completed ? ERROR_SUCCESS : GetLastError();
+    const bool success = FinishOverlapped(
+        connection->pipe, overlapped, completed, start_error, &bytes_read, connection->close_event);
     CloseHandle(overlapped.hEvent);
     if (!success || bytes_read == 0) break;
     if (!SendFrame(FrameType::kData, connection->id, buffer.data(), bytes_read)) {
@@ -614,10 +628,9 @@ bool SelfTest() {
     DWORD read = 0;
     server_ok = read_overlapped.hEvent != nullptr;
     if (server_ok) {
-      server_ok = ReadFile(first, request.data(), 4, &read, &read_overlapped) != FALSE;
-      if (!server_ok && GetLastError() == ERROR_IO_PENDING) {
-        server_ok = WaitForOverlapped(first, read_overlapped, &read);
-      }
+      const BOOL completed = ReadFile(first, request.data(), 4, nullptr, &read_overlapped);
+      const DWORD start_error = completed ? ERROR_SUCCESS : GetLastError();
+      server_ok = FinishOverlapped(first, read_overlapped, completed, start_error, &read);
       server_ok = server_ok && read == 4 && std::memcmp(request.data(), "ping", 4) == 0;
       if (!server_ok) SelfTestFailure("server.read", GetLastError());
       CloseHandle(read_overlapped.hEvent);
@@ -628,10 +641,9 @@ bool SelfTest() {
       DWORD written = 0;
       server_ok = write_overlapped.hEvent != nullptr;
       if (server_ok) {
-        server_ok = WriteFile(first, "pong", 4, &written, &write_overlapped) != FALSE;
-        if (!server_ok && GetLastError() == ERROR_IO_PENDING) {
-          server_ok = WaitForOverlapped(first, write_overlapped, &written);
-        }
+        const BOOL completed = WriteFile(first, "pong", 4, nullptr, &write_overlapped);
+        const DWORD start_error = completed ? ERROR_SUCCESS : GetLastError();
+        server_ok = FinishOverlapped(first, write_overlapped, completed, start_error, &written);
         server_ok = server_ok && written == 4;
         if (!server_ok) SelfTestFailure("server.write", GetLastError());
         CloseHandle(write_overlapped.hEvent);
