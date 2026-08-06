@@ -344,6 +344,7 @@ export interface LimitsSnapshot {
 
 export interface CanvasTTYApi {
   clipboard: {
+    readText(): Promise<string>;
     writeText(text: string): void;
   };
   settings: {
@@ -414,6 +415,7 @@ export interface CanvasTTYApi {
 }
 
 export const IPC = {
+  clipboardRead: "clipboard:read",
   clipboardWrite: "clipboard:write",
   settingsGet: "settings:get",
   settingsUpdate: "settings:update",

@@ -1,6 +1,6 @@
 {
   "name": "canvastty",
-  "version": "0.9.99",
+  "version": "1.0.0",
   "private": true,
   "description": "A spatial desktop for local AI agents and real terminal sessions.",
   "desktopName": "CanvasTTY",
@@ -19,6 +19,7 @@
     "package:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
     "package:win": "npm run build && electron-builder --win nsis portable --publish never",
     "package:mac": "npm run build && electron-builder --mac dmg zip --publish never",
+    "smoke:appimage": "node scripts/smoke-appimage.mjs",
     "preview": "electron-vite preview",
     "audit:secrets": "node scripts/audit-secrets.mjs",
     "test": "node --test tests/*.test.mjs",

@@ -25,6 +25,19 @@ test("terminal copy shortcuts write the xterm selection without reaching the PTY
   assert.match(source, /return false;/);
 });
 
+test("terminal paste reads the trusted clipboard bridge and uses xterm paste semantics", async () => {
+  const source = await readFile(terminalCardPath, "utf8");
+
+  assert.match(source, /window\.canvasTTY\.clipboard\.readText\(\)/);
+  assert.match(source, /terminal\.paste\(text\)/);
+});
+
+test("terminal mouse coordinates are adapted for a transformed canvas", async () => {
+  const source = await readFile(terminalCardPath, "utf8");
+
+  assert.match(source, /attachTerminalMouseCoordinateAdapter\(screen\)/);
+});
+
 test("terminal viewport keeps the palette background after row-sized fits", async () => {
   const [source, styles] = await Promise.all([
     readFile(terminalCardPath, "utf8"),
@@ -42,6 +55,10 @@ test("renaming is inline and does not join the xterm mount dependencies", async 
   assert.equal(mountDependencies, "session.id");
   assert.match(source, /window\.canvasTTY\.terminal\.rename|onRename\(session\.id, title\)/);
   assert.match(source, /data-terminal-rename="true"/);
+  assert.match(source, /defaultValue=\{session\.title\}/);
+  assert.match(source, /autoFocus/);
+  assert.match(source, /terminalRef\.current\?\.blur\(\)/);
+  assert.doesNotMatch(source, /requestAnimationFrame\(\(\) => \{\s*renameInput/);
   assert.match(source, /session\.titleCustomized \? session\.title : compactPath\(session\.cwd\)/);
 });
 

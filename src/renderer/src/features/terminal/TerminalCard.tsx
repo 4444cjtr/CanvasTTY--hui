@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type {
@@ -13,7 +13,8 @@ import { ProviderIcon } from "../../components/ProviderIcon";
 import { UiIcon } from "../../components/UiIcon";
 import { t } from "../../lib/i18n";
 import { sessionStatusLabel } from "../../lib/sessionStatus";
-import { shouldCopyTerminalSelection } from "./terminalShortcuts";
+import { attachTerminalMouseCoordinateAdapter } from "./terminalMouseCoordinates";
+import { shouldCopyTerminalSelection, shouldPasteTerminalClipboard } from "./terminalShortcuts";
 import {
   constrainResize,
   snapMove,
@@ -76,7 +77,6 @@ export function TerminalCard({
   const resizeState = useRef<ResizeState | null>(null);
   const [position, setPosition] = useState(session.position);
   const [size, setSize] = useState(session.size);
-  const [renameDraft, setRenameDraft] = useState(session.title);
   const liveBounds = useRef<SessionBounds>({ position: session.position, size: session.size });
   const summaryMode = zoom < 0.5;
   const summaryScale = summaryMode ? Math.min(2.5, Math.max(1, 0.5 / zoom)) : 1;
@@ -107,13 +107,27 @@ export function TerminalCard({
     terminal.loadAddon(fitAddon);
     terminal.open(host);
     terminal.attachCustomKeyEventHandler((event) => {
-      if (!shouldCopyTerminalSelection(event, terminal.hasSelection())) return true;
+      if (shouldCopyTerminalSelection(event, terminal.hasSelection())) {
+        event.preventDefault();
+        event.stopPropagation();
+        window.canvasTTY.clipboard.writeText(terminal.getSelection());
+        return false;
+      }
+      if (!shouldPasteTerminalClipboard(event)) return true;
 
       event.preventDefault();
       event.stopPropagation();
-      window.canvasTTY.clipboard.writeText(terminal.getSelection());
+      void window.canvasTTY.clipboard.readText()
+        .then((text) => {
+          if (text && terminalRef.current === terminal) terminal.paste(text);
+        })
+        .catch(() => undefined);
       return false;
     });
+    const screen = terminal.element?.querySelector<HTMLElement>(".xterm-screen");
+    const detachMouseCoordinateAdapter = screen
+      ? attachTerminalMouseCoordinateAdapter(screen)
+      : () => undefined;
     terminalRef.current = terminal;
     if (session.buffer) terminal.write(session.buffer);
 
@@ -136,6 +150,7 @@ export function TerminalCard({
 
     return () => {
       cancelAnimationFrame(frame);
+      detachMouseCoordinateAdapter();
       unsubscribe();
       resizeObserver.disconnect();
       input.dispose();
@@ -150,14 +165,13 @@ export function TerminalCard({
     if (terminal) terminal.options.theme = terminalTheme(palette);
   }, [palette]);
 
-  useEffect(() => {
-    if (!renaming) return;
-    setRenameDraft(session.title);
-    requestAnimationFrame(() => {
-      renameInput.current?.focus({ preventScroll: true });
-      renameInput.current?.select();
-    });
-  }, [renaming, session.title]);
+  const bindRenameInput = useCallback((input: HTMLInputElement | null): void => {
+    renameInput.current = input;
+    if (!input) return;
+    terminalRef.current?.blur();
+    input.focus({ preventScroll: true });
+    input.select();
+  }, []);
 
   const startDrag = (event: React.PointerEvent<HTMLElement>): void => {
     if ((event.target as HTMLElement).closest("button, input")) return;
@@ -262,15 +276,18 @@ export function TerminalCard({
 
   const commitRename = async (): Promise<void> => {
     if (renameInFlight.current) return;
-    const title = renameDraft.trim();
+    const title = renameInput.current?.value.trim() ?? "";
     if (!title) {
       onRenameEnd();
       return;
     }
     renameInFlight.current = true;
-    await onRename(session.id, title);
-    renameInFlight.current = false;
-    onRenameEnd();
+    try {
+      await onRename(session.id, title);
+      onRenameEnd();
+    } finally {
+      renameInFlight.current = false;
+    }
   };
 
   return (
@@ -301,13 +318,13 @@ export function TerminalCard({
           <ProviderIcon provider={session.provider} size="small" />
           {renaming ? (
             <input
-              ref={renameInput}
+              ref={bindRenameInput}
               className="terminal-card__rename"
               data-terminal-rename="true"
-              value={renameDraft}
+              defaultValue={session.title}
+              autoFocus
               maxLength={80}
               aria-label={t(locale, "renameWindow")}
-              onChange={(event) => setRenameDraft(event.target.value)}
               onPointerDown={(event) => event.stopPropagation()}
               onBlur={() => void commitRename()}
               onKeyDown={(event) => {

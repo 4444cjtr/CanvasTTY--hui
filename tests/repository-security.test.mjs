@@ -67,6 +67,23 @@ test("release workflow uploads installers only and keeps Windows targets distinc
   }
 });
 
+test("AppImage avoids maximum XZ compression and is smoke-tested before upload", async () => {
+  const config = normalizeLineEndings(
+    await readFile(new URL("../electron-builder.yml", import.meta.url), "utf8")
+  );
+  const workflow = normalizeLineEndings(
+    await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8")
+  );
+  const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+
+  assert.match(config, /^compression: normal$/m);
+  assert.match(config, /^appImage:\n  compression: gzip$/m);
+  assert.doesNotMatch(config, /^compression: maximum$/m);
+  assert.equal(manifest.scripts["smoke:appimage"], "node scripts/smoke-appimage.mjs");
+  assert.match(workflow, /xvfb-run -a npm run smoke:appimage/);
+  assert.ok(workflow.indexOf("Smoke-test packaged AppImage") < workflow.indexOf("Upload installers"));
+});
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

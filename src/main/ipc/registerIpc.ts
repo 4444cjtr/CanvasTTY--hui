@@ -48,6 +48,7 @@ export function registerIpc({
   closePluginWindows,
   requestPluginLauncher
 }: Dependencies): void {
+  ipcMain.handle(IPC.clipboardRead, () => clipboard.readText());
   ipcMain.on(IPC.clipboardWrite, (_event, text: string) => {
     if (typeof text === "string" && text.length > 0) clipboard.writeText(text);
   });

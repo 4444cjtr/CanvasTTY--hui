@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { app, BrowserWindow, protocol } from "electron";
+import { app, BrowserWindow, dialog, protocol } from "electron";
 import { IPC } from "../shared/contracts";
 import { registerIpc } from "./ipc/registerIpc";
 import { SettingsStore } from "./services/SettingsStore";
@@ -9,6 +9,7 @@ import { augmentCliPath } from "./services/cliEnvironment";
 import { PluginManager } from "./services/PluginManager";
 import { PluginMediaService } from "./services/PluginMediaService";
 import { BrowserService } from "./services/BrowserService";
+import { startupPageUrl } from "./startupPage";
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -40,6 +41,11 @@ let pluginManager: PluginManager | null = null;
 let pluginMediaService: PluginMediaService | null = null;
 let browserService: BrowserService | null = null;
 const pluginWindows = new Map<BrowserWindow, string>();
+let servicesReady = false;
+let startupRunning = false;
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
 
 async function createWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow({
@@ -47,7 +53,7 @@ async function createWindow(): Promise<BrowserWindow> {
     height: 900,
     minWidth: 920,
     minHeight: 620,
-    show: false,
+    show: true,
     frame: false,
     backgroundColor: "#aaa7a2",
     webPreferences: {
@@ -65,13 +71,7 @@ async function createWindow(): Promise<BrowserWindow> {
     if (currentUrl && url !== currentUrl) event.preventDefault();
   });
 
-  window.once("ready-to-show", () => window.show());
-
-  if (process.env.ELECTRON_RENDERER_URL) {
-    await window.loadURL(process.env.ELECTRON_RENDERER_URL);
-  } else {
-    await window.loadFile(join(__dirname, "../renderer/index.html"));
-  }
+  await window.loadURL(startupPageUrl({ locale: app.getLocale() }));
 
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
@@ -79,7 +79,7 @@ async function createWindow(): Promise<BrowserWindow> {
   return window;
 }
 
-app.whenReady().then(async () => {
+async function initializeServices(): Promise<void> {
   augmentCliPath();
   const settings = new SettingsStore(app.getPath("userData"), app.getLocale());
   await settings.load();
@@ -111,12 +111,84 @@ app.whenReady().then(async () => {
     closePluginWindows,
     requestPluginLauncher
   });
+  servicesReady = true;
+}
 
-  mainWindow = await createWindow();
-  app.on("activate", async () => {
-    if (BrowserWindow.getAllWindows().length === 0) mainWindow = await createWindow();
+async function loadApplication(window: BrowserWindow): Promise<void> {
+  if (process.env.ELECTRON_RENDERER_URL) {
+    await window.loadURL(process.env.ELECTRON_RENDERER_URL);
+  } else {
+    await window.loadFile(join(__dirname, "../renderer/index.html"));
+  }
+
+  if (process.env.CANVASTTY_SMOKE_TEST === "1") {
+    await window.webContents.executeJavaScript(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+    );
+    console.log("CANVASTTY_SMOKE_READY");
+    app.quit();
+  }
+}
+
+async function startApplication(): Promise<void> {
+  if (startupRunning) return;
+  startupRunning = true;
+  let window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+
+  try {
+    if (!window) window = await createWindow();
+    if (!servicesReady) await initializeServices();
+    await loadApplication(window);
+  } catch (error) {
+    if (window) await showStartupFailure(window, error);
+    else {
+      const detail = error instanceof Error ? error.stack ?? error.message : String(error);
+      console.error("CanvasTTY could not create its startup window.", error);
+      dialog.showErrorBox("CanvasTTY startup failed", detail);
+    }
+  } finally {
+    startupRunning = false;
+  }
+}
+
+async function showStartupFailure(window: BrowserWindow, error: unknown): Promise<void> {
+  const detail = error instanceof Error ? error.stack ?? error.message : String(error);
+  console.error("CanvasTTY startup failed.", error);
+  if (window.isDestroyed()) {
+    dialog.showErrorBox("CanvasTTY startup failed", detail);
+    return;
+  }
+
+  try {
+    await window.loadURL(startupPageUrl({ locale: app.getLocale(), error: detail }));
+    window.show();
+  } catch {
+    dialog.showErrorBox("CanvasTTY startup failed", detail);
+  }
+}
+
+function focusMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+if (hasSingleInstanceLock) {
+  app.on("second-instance", focusMainWindow);
+  void app.whenReady()
+    .then(startApplication)
+    .catch((error) => {
+      const detail = error instanceof Error ? error.stack ?? error.message : String(error);
+      console.error("CanvasTTY could not create its startup window.", error);
+      dialog.showErrorBox("CanvasTTY startup failed", detail);
+      app.quit();
+    });
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) void startApplication();
   });
-});
+}
 
 app.on("before-quit", () => {
   void browserService?.close();

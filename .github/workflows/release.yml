@@ -47,6 +47,10 @@ jobs:
         run: npm test
       - name: Build installers
         run: npm run ${{ matrix.script }}
+      - name: Smoke-test packaged AppImage
+        if: runner.os == 'Linux'
+        timeout-minutes: 2
+        run: xvfb-run -a npm run smoke:appimage
       - name: Upload installers
         uses: actions/upload-artifact@v7
         with:

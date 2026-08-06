@@ -16,8 +16,12 @@ asar: true
 asarUnpack:
   - node_modules/node-pty/**/*
 npmRebuild: true
-compression: maximum
+compression: normal
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+# Avoid the maximum-XZ startup stall while retaining AppImageLauncher 2.x compatibility.
+appImage:
+  compression: gzip
 
 linux:
   icon: build/icon.png
