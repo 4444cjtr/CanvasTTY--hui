@@ -400,8 +400,11 @@ class CodexAppServerClient {
   private nextId = 1;
   private buffer = "";
   private disposed = false;
+  private readonly clientVersion: string;
 
-  constructor(private readonly clientVersion: string) {}
+  constructor(clientVersion: string) {
+    this.clientVersion = clientVersion;
+  }
 
   async readRateLimits(): Promise<unknown> {
     await this.ensureConnected();
