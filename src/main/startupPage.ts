@@ -6,6 +6,7 @@ interface StartupPageOptions {
 
 export function startupPageUrl({ locale, isMacOS, error }: StartupPageOptions): string {
   const russian = locale.toLowerCase().startsWith("ru");
+  const titlebarHeight = isMacOS ? 32 : 44;
   const failed = typeof error === "string";
   const title = failed
     ? (russian ? "CanvasTTY не удалось запустить" : "CanvasTTY could not start")
@@ -28,10 +29,10 @@ export function startupPageUrl({ locale, isMacOS, error }: StartupPageOptions): 
     <style>
       * { box-sizing: border-box; }
       html, body { width: 100%; height: 100%; margin: 0; }
-      body { display: grid; grid-template-rows: ${isMacOS ? "32px" : "44px"} 1fr; color: #f7f4ec; background: #292a35; font-family: Inter, system-ui, sans-serif; }
+      body { --titlebar-height: ${titlebarHeight}px; display: grid; grid-template-rows: var(--titlebar-height) 1fr; color: #f7f4ec; background: #292a35; font-family: Inter, system-ui, sans-serif; }
       header { display: flex; align-items: center; justify-content: space-between; padding-left: 15px; border-bottom: 1px solid rgba(255,255,255,.08); -webkit-app-region: drag; }
       header strong { font-size: 13px; letter-spacing: .02em; }
-      button { width: 46px; height: 43px; border: 0; color: rgba(255,255,255,.8); background: transparent; cursor: pointer; font-size: 22px; -webkit-app-region: no-drag; }
+      button { width: 46px; height: 100%; border: 0; color: rgba(255,255,255,.8); background: transparent; cursor: pointer; font-size: 22px; -webkit-app-region: no-drag; }
       button:hover { color: white; background: #d85b61; }
       .macos-titlebar { justify-content: flex-start; gap: 10px; padding-left: 78px; }
       .macos-titlebar .drag { flex: 1; height: 100%; }

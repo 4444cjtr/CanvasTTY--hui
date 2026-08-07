@@ -694,8 +694,7 @@ function nextSessionPosition(index: number, homeGridSize: HomeGridSize): Point {
 }
 
 function homeCamera(homeGridSize: HomeGridSize): CameraState {
-  const viewportWidth = typeof window === "undefined" ? 1360 : window.innerWidth;
-  const viewportHeight = typeof window === "undefined" ? 820 : window.innerHeight - 44;
+  const { width: viewportWidth, height: viewportHeight } = canvasViewportSize();
   const homeSize = homeGridPixelSize(homeGridSize);
   const availableZoom = Math.min(
     1,
@@ -712,12 +711,20 @@ function homeCamera(homeGridSize: HomeGridSize): CameraState {
 }
 
 function focusCamera(position: Point, size: { width: number; height: number }): CameraState {
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight - 44;
+  const { width: viewportWidth, height: viewportHeight } = canvasViewportSize();
   const zoom = 0.92;
   return {
     zoom,
     x: viewportWidth / 2 - (position.x + size.width / 2) * zoom,
     y: viewportHeight / 2 - (position.y + size.height / 2) * zoom
+  };
+}
+
+function canvasViewportSize(): { width: number; height: number } {
+  if (typeof window === "undefined") return { width: 1360, height: 820 };
+  const content = document.querySelector<HTMLElement>(".app__content");
+  return {
+    width: content?.clientWidth || window.innerWidth,
+    height: content?.clientHeight || window.innerHeight
   };
 }
