@@ -27,6 +27,7 @@ import {
 } from "./services/agent-browser/ProviderLaunch";
 import type { StdioHelperLaunch } from "./services/agent-browser/ProviderLaunch";
 import { startupPageUrl } from "./startupPage";
+import { mainWindowChromeOptions } from "./windowChrome";
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -83,7 +84,7 @@ async function createWindow(): Promise<BrowserWindow> {
     minWidth: 920,
     minHeight: 620,
     show: true,
-    frame: false,
+    ...mainWindowChromeOptions(),
     backgroundColor: "#aaa7a2",
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
@@ -100,7 +101,7 @@ async function createWindow(): Promise<BrowserWindow> {
     if (currentUrl && url !== currentUrl) event.preventDefault();
   });
 
-  await window.loadURL(startupPageUrl({ locale: app.getLocale() }));
+  await window.loadURL(startupPageUrl({ locale: app.getLocale(), isMacOS: process.platform === "darwin" }));
 
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
@@ -278,7 +279,7 @@ async function showStartupFailure(window: BrowserWindow, error: unknown): Promis
   }
 
   try {
-    await window.loadURL(startupPageUrl({ locale: app.getLocale(), error: detail }));
+    await window.loadURL(startupPageUrl({ locale: app.getLocale(), isMacOS: process.platform === "darwin", error: detail }));
     window.show();
   } catch {
     dialog.showErrorBox("CanvasTTY startup failed", detail);

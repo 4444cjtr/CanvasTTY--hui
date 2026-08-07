@@ -157,7 +157,9 @@ export interface MediaSelection {
 }
 
 export interface WindowState {
+  isMacOS: boolean;
   maximized: boolean;
+  fullscreen: boolean;
 }
 
 export const PLUGIN_API_VERSION = 1;
@@ -663,10 +665,12 @@ export interface CanvasTTYApi {
     onRemoved(listener: (event: SessionRemovedEvent) => void): () => void;
   };
   window: {
+    isMacOS: boolean;
     minimize(): void;
     toggleMaximize(): Promise<WindowState>;
     close(): void;
     getState(): Promise<WindowState>;
+    onState(listener: (state: WindowState) => void): () => void;
   };
 }
 
@@ -731,5 +735,6 @@ export const IPC = {
   windowMinimize: "window:minimize",
   windowToggleMaximize: "window:toggle-maximize",
   windowClose: "window:close",
-  windowGetState: "window:get-state"
+  windowGetState: "window:get-state",
+  windowState: "window:state"
 } as const;

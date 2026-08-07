@@ -1,0 +1,25 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const contractsPath = new URL("../src/shared/contracts.ts", import.meta.url);
+const preloadPath = new URL("../src/preload/index.ts", import.meta.url);
+const ipcPath = new URL("../src/main/ipc/registerIpc.ts", import.meta.url);
+
+test("window bridge exposes native fullscreen state updates without a renderer toggle", async () => {
+  const [contracts, preload, ipc] = await Promise.all([
+    readFile(contractsPath, "utf8"),
+    readFile(preloadPath, "utf8"),
+    readFile(ipcPath, "utf8")
+  ]);
+
+  assert.match(contracts, /fullscreen: boolean/);
+  assert.match(contracts, /isMacOS: boolean/);
+  assert.match(contracts, /windowState: "window:state"/);
+  assert.match(preload, /isMacOS: process\.platform === "darwin"/);
+  assert.match(preload, /onState: \(listener\) => subscribe\(IPC\.windowState, listener\)/);
+  assert.match(ipc, /observeWindowState\(mainWindow, \(\) => publishWindowState\(mainWindow\)\)/);
+  assert.doesNotMatch(contracts, /toggleFullScreen/);
+  assert.doesNotMatch(preload, /toggleFullScreen/);
+  assert.doesNotMatch(ipc, /windowToggleFullScreen/);
+});
