@@ -560,9 +560,11 @@ async function downloadGithubRepositoryOnce(sourceUrl: string, destination: stri
 }
 
 function delay(durationMs: number): Promise<void> {
+  // Deliberately not unref'd: a pending download retry must keep the event
+  // loop alive, otherwise bare Node contexts (tests, CLI) drain the loop and
+  // abort before the retry fires.
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, durationMs);
-    timer.unref();
+    setTimeout(resolve, durationMs);
   });
 }
 
