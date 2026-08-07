@@ -76,6 +76,12 @@ windows/focus.js
 
 插件和 contribution 的 ID 是稳定的持久化键，发布后不要重命名。插件版本使用语义化版本文本。可选的 `settingsContribution` 引用一个 `canvas-app`，CanvasTTY 会在扩展菜单中为它显示独立的 **Settings** 操作。`canvas-app` 和 `window` 可以声明可选的 `minSize`；它不能大于 `defaultSize`，最小可设为 240 × 140 px。旧 manifest 继续使用宿主的 320 × 220 px 最小值。HOME 以宽敞的 16 × 12 逻辑网格起步，同时保留原有的 12 × 8 构图。编辑器可以把可见边界扩展到 48 × 36，且不缩小单元格尺寸；需要时添加小组件会自动扩展边界。画布应用使用世界坐标像素，并参与与终端卡片相同的吸附系统。
 
+### 可选模块
+
+模块化 manifest 可声明经过完整性校验的 coreFiles 和最多 16 个可选 modules。每个文件都包含 path、精确的 bytes 大小和 SHA-256。CanvasTTY 在预览时只下载 manifest，显示模块复选框、大小和权限，然后仅下载核心文件与用户选择的模块。之后更改选择时会原子替换插件包，并删除已取消模块的文件。Contribution 可以通过 module 字段在模块未安装时隐藏。
+
+host.onStorageChange(listener) 会把 host.storage.set 的变化通知给同一插件的其他已打开画布卡片，从而避免轮询。
+
 ## 权限
 
 | 权限 | SDK 能力 | 数据边界 |

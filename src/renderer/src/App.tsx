@@ -460,8 +460,8 @@ export function App(): React.JSX.Element {
     window.canvasTTY.plugins.previewInstall(sourceUrl)
   ), []);
 
-  const installPlugin = useCallback(async (token: string): Promise<void> => {
-    const installed = await window.canvasTTY.plugins.install(token);
+  const installPlugin = useCallback(async (token: string, selectedModules: string[]): Promise<void> => {
+    const installed = await window.canvasTTY.plugins.install(token, selectedModules);
     setPlugins((current) => [...current.filter((plugin) => plugin.manifest.id !== installed.manifest.id), installed]);
 
     let homeLayout = settings.homeLayout;
@@ -482,6 +482,21 @@ export function App(): React.JSX.Element {
     const updated = await window.canvasTTY.plugins.setEnabled(pluginId, enabled);
     setPlugins((current) => current.map((plugin) => plugin.manifest.id === pluginId ? updated : plugin));
   }, []);
+
+  const setPluginModules = useCallback(async (pluginId: string, selectedModules: string[]): Promise<void> => {
+    const updated = await window.canvasTTY.plugins.setModules(pluginId, selectedModules);
+    setPlugins((current) => current.map((plugin) => plugin.manifest.id === pluginId ? updated : plugin));
+    const contributions = new Set(updated.manifest.contributions.map((contribution) => contribution.id));
+    await saveSettings({
+      homeLayout: settings.homeLayout.filter((placement) => {
+        const prefix = `plugin:${pluginId}:`;
+        return !placement.widgetId.startsWith(prefix) || contributions.has(placement.widgetId.slice(prefix.length));
+      }),
+      pluginCanvas: settings.pluginCanvas.filter((instance) => (
+        instance.pluginId !== pluginId || contributions.has(instance.contributionId)
+      ))
+    });
+  }, [saveSettings, settings.homeLayout, settings.pluginCanvas]);
 
   const uninstallPlugin = useCallback(async (pluginId: string): Promise<void> => {
     await window.canvasTTY.plugins.uninstall(pluginId);
@@ -695,6 +710,7 @@ export function App(): React.JSX.Element {
         onChange={saveSettings}
         onPreviewPlugin={previewPlugin}
         onInstallPlugin={installPlugin}
+        onSetPluginModules={setPluginModules}
         onSetPluginEnabled={setPluginEnabled}
         onUninstallPlugin={uninstallPlugin}
         onOpenPluginContribution={openPluginContribution}

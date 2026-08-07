@@ -10,6 +10,8 @@ import type {
   SessionSnapshot
 } from "../../../../shared/contracts";
 
+const storageListeners = new Map<string, Set<(key: string, value: unknown) => void>>();
+
 interface PluginFrameProps {
   plugin: InstalledPlugin;
   contribution: PluginContribution;
@@ -55,7 +57,8 @@ export function PluginFrame({
       id: plugin.manifest.id,
       name: plugin.manifest.name,
       version: plugin.manifest.version,
-      permissions: plugin.manifest.permissions
+      permissions: plugin.manifest.permissions,
+      modules: plugin.selectedModules
     },
     contribution: {
       id: contribution.id,
@@ -114,6 +117,10 @@ export function PluginFrame({
     postToFrame(frame.current, { source: "canvastty-host", type: "context", value: context });
   }, [context]);
 
+  useEffect(() => subscribeStorage(plugin.manifest.id, (key, value) => {
+    postToFrame(frame.current, { source: "canvastty-host", type: "storage-change", key, value });
+  }), [plugin.manifest.id]);
+
   return (
     <iframe
       ref={frame}
@@ -154,7 +161,9 @@ async function handleRequest({
   }
   if (method === "storage.set") {
     requirePermission(plugin, "storage");
-    await window.canvasTTY.plugins.storageSet(pluginId, stringParam(params.key, "key"), params.value);
+    const key = stringParam(params.key, "key");
+    await window.canvasTTY.plugins.storageSet(pluginId, key, params.value);
+    emitStorage(pluginId, key, params.value);
     return null;
   }
   if (method === "secrets.get") {
@@ -269,6 +278,20 @@ function requirePermission(plugin: InstalledPlugin, permission: PluginPermission
 
 function postToFrame(frame: HTMLIFrameElement | null, message: object): void {
   frame?.contentWindow?.postMessage(message, "*");
+}
+
+function subscribeStorage(pluginId: string, listener: (key: string, value: unknown) => void): () => void {
+  const listeners = storageListeners.get(pluginId) ?? new Set();
+  listeners.add(listener);
+  storageListeners.set(pluginId, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) storageListeners.delete(pluginId);
+  };
+}
+
+function emitStorage(pluginId: string, key: string, value: unknown): void {
+  storageListeners.get(pluginId)?.forEach((listener) => listener(key, structuredClone(value)));
 }
 
 function stringParam(value: unknown, label: string): string {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -145,6 +146,7 @@ test("previews, installs, serves, stores, disables, and uninstalls a static pack
     const sdkSource = await sdk.text();
     assert.match(sdkSource, /secrets: Object\.freeze/);
     assert.match(sdkSource, /canvas: Object\.freeze/);
+    assert.match(sdkSource, /onStorageChange/);
 
     await manager.setEnabled(installed.manifest.id, false);
     assert.equal((await manager.protocolResponse(
@@ -157,6 +159,67 @@ test("previews, installs, serves, stores, disables, and uninstalls a static pack
   } finally {
     await manager.dispose();
     await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("installs only selected integrity-checked modules and can change the selection", async () => {
+  const userData = await mkdtemp(join(tmpdir(), "canvastty-plugin-modules-user-"));
+  const fixture = await mkdtemp(join(tmpdir(), "canvastty-plugin-modules-source-"));
+  const core = Buffer.from("<h1>Core</h1>");
+  const extra = Buffer.from("export const extra = true;");
+  const manifest = {
+    apiVersion: 1,
+    id: "com.example.modular",
+    name: "Modular",
+    version: "1.0.0",
+    description: "A modular fixture.",
+    permissions: ["storage"],
+    coreFiles: [{ path: "index.html", bytes: core.length, sha256: sha256(core) }],
+    modules: [{
+      id: "extra",
+      title: "Extra",
+      defaultSelected: false,
+      permissions: ["network"],
+      files: [{ path: "extra.js", bytes: extra.length, sha256: sha256(extra) }]
+    }],
+    contributions: [{
+      id: "core",
+      kind: "canvas-app",
+      title: "Core",
+      entry: "index.html",
+      defaultSize: { width: 480, height: 300 }
+    }]
+  };
+  await writeFile(join(fixture, "canvastty.plugin.json"), JSON.stringify(manifest));
+  await writeFile(join(fixture, "index.html"), core);
+  await writeFile(join(fixture, "extra.js"), extra);
+  const copyFiles = async (_url, destination, files) => {
+    for (const file of files) {
+      await mkdir(join(destination, file.path.split("/").slice(0, -1).join("/")), { recursive: true });
+      await cp(join(fixture, file.path), join(destination, file.path));
+    }
+  };
+  const manager = new PluginManager(
+    userData,
+    async (_url, destination) => cp(fixture, destination, { recursive: true }),
+    copyFiles
+  );
+  try {
+    await manager.load();
+    const preview = await manager.previewInstall("https://github.com/example/modular");
+    const installed = await manager.install(preview.token, []);
+    assert.deepEqual(installed.selectedModules, []);
+    assert.deepEqual(installed.manifest.permissions, ["storage"]);
+    assert.equal((await manager.protocolResponse("canvastty-plugin://com.example.modular/extra.js")).status, 404);
+
+    const updated = await manager.setModules(installed.manifest.id, ["extra"]);
+    assert.deepEqual(updated.selectedModules, ["extra"]);
+    assert.deepEqual(updated.manifest.permissions, ["storage", "network"]);
+    assert.equal((await manager.protocolResponse("canvastty-plugin://com.example.modular/extra.js")).status, 200);
+  } finally {
+    await manager.dispose();
+    await rm(userData, { recursive: true, force: true });
+    await rm(fixture, { recursive: true, force: true });
   }
 });
 
@@ -250,4 +313,8 @@ function writeOctal(header, offset, length, value) {
   const text = value.toString(8).padStart(length - 1, "0");
   header.write(text, offset, length - 1, "ascii");
   header[offset + length - 1] = 0;
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
 }

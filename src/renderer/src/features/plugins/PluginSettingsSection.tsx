@@ -5,6 +5,7 @@ import type {
   LocaleId,
   PluginContribution,
   PluginInstallPreview,
+  PluginModule,
   PluginPermission
 } from "../../../../shared/contracts";
 import { t, type TranslationKey } from "../../lib/i18n";
@@ -13,7 +14,8 @@ interface PluginSettingsSectionProps {
   settings: AppSettings;
   plugins: InstalledPlugin[];
   onPreviewPlugin(sourceUrl: string): Promise<PluginInstallPreview>;
-  onInstallPlugin(token: string): Promise<void>;
+  onInstallPlugin(token: string, selectedModules: string[]): Promise<void>;
+  onSetPluginModules(pluginId: string, selectedModules: string[]): Promise<void>;
   onSetPluginEnabled(pluginId: string, enabled: boolean): Promise<void>;
   onUninstallPlugin(pluginId: string): Promise<void>;
   onOpenPluginContribution(plugin: InstalledPlugin, contribution: PluginContribution): Promise<void>;
@@ -24,6 +26,7 @@ export function PluginSettingsSection({
   plugins,
   onPreviewPlugin,
   onInstallPlugin,
+  onSetPluginModules,
   onSetPluginEnabled,
   onUninstallPlugin,
   onOpenPluginContribution
@@ -34,13 +37,16 @@ export function PluginSettingsSection({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
+  const [selectedModules, setSelectedModules] = useState<string[]>([]);
 
   const inspect = async (): Promise<void> => {
     if (busy || sourceUrl.trim().length === 0) return;
     setBusy(true);
     setError(null);
     try {
-      setPreview(await onPreviewPlugin(sourceUrl.trim()));
+      const next = await onPreviewPlugin(sourceUrl.trim());
+      setPreview(next);
+      setSelectedModules(next.manifest.modules?.filter((module) => module.defaultSelected).map((module) => module.id) ?? []);
     } catch (reason) {
       setError(errorMessage(reason, t(locale, "pluginInstallFailed")));
     } finally {
@@ -53,7 +59,7 @@ export function PluginSettingsSection({
     setBusy(true);
     setError(null);
     try {
-      await onInstallPlugin(preview.token);
+      await onInstallPlugin(preview.token, selectedModules);
       setPreview(null);
       setSourceUrl("");
     } catch (reason) {
@@ -105,6 +111,13 @@ export function PluginSettingsSection({
             <header><strong>{preview.manifest.name}</strong><span>v{preview.manifest.version}</span></header>
             <p>{preview.manifest.description}</p>
             <PermissionList permissions={preview.manifest.permissions} locale={locale} />
+            <ModuleList
+              modules={preview.manifest.modules ?? []}
+              selected={selectedModules}
+              disabled={busy}
+              locale={locale}
+              onChange={setSelectedModules}
+            />
             <div className="plugin-preview__actions">
               <button type="button" onClick={() => setPreview(null)}>{t(locale, "cancel")}</button>
               <button className="plugin-primary-action" type="button" disabled={busy} onClick={() => void install()}>{t(locale, "install")}</button>
@@ -156,6 +169,13 @@ export function PluginSettingsSection({
                 </header>
                 <p>{plugin.manifest.description}</p>
                 <PermissionList permissions={plugin.manifest.permissions} locale={locale} />
+                <ModuleList
+                  modules={plugin.manifest.modules ?? []}
+                  selected={plugin.selectedModules}
+                  disabled={busy}
+                  locale={locale}
+                  onChange={(modules) => void runPluginAction(() => onSetPluginModules(plugin.manifest.id, modules))}
+                />
                 <div className="plugin-contribution-list">
                   {plugin.manifest.contributions.map((contribution) => {
                     const widgetId = `plugin:${plugin.manifest.id}:${contribution.id}`;
@@ -211,6 +231,53 @@ function permissionKey(permission: PluginPermission): TranslationKey {
     "playlists:write": "permissionPlaylistsWrite",
     network: "permissionNetwork"
   } as const)[permission];
+}
+
+function ModuleList({
+  modules,
+  selected,
+  disabled,
+  locale,
+  onChange
+}: {
+  modules: PluginModule[];
+  selected: string[];
+  disabled: boolean;
+  locale: LocaleId;
+  onChange(value: string[]): void;
+}): React.JSX.Element | null {
+  if (modules.length === 0) return null;
+  return (
+    <fieldset className="plugin-modules">
+      <legend>{locale === "ru" ? "Необязательные модули" : "Optional modules"}</legend>
+      {modules.map((module) => (
+        <label key={module.id}>
+          <input
+            type="checkbox"
+            checked={selected.includes(module.id)}
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.checked
+              ? [...selected, module.id]
+              : selected.filter((id) => id !== module.id))}
+          />
+          <span>
+            <strong>{module.title}</strong>
+            {module.description && <small>{module.description}</small>}
+            {module.permissions.length > 0 && (
+              <small>{module.permissions.map((permission) => t(locale, permissionKey(permission))).join(" · ")}</small>
+            )}
+            <small>{formatBytes(module.files.reduce((total, file) => total + file.bytes, 0))}</small>
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  return bytes < 1_024 * 1_024
+    ? `${Math.max(1, Math.round(bytes / 1_024))} KB`
+    : `${(bytes / (1_024 * 1_024)).toFixed(1)} MB`;
 }
 
 function settingsContribution(plugin: InstalledPlugin): PluginContribution | null {

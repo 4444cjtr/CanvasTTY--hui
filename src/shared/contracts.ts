@@ -184,6 +184,22 @@ export interface PluginContributionBase {
   description?: string;
   entry: string;
   icon?: string;
+  module?: string;
+}
+
+export interface PluginModuleAsset {
+  path: string;
+  bytes: number;
+  sha256: string;
+}
+
+export interface PluginModule {
+  id: string;
+  title: string;
+  description?: string;
+  defaultSelected: boolean;
+  permissions: PluginPermission[];
+  files: PluginModuleAsset[];
 }
 
 export interface PluginHomeWidgetContribution extends PluginContributionBase {
@@ -219,6 +235,8 @@ export interface PluginManifest {
   permissions: PluginPermission[];
   contributions: PluginContribution[];
   settingsContribution?: string;
+  coreFiles?: PluginModuleAsset[];
+  modules?: PluginModule[];
 }
 
 export interface InstalledPlugin {
@@ -226,6 +244,7 @@ export interface InstalledPlugin {
   sourceUrl: string;
   enabled: boolean;
   installedAt: number;
+  selectedModules: string[];
 }
 
 export interface PluginInstallPreview {
@@ -623,7 +642,8 @@ export interface CanvasTTYApi {
   plugins: {
     list(): Promise<InstalledPlugin[]>;
     previewInstall(sourceUrl: string): Promise<PluginInstallPreview>;
-    install(token: string): Promise<InstalledPlugin>;
+    install(token: string, selectedModules?: string[]): Promise<InstalledPlugin>;
+    setModules(pluginId: string, selectedModules: string[]): Promise<InstalledPlugin>;
     setEnabled(pluginId: string, enabled: boolean): Promise<InstalledPlugin>;
     uninstall(pluginId: string): Promise<void>;
     openCanvas(pluginId: string, contributionId: string, sourceCanvasInstanceId?: string): Promise<void>;
@@ -701,6 +721,7 @@ export const IPC = {
   pluginsList: "plugins:list",
   pluginsPreviewInstall: "plugins:preview-install",
   pluginsInstall: "plugins:install",
+  pluginsSetModules: "plugins:set-modules",
   pluginsSetEnabled: "plugins:set-enabled",
   pluginsUninstall: "plugins:uninstall",
   pluginsOpenCanvas: "plugins:open-canvas",

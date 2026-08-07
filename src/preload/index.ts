@@ -46,7 +46,10 @@ const api: CanvasTTYApi = {
   plugins: {
     list: () => ipcRenderer.invoke(IPC.pluginsList),
     previewInstall: (sourceUrl: string) => ipcRenderer.invoke(IPC.pluginsPreviewInstall, sourceUrl),
-    install: (token: string) => ipcRenderer.invoke(IPC.pluginsInstall, token),
+    install: (token: string, selectedModules?: string[]) => ipcRenderer.invoke(IPC.pluginsInstall, token, selectedModules),
+    setModules: (pluginId: string, selectedModules: string[]) => (
+      ipcRenderer.invoke(IPC.pluginsSetModules, pluginId, selectedModules)
+    ),
     setEnabled: (pluginId: string, enabled: boolean) => ipcRenderer.invoke(IPC.pluginsSetEnabled, pluginId, enabled),
     uninstall: (pluginId: string) => ipcRenderer.invoke(IPC.pluginsUninstall, pluginId),
     openCanvas: (pluginId: string, contributionId: string, sourceCanvasInstanceId?: string) => (

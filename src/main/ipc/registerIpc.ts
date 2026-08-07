@@ -117,9 +117,19 @@ export function registerIpc({
     if (typeof sourceUrl !== "string") throw new Error("GitHub URL is required.");
     return plugins.previewInstall(sourceUrl);
   });
-  ipcMain.handle(IPC.pluginsInstall, (_event, token: string) => {
+  ipcMain.handle(IPC.pluginsInstall, (_event, token: string, selectedModules?: string[]) => {
     if (typeof token !== "string") throw new Error("Plugin preview token is invalid.");
-    return plugins.install(token);
+    if (selectedModules !== undefined && (
+      !Array.isArray(selectedModules) || selectedModules.some((item) => typeof item !== "string")
+    )) throw new Error("Plugin module selection is invalid.");
+    return plugins.install(token, selectedModules);
+  });
+  ipcMain.handle(IPC.pluginsSetModules, async (_event, pluginId: string, selectedModules: string[]) => {
+    if (!Array.isArray(selectedModules) || selectedModules.some((item) => typeof item !== "string")) {
+      throw new Error("Plugin module selection is invalid.");
+    }
+    closePluginWindows(pluginId);
+    return plugins.setModules(pluginId, selectedModules);
   });
   ipcMain.handle(IPC.pluginsSetEnabled, async (_event, pluginId: string, enabled: boolean) => {
     if (typeof enabled !== "boolean") throw new Error("Plugin enabled state is invalid.");
@@ -223,7 +233,8 @@ export function registerIpc({
           id: plugin.manifest.id,
           name: plugin.manifest.name,
           version: plugin.manifest.version,
-          permissions: plugin.manifest.permissions
+          permissions: plugin.manifest.permissions,
+          modules: plugin.selectedModules
         },
         contribution: { id: contribution.id, kind: contribution.kind, title: contribution.title },
         appearance: { locale: settings.get().locale, palette: settings.get().palette }

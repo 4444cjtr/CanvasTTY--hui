@@ -76,6 +76,12 @@ Editor tooling can use the [manifest JSON Schema](canvastty-plugin.schema.json) 
 
 Plugin and contribution IDs are stable persistence keys. Do not rename them after publishing. Plugin versions use semantic version text. `settingsContribution` optionally references one `canvas-app`; CanvasTTY shows a dedicated **Settings** action for it in the Extensions menu. `minSize` is optional for `canvas-app` and `window` contributions, must not exceed `defaultSize`, and may be as small as 240 × 140 pixels. Older manifests keep the 320 × 220 host minimum. HOME starts with a spacious 16 × 12 logical grid while preserving the original 12 × 8 composition. The editor can resize its visible boundary up to 48 × 36 without shrinking cell dimensions, and adding a widget grows the boundary automatically when needed. Canvas apps use world-space pixels and participate in the same snapping system as terminal cards.
 
+### Optional modules
+
+A modular manifest declares integrity-checked coreFiles plus up to 16 optional modules. Every file entry contains path, exact bytes, and a SHA-256 digest. CanvasTTY downloads only the manifest for inspection, shows checkboxes, per-module size and permissions, then downloads only the core and selected module files. Changing the selection later replaces the installed package atomically and removes deselected files. A contribution may set module to disappear when that module is not installed.
+
+host.onStorageChange(listener) notifies other live canvas contributions of writes made through host.storage.set, avoiding polling when a plugin uses multiple coordinated cards.
+
 ## Permissions
 
 | Permission | SDK capability | Data boundary |

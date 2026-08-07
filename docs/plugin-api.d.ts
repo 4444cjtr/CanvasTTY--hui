@@ -50,6 +50,7 @@ export interface CanvasTTYPluginHost {
     write(libraryId: string, name: string, content: string): Promise<CanvasTTYPluginPlaylistFile>;
   };
   onContext(listener: (context: CanvasTTYPluginContext) => void): () => void;
+  onStorageChange(listener: (key: string, value: unknown) => void): () => void;
 }
 
 export interface CanvasTTYPluginContext {
@@ -59,6 +60,7 @@ export interface CanvasTTYPluginContext {
     name: string;
     version: string;
     permissions: Array<"storage" | "secrets" | "sessions:read" | "limits:read" | "launcher:open" | "external:open" | "media:library" | "playlists:read" | "playlists:write" | "network">;
+    modules: string[];
   };
   contribution: {
     id: string;

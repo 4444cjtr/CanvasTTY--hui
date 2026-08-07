@@ -196,6 +196,7 @@ export function PluginCanvasCard({
         </button>
       </header>
       <PluginFrame
+        key={plugin.selectedModules.join(",")}
         className="plugin-canvas-card__frame"
         plugin={plugin}
         contribution={contribution}
