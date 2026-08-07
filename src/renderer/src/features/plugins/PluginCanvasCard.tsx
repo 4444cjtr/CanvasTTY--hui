@@ -14,6 +14,7 @@ import type {
 import { UiIcon } from "../../components/UiIcon";
 import { t } from "../../lib/i18n";
 import { snapMove, snapResize, type ResizeDirection } from "../workspace/snap";
+import { constrainPluginResize } from "./pluginBounds";
 import { PluginFrame } from "./PluginFrame";
 
 interface PluginCanvasCardProps {
@@ -65,18 +66,30 @@ export function PluginCanvasCard({
 }: PluginCanvasCardProps): React.JSX.Element {
   const dragState = useRef<DragState | null>(null);
   const resizeState = useRef<ResizeState | null>(null);
-  const [position, setPosition] = useState(instance.position);
-  const [size, setSize] = useState(instance.size);
-  const liveBounds = useRef<SessionBounds>({ position: instance.position, size: instance.size });
+  const initialBounds = constrainPluginResize(
+    { position: instance.position, size: instance.size },
+    "se",
+    contribution.minSize
+  );
+  const [position, setPosition] = useState(initialBounds.position);
+  const [size, setSize] = useState(initialBounds.size);
+  const liveBounds = useRef<SessionBounds>(initialBounds);
   const summaryMode = zoom < 0.5;
   const summaryScale = summaryMode ? Math.min(2.5, Math.max(1, 0.5 / zoom)) : 1;
 
   useEffect(() => {
-    const bounds = { position: instance.position, size: instance.size };
+    const bounds = constrainPluginResize(
+      { position: instance.position, size: instance.size },
+      "se",
+      contribution.minSize
+    );
     liveBounds.current = bounds;
     setPosition(bounds.position);
     setSize(bounds.size);
-  }, [instance.position, instance.size]);
+    if (bounds.size.width !== instance.size.width || bounds.size.height !== instance.size.height) {
+      onBoundsChange(instance.id, bounds);
+    }
+  }, [contribution.minSize, instance.id, instance.position, instance.size, onBoundsChange]);
 
   const startDrag = (event: React.PointerEvent<HTMLElement>): void => {
     if ((event.target as HTMLElement).closest("button")) return;
@@ -140,7 +153,7 @@ export function PluginCanvasCard({
           - (state.direction.includes("n") ? deltaY : 0)
       }
     };
-    const constrained = constrainPluginResize(raw, state.direction);
+    const constrained = constrainPluginResize(raw, state.direction, contribution.minSize);
     applyBounds(snapEnabled ? snapResize(constrained, state.direction, snapTargets) : constrained);
   };
 
@@ -190,6 +203,7 @@ export function PluginCanvasCard({
         palette={palette}
         sessions={sessions}
         limits={limits}
+        canvasInstanceId={instance.id}
         onOpenLauncher={onOpenLauncher}
         onError={onError}
       />
@@ -214,22 +228,4 @@ export function PluginCanvasCard({
       ))}
     </article>
   );
-}
-
-function constrainPluginResize(bounds: SessionBounds, direction: ResizeDirection): SessionBounds {
-  const right = bounds.position.x + bounds.size.width;
-  const bottom = bounds.position.y + bounds.size.height;
-  const width = clamp(bounds.size.width, 420, 1_600);
-  const height = clamp(bounds.size.height, 260, 1_100);
-  return {
-    position: {
-      x: direction.includes("w") ? right - width : bounds.position.x,
-      y: direction.includes("n") ? bottom - height : bounds.position.y
-    },
-    size: { width, height }
-  };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }

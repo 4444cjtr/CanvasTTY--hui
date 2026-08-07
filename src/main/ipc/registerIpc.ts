@@ -6,6 +6,7 @@ import type {
   AppSettings,
   BrowserCommand,
   CreateSessionRequest,
+  PluginCanvasRequest,
   ProviderId,
   SessionBounds
 } from "../../shared/contracts";
@@ -16,6 +17,7 @@ import type { TerminalManager } from "../services/TerminalManager";
 import type { LimitsService } from "../services/LimitsService";
 import type { PluginManager } from "../services/PluginManager";
 import type { PluginMediaService } from "../services/PluginMediaService";
+import type { PluginSecretsService } from "../services/PluginSecretsService";
 import type { BrowserService } from "../services/BrowserService";
 
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
@@ -33,12 +35,14 @@ interface Dependencies {
   limits: LimitsService;
   plugins: PluginManager;
   pluginMedia: PluginMediaService;
+  pluginSecrets: PluginSecretsService;
   browser: BrowserService;
   getMainWindow(): BrowserWindow | null;
   applyBrowserSettings(settings: AppSettings): void;
   openPluginWindow(pluginId: string, contributionId: string): Promise<void>;
   closePluginWindows(pluginId: string): void;
   requestPluginLauncher(provider: ProviderId): void;
+  requestPluginCanvas(request: PluginCanvasRequest): void;
 }
 
 export function registerIpc({
@@ -47,12 +51,14 @@ export function registerIpc({
   limits,
   plugins,
   pluginMedia,
+  pluginSecrets,
   browser,
   getMainWindow,
   applyBrowserSettings,
   openPluginWindow,
   closePluginWindows,
-  requestPluginLauncher
+  requestPluginLauncher,
+  requestPluginCanvas
 }: Dependencies): void {
   ipcMain.handle(IPC.clipboardRead, () => clipboard.readText());
   ipcMain.on(IPC.clipboardWrite, (_event, text: string) => {
@@ -123,8 +129,25 @@ export function registerIpc({
   });
   ipcMain.handle(IPC.pluginsUninstall, async (_event, pluginId: string) => {
     closePluginWindows(pluginId);
+    await pluginSecrets.revokeAll(pluginId);
     await pluginMedia.revokeAll(pluginId);
     await plugins.uninstall(pluginId);
+  });
+  ipcMain.handle(IPC.pluginsOpenCanvas, (
+    _event,
+    pluginId: string,
+    contributionId: string,
+    sourceCanvasInstanceId?: string
+  ) => {
+    const target = plugins.contribution(pluginId, contributionId);
+    if (target.kind !== "canvas-app") throw new Error("Plugin contribution is not a canvas app.");
+    requestPluginCanvas({
+      pluginId,
+      contributionId,
+      ...(typeof sourceCanvasInstanceId === "string" && sourceCanvasInstanceId.length <= 80
+        ? { sourceCanvasInstanceId }
+        : {})
+    });
   });
   ipcMain.handle(IPC.pluginsOpenWindow, (_event, pluginId: string, contributionId: string) => (
     openPluginWindow(pluginId, contributionId)
@@ -139,6 +162,15 @@ export function registerIpc({
   ));
   ipcMain.handle(IPC.pluginsStorageSet, (_event, pluginId: string, key: string, value: unknown) => (
     plugins.storageSet(pluginId, key, value)
+  ));
+  ipcMain.handle(IPC.pluginsSecretsGet, (_event, pluginId: string, key: string) => (
+    pluginSecrets.get(pluginId, key)
+  ));
+  ipcMain.handle(IPC.pluginsSecretsSet, (_event, pluginId: string, key: string, value: string) => (
+    pluginSecrets.set(pluginId, key, value)
+  ));
+  ipcMain.handle(IPC.pluginsSecretsDelete, (_event, pluginId: string, key: string) => (
+    pluginSecrets.delete(pluginId, key)
   ));
   ipcMain.handle(IPC.pluginsMediaPickLibrary, (event, pluginId: string) => (
     pickPluginMediaLibrary(event, pluginId, plugins, pluginMedia)
@@ -202,6 +234,19 @@ export function registerIpc({
       await plugins.storageSet(pluginId, stringValue(values.key, "key"), values.value);
       return null;
     }
+    if (method === "secrets.get") return pluginSecrets.get(pluginId, stringValue(values.key, "key"));
+    if (method === "secrets.set") {
+      await pluginSecrets.set(
+        pluginId,
+        stringValue(values.key, "key"),
+        secretValue(values.value)
+      );
+      return null;
+    }
+    if (method === "secrets.delete") {
+      await pluginSecrets.delete(pluginId, stringValue(values.key, "key"));
+      return null;
+    }
     if (method === "sessions.list") {
       plugins.assertPermission(pluginId, "sessions:read");
       return terminals.list().map((session) => ({
@@ -262,6 +307,13 @@ export function registerIpc({
       const target = plugins.contribution(pluginId, targetId);
       if (target.kind !== "window") throw new Error("Plugin requested an unknown window contribution.");
       await openPluginWindow(pluginId, targetId);
+      return null;
+    }
+    if (method === "canvas.open") {
+      const targetId = stringValue(values.contributionId, "contributionId");
+      const target = plugins.contribution(pluginId, targetId);
+      if (target.kind !== "canvas-app") throw new Error("Plugin requested an unknown canvas contribution.");
+      requestPluginCanvas({ pluginId, contributionId: targetId });
       return null;
     }
     throw new Error(`Unsupported plugin method: ${String(method).slice(0, 80)}.`);
@@ -413,6 +465,13 @@ function stringValue(value: unknown, label: string): string {
 function playlistContent(value: unknown): string {
   if (typeof value !== "string" || Buffer.byteLength(value, "utf8") > 4 * 1024 * 1024) {
     throw new Error("Plugin playlist content is invalid or exceeds 4 MB.");
+  }
+  return value;
+}
+
+function secretValue(value: unknown): string {
+  if (typeof value !== "string" || Buffer.byteLength(value, "utf8") > 16 * 1024) {
+    throw new Error("Plugin secret value is invalid or exceeds 16 KB.");
   }
   return value;
 }

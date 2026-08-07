@@ -123,6 +123,17 @@ export function PluginSettingsSection({
                 <header className="installed-plugin__header">
                   <span><strong>{plugin.manifest.name}</strong><small>v{plugin.manifest.version}</small></span>
                   <div>
+                    {settingsContribution(plugin) && (
+                      <button
+                        className="plugin-primary-action"
+                        type="button"
+                        disabled={busy || !plugin.enabled}
+                        onClick={() => void runPluginAction(() => onOpenPluginContribution(
+                          plugin,
+                          settingsContribution(plugin)!
+                        ))}
+                      >{t(locale, "settings")}</button>
+                    )}
                     <button
                       type="button"
                       disabled={busy}
@@ -190,6 +201,7 @@ function PermissionList({ permissions, locale }: { permissions: PluginPermission
 function permissionKey(permission: PluginPermission): TranslationKey {
   return ({
     storage: "permissionStorage",
+    secrets: "permissionSecrets",
     "sessions:read": "permissionSessionsRead",
     "limits:read": "permissionLimitsRead",
     "launcher:open": "permissionLauncherOpen",
@@ -199,6 +211,14 @@ function permissionKey(permission: PluginPermission): TranslationKey {
     "playlists:write": "permissionPlaylistsWrite",
     network: "permissionNetwork"
   } as const)[permission];
+}
+
+function settingsContribution(plugin: InstalledPlugin): PluginContribution | null {
+  const id = plugin.manifest.settingsContribution;
+  if (!id) return null;
+  return plugin.manifest.contributions.find((contribution) => (
+    contribution.id === id && contribution.kind === "canvas-app"
+  )) ?? null;
 }
 
 function contributionKindKey(kind: PluginContribution["kind"]): TranslationKey {

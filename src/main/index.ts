@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, protocol } from "electron";
-import { IPC } from "../shared/contracts";
+import { app, BrowserWindow, dialog, protocol, safeStorage } from "electron";
+import { IPC, type PluginCanvasRequest } from "../shared/contracts";
 import { registerIpc } from "./ipc/registerIpc";
 import { SettingsStore } from "./services/SettingsStore";
 import { TerminalManager } from "./services/TerminalManager";
@@ -8,6 +8,7 @@ import { LimitsService } from "./services/LimitsService";
 import { augmentCliPath } from "./services/cliEnvironment";
 import { PluginManager } from "./services/PluginManager";
 import { PluginMediaService } from "./services/PluginMediaService";
+import { PluginSecretsService } from "./services/PluginSecretsService";
 import { BrowserService } from "./services/BrowserService";
 import { runBrowserElectronSmoke } from "./services/browser/BrowserElectronSmoke";
 import {
@@ -64,6 +65,7 @@ let terminalManager: TerminalManager | null = null;
 let limitsService: LimitsService | null = null;
 let pluginManager: PluginManager | null = null;
 let pluginMediaService: PluginMediaService | null = null;
+let pluginSecretsService: PluginSecretsService | null = null;
 let browserService: BrowserService | null = null;
 let agentGateway: AgentGateway | null = null;
 let agentBrowserBridge: AgentBrowserBridge | null = null;
@@ -171,6 +173,16 @@ async function initializeServices(): Promise<void> {
     (pluginId, permission) => pluginManager!.assertPermission(pluginId, permission)
   );
   await pluginMediaService.load();
+  pluginSecretsService = new PluginSecretsService(
+    app.getPath("userData"),
+    (pluginId, permission) => pluginManager!.assertPermission(pluginId, permission),
+    {
+      isAvailable: securePluginStorageAvailable,
+      encrypt: (value) => safeStorage.encryptString(value),
+      decrypt: (value) => safeStorage.decryptString(value)
+    }
+  );
+  await pluginSecretsService.load();
   protocol.handle("canvastty-plugin", (request) => pluginManager!.protocolResponse(request.url));
   protocol.handle("canvastty-media", (request) => pluginMediaService!.protocolResponse(request));
   registerIpc({
@@ -179,6 +191,7 @@ async function initializeServices(): Promise<void> {
     limits: limitsService,
     plugins: pluginManager,
     pluginMedia: pluginMediaService,
+    pluginSecrets: pluginSecretsService,
     browser: browserService,
     getMainWindow: () => mainWindow,
     applyBrowserSettings: (next) => {
@@ -187,7 +200,8 @@ async function initializeServices(): Promise<void> {
     },
     openPluginWindow,
     closePluginWindows,
-    requestPluginLauncher
+    requestPluginLauncher,
+    requestPluginCanvas
   });
   servicesReady = true;
 }
@@ -342,8 +356,8 @@ async function openPluginWindow(pluginId: string, contributionId: string): Promi
   const window = new BrowserWindow({
     width: contribution.defaultSize.width,
     height: contribution.defaultSize.height,
-    minWidth: 320,
-    minHeight: 220,
+    minWidth: contribution.minSize?.width ?? 320,
+    minHeight: contribution.minSize?.height ?? 220,
     title: contribution.title,
     backgroundColor: "#353442",
     webPreferences: {
@@ -380,4 +394,17 @@ function requestPluginLauncher(provider: import("../shared/contracts").ProviderI
   mainWindow.show();
   mainWindow.focus();
   mainWindow.webContents.send(IPC.pluginsLauncherRequested, { provider });
+}
+
+function requestPluginCanvas(request: PluginCanvasRequest): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send(IPC.pluginsCanvasRequested, request);
+}
+
+function securePluginStorageAvailable(): boolean {
+  if (!safeStorage.isEncryptionAvailable()) return false;
+  return process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text";
 }

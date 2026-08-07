@@ -160,6 +160,20 @@ test("normalizes the optional built-in browser canvas bounds", () => {
   }, fallback).browserCanvas?.size, { width: 560, height: 1_100 });
 });
 
+test("preserves plugin canvas bounds down to the manifest minimum floor", () => {
+  const normalized = normalizeSettings({
+    pluginCanvas: [{
+      id: "instance-1",
+      pluginId: "com.example.music",
+      contributionId: "player",
+      title: "Player",
+      position: { x: 120, y: 80 },
+      size: { width: 120, height: 90 }
+    }]
+  }, fallback);
+  assert.deepEqual(normalized.pluginCanvas[0]?.size, { width: 240, height: 140 });
+});
+
 test("normalizes resizable Home boundaries within generous safety limits", () => {
   assert.deepEqual(normalizeHomeGridSize({ columns: 24, rows: 20 }), { columns: 24, rows: 20 });
   assert.deepEqual(normalizeHomeGridSize({ columns: 2, rows: 80 }), { columns: 12, rows: 36 });

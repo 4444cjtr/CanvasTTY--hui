@@ -13,11 +13,12 @@
     "description": { "type": "string", "minLength": 1, "maxLength": 280 },
     "author": { "type": "string", "minLength": 1, "maxLength": 120 },
     "homepage": { "type": "string", "format": "uri", "maxLength": 300, "pattern": "^https?://" },
+    "settingsContribution": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$" },
     "permissions": {
       "type": "array",
-      "maxItems": 9,
+      "maxItems": 10,
       "uniqueItems": true,
-      "items": { "enum": ["storage", "sessions:read", "limits:read", "launcher:open", "external:open", "media:library", "playlists:read", "playlists:write", "network"] }
+      "items": { "enum": ["storage", "secrets", "sessions:read", "limits:read", "launcher:open", "external:open", "media:library", "playlists:read", "playlists:write", "network"] }
     },
     "contributions": {
       "type": "array",
@@ -38,7 +39,8 @@
         "description": { "type": "string", "minLength": 1, "maxLength": 240 },
         "entry": { "type": "string", "minLength": 1, "maxLength": 180, "pattern": "^(?!/)(?!.*\\\\)(?!\\.\\.?/)(?!.*(?:/\\.\\.?/|/\\.\\.?$|//)).+\\.html$" },
         "icon": { "type": "string", "minLength": 1, "maxLength": 180, "pattern": "^(?!/)(?!.*\\\\)(?!\\.\\.?/)(?!.*(?:/\\.\\.?/|/\\.\\.?$|//)).+$" },
-        "defaultSize": { "type": "object" }
+        "defaultSize": { "type": "object" },
+        "minSize": { "type": "object" }
       }
     },
     "contribution": {
@@ -75,6 +77,15 @@
                   "properties": {
                     "width": { "type": "number", "minimum": 320, "maximum": 1600 },
                     "height": { "type": "number", "minimum": 220, "maximum": 1100 }
+                  }
+                },
+                "minSize": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["width", "height"],
+                  "properties": {
+                    "width": { "type": "number", "minimum": 240, "maximum": 1600 },
+                    "height": { "type": "number", "minimum": 140, "maximum": 1100 }
                   }
                 }
               }

@@ -29,6 +29,7 @@
 | PTY 滚动缓冲区 | 应用会话存续期间主进程中的有界内存，不会写入仓库 |
 | Home 媒体 | 用户磁盘上的原始本地文件，设置中只保存它的本地路径 |
 | Runtime 插件 | `userData/plugins` 下的静态包和启用状态；`userData/plugin-storage` 下的隔离 JSON 存储限制为每个插件 64 KB，并在卸载时删除 |
+| 插件机密 | `userData/plugin-secrets` 下的加密数据；明文仅通过权限控制的调用提供给所属且已启用的插件；没有操作系统保护加密时写入会明确失败，卸载插件时删除对应文件 |
 | 插件媒体目录授权 | `userData/plugin-media-libraries.json`；保存用户明确选择的绝对目录路径，并在卸载插件时删除其授权 |
 | 插件播放列表 | 获得写权限的插件只能在所选媒体库的 `Playlists/` 目录中创建受大小限制的文件 |
 | 内置浏览器 profile | 持久化 Electron partition `canvastty-browser` 中的 cookie、cache 与网站存储；`1.0.2` 已从 HOME 提供浏览器 |
@@ -42,7 +43,7 @@
 
 只有当基于数据源的配额请求需要凭据时，可信的主进程才会读取它们。凭据只会发送到对应服务商的端点，不写入日志，不由 CanvasTTY 持久化，也绝不经过类型化的 preload 桥接。Kimi 的 loopback 用量令牌（token）只保留在进程内存中，其子进程的 stderr 会被丢弃。
 
-脱敏后的百分比、窗口元数据、时间戳以及明确的不可用原因可以通过 IPC 传递。原始的服务商响应、bearer 请求头、cookie 和凭据文件则不允许。
+脱敏后的百分比、窗口元数据、时间戳以及明确的不可用原因可以通过 IPC 传递。原始的服务商响应、bearer 请求头、cookie 和凭据文件则不允许。Runtime 插件机密属于独立的可选边界：只有 manifest 声明 `secrets` 时，机密才会通过所属 sandbox 的请求路径传递，并通过 Electron `safeStorage` 加密保存。
 
 ## 仓库防护
 

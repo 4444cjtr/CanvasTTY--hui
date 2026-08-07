@@ -45,7 +45,8 @@ windows/focus.js
   "name": "Studio Kit",
   "version": "1.0.0",
   "description": "Small CanvasTTY surfaces backed by real host state.",
-  "permissions": ["storage", "sessions:read", "launcher:open"],
+  "permissions": ["storage", "secrets", "sessions:read", "launcher:open"],
+  "settingsContribution": "notes",
   "contributions": [
     {
       "id": "session-status",
@@ -59,7 +60,8 @@ windows/focus.js
       "kind": "canvas-app",
       "title": "Notes",
       "entry": "apps/notes.html",
-      "defaultSize": { "width": 680, "height": 440 }
+      "defaultSize": { "width": 680, "height": 440 },
+      "minSize": { "width": 320, "height": 180 }
     },
     {
       "id": "focus",
@@ -72,13 +74,14 @@ windows/focus.js
 }
 ```
 
-插件和 contribution 的 ID 是稳定的持久化键，发布后不要重命名。插件版本使用语义化版本文本。HOME 以宽敞的 16 × 12 逻辑网格起步，同时保留原有的 12 × 8 构图。编辑器可以把可见边界扩展到 48 × 36，且不缩小单元格尺寸；需要时添加小组件会自动扩展边界。画布应用使用世界坐标像素，并参与与终端卡片相同的吸附系统。
+插件和 contribution 的 ID 是稳定的持久化键，发布后不要重命名。插件版本使用语义化版本文本。可选的 `settingsContribution` 引用一个 `canvas-app`，CanvasTTY 会在扩展菜单中为它显示独立的 **Settings** 操作。`canvas-app` 和 `window` 可以声明可选的 `minSize`；它不能大于 `defaultSize`，最小可设为 240 × 140 px。旧 manifest 继续使用宿主的 320 × 220 px 最小值。HOME 以宽敞的 16 × 12 逻辑网格起步，同时保留原有的 12 × 8 构图。编辑器可以把可见边界扩展到 48 × 36，且不缩小单元格尺寸；需要时添加小组件会自动扩展边界。画布应用使用世界坐标像素，并参与与终端卡片相同的吸附系统。
 
 ## 权限
 
 | 权限 | SDK 能力 | 数据边界 |
 |:--|:--|:--|
 | `storage` | `storage.get`、`storage.set` | 隔离的 JSON 存储，每个插件 64 KB |
+| `secrets` | `secrets.get`、`secrets.set`、`secrets.delete` | 通过 Electron `safeStorage` 加密的字符串机密；操作系统没有受保护存储时会明确失败 |
 | `sessions:read` | `sessions.list` | 仅限 ID、服务商、标题、状态、开始时间、退出码 |
 | `limits:read` | `limits.get` | 与 HOME 使用的同一个脱敏 `LimitsSnapshot` |
 | `launcher:open` | `launcher.open` | 打开内置服务商的 Focus Card 或终端动作；不会绕过用户的启动选择 |
@@ -112,7 +115,10 @@ host.onContext(({ appearance, contribution }) => {
 const sessions = await host.request("sessions.list");
 await host.storage.set("draft", { text: "Local to this plugin" });
 const draft = await host.storage.get("draft");
+await host.secrets.set("oauth-token", token);
+const restoredToken = await host.secrets.get("oauth-token");
 await host.request("launcher.open", { provider: "codex" });
+await host.canvas.open("notes");
 await host.request("window.open", { contributionId: "focus" });
 
 const library = await host.media.pickLibrary();
@@ -126,7 +132,9 @@ if (library) {
 }
 ```
 
-支持的方法有 `host.getContext`、`storage.*`、`sessions.list`、`limits.get`、`launcher.open`、`external.open`、`window.open`、`media.*` 和 `playlists.*`。`window.open` 只能以同一个插件声明的 `window` 贡献为目标。
+支持的方法有 `host.getContext`、`storage.*`、`secrets.*`、`sessions.list`、`limits.get`、`launcher.open`、`canvas.open`、`external.open`、`window.open`、`media.*` 和 `playlists.*`。`canvas.open` 会打开或聚焦同一插件的 `canvas-app`，并尽可能放在发起请求的画布卡片旁边。`window.open` 只能以同一个插件声明的 `window` 贡献为目标。
+
+非敏感 JSON 偏好应使用 `storage`；OAuth 令牌、API 密钥等凭据应使用 `secrets`。每个插件最多保存 32 个字符串键，每个值最大 16 KB，总计最大 64 KB。卸载插件时会删除这些机密，并且绝不会退回明文存储；如果操作系统无法提供受保护的加密，调用会明确失败。
 
 音乐库授权会跨重启持久化，并且只能由拥有它的插件列出或撤销。扫描会跳过符号链接，返回相对路径、元数据和不透明的流 URL，而不是库根目录的绝对路径。卸载插件会撤销其全部授权。播放列表内容按原始写法返回，刻意保持格式中立，因此播放器可以使用标准的 M3U/PLS 或自己的 JSON schema；导入的播放列表本身可能包含绝对路径。
 
@@ -162,7 +170,7 @@ if (library) {
 2. 打开 **Settings → Plugins**。
 3. 粘贴 `https://github.com/owner/repository` 并选择 **Inspect**。
 4. 查看 manifest 和请求的权限，然后确认 **Install**。
-5. 在同一个区块启用/禁用或卸载该包，也可以在那里添加或移除 HOME 小组件。
+5. 在同一个区块启用/禁用或卸载该包，也可以在那里添加或移除 HOME 小组件。如果 manifest 声明了 `settingsContribution`，插件卡片还会显示独立的 **Settings** 操作。
 6. 打开 **Settings → Appearance → HOME composition**，然后选择 **Edit HOME**，即可拖动磁贴、调整大小，或拉动 HOME 边界的右下角。Settings 磁贴会保留为恢复入口；其余所有核心磁贴和插件磁贴都是可选的。
 
 当前安装器会刻意拒绝私有仓库、GitHub `/tree/branch/subdirectory` 链接以及需要构建步骤的仓库。请把可直接运行的静态包发布到仓库根目录。

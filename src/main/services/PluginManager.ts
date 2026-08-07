@@ -41,6 +41,7 @@ const MAX_MANIFEST_BYTES = 128 * 1024;
 
 const PLUGIN_PERMISSIONS = new Set<PluginPermission>([
   "storage",
+  "secrets",
   "sessions:read",
   "limits:read",
   "launcher:open",
@@ -401,6 +402,13 @@ export function validatePluginManifest(candidate: unknown): PluginManifest {
     contributionIds.add(contribution.id);
     return contribution;
   });
+  const settingsContribution = optionalString(candidate.settingsContribution, "settingsContribution", 64);
+  if (settingsContribution) {
+    const target = contributions.find((contribution) => contribution.id === settingsContribution);
+    if (!target || target.kind !== "canvas-app") {
+      throw new Error("Plugin settingsContribution must reference a canvas-app contribution.");
+    }
+  }
 
   return {
     apiVersion: PLUGIN_API_VERSION,
@@ -411,7 +419,8 @@ export function validatePluginManifest(candidate: unknown): PluginManifest {
     ...(author ? { author } : {}),
     ...(homepage ? { homepage } : {}),
     permissions,
-    contributions
+    contributions,
+    ...(settingsContribution ? { settingsContribution } : {})
   };
 }
 
@@ -431,7 +440,14 @@ function validateContribution(value: unknown): PluginContribution {
     return { ...base, kind: "home-widget", defaultSize: validateGridSize(value.defaultSize) };
   }
   if (value.kind === "canvas-app" || value.kind === "window") {
-    return { ...base, kind: value.kind, defaultSize: validateWindowSize(value.defaultSize) };
+    const defaultSize = validateWindowSize(value.defaultSize, "defaultSize", 320, 220);
+    const minSize = value.minSize === undefined
+      ? null
+      : validateWindowSize(value.minSize, "minSize", 240, 140);
+    if (minSize && (minSize.width > defaultSize.width || minSize.height > defaultSize.height)) {
+      throw new Error("Plugin contribution minSize must not exceed defaultSize.");
+    }
+    return { ...base, kind: value.kind, defaultSize, ...(minSize ? { minSize } : {}) };
   }
   throw new Error(`Unknown plugin contribution kind: ${String(value.kind)}.`);
 }
@@ -659,14 +675,19 @@ function validateGridSize(value: unknown): { columns: number; rows: number } {
   return { columns, rows };
 }
 
-function validateWindowSize(value: unknown): Size {
+function validateWindowSize(
+  value: unknown,
+  label: "defaultSize" | "minSize",
+  minimumWidth: number,
+  minimumHeight: number
+): Size {
   if (!isRecord(value) || !Number.isFinite(value.width) || !Number.isFinite(value.height)) {
-    throw new Error("Plugin window defaultSize must contain a finite width and height.");
+    throw new Error(`Plugin window ${label} must contain a finite width and height.`);
   }
   const width = Math.round(value.width as number);
   const height = Math.round(value.height as number);
-  if (width < 320 || width > 1_600 || height < 220 || height > 1_100) {
-    throw new Error("Plugin window defaultSize is outside the supported bounds.");
+  if (width < minimumWidth || width > 1_600 || height < minimumHeight || height > 1_100) {
+    throw new Error(`Plugin window ${label} is outside the supported bounds.`);
   }
   return { width, height };
 }
@@ -882,6 +903,14 @@ const PLUGIN_SDK_SOURCE = `(() => {
     storage: Object.freeze({
       get: (key) => request("storage.get", { key }),
       set: (key, value) => request("storage.set", { key, value })
+    }),
+    secrets: Object.freeze({
+      get: (key) => request("secrets.get", { key }),
+      set: (key, value) => request("secrets.set", { key, value }),
+      delete: (key) => request("secrets.delete", { key })
+    }),
+    canvas: Object.freeze({
+      open: (contributionId) => request("canvas.open", { contributionId })
     }),
     media: Object.freeze({
       pickLibrary: () => request("media.pickLibrary"),

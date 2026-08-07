@@ -22,6 +22,7 @@ const manifest = {
   homepage: "https://example.com/plugin",
   permissions: [
     "storage",
+    "secrets",
     "sessions:read",
     "limits:read",
     "launcher:open",
@@ -44,7 +45,8 @@ const manifest = {
       kind: "canvas-app",
       title: "Notes",
       entry: "apps/notes.html",
-      defaultSize: { width: 680, height: 440 }
+      defaultSize: { width: 680, height: 440 },
+      minSize: { width: 320, height: 180 }
     },
     {
       id: "focus",
@@ -53,7 +55,8 @@ const manifest = {
       entry: "windows/focus.html",
       defaultSize: { width: 900, height: 620 }
     }
-  ]
+  ],
+  settingsContribution: "notes"
 };
 
 test("normalizes only GitHub repository root links", () => {
@@ -99,6 +102,16 @@ test("requires unique contribution ids and bounded default sizes", () => {
       defaultSize: { columns: 49, rows: 1 }
     }]
   }));
+  assert.throws(() => validatePluginManifest({
+    ...manifest,
+    settingsContribution: "focus"
+  }), /canvas-app/);
+  assert.throws(() => validatePluginManifest({
+    ...manifest,
+    contributions: manifest.contributions.map((contribution) => contribution.id === "notes"
+      ? { ...contribution, minSize: { width: 700, height: 180 } }
+      : contribution)
+  }), /must not exceed/);
 });
 
 test("previews, installs, serves, stores, disables, and uninstalls a static package", async () => {
@@ -127,6 +140,11 @@ test("previews, installs, serves, stores, disables, and uninstalls a static pack
     assert.equal(asset.status, 200);
     assert.match(await asset.text(), /Session status/);
     assert.match(asset.headers.get("content-security-policy"), /connect-src 'none'/);
+
+    const sdk = await manager.protocolResponse("canvastty-plugin://host/sdk.js");
+    const sdkSource = await sdk.text();
+    assert.match(sdkSource, /secrets: Object\.freeze/);
+    assert.match(sdkSource, /canvas: Object\.freeze/);
 
     await manager.setEnabled(installed.manifest.id, false);
     assert.equal((await manager.protocolResponse(
