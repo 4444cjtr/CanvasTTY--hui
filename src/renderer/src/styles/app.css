@@ -4,8 +4,10 @@ body { background: #20222c; user-select: none; }
 button, select, input { font: inherit; }
 button { border: 0; }
 
-.app { width: 100%; height: 100%; color: var(--text); background: var(--canvas-bg); }
-.app__content { position: relative; height: calc(100% - 44px); }
+.app { --titlebar-height: 44px; position: relative; width: 100%; height: 100%; color: var(--text); background: var(--canvas-bg); }
+.app__content { position: relative; height: calc(100% - var(--titlebar-height)); }
+.app--macos { --titlebar-height: 32px; }
+.app--macos-fullscreen { --titlebar-height: 0px; }
 
 .titlebar {
   position: relative;
@@ -27,6 +29,13 @@ button { border: 0; }
 .titlebar__controls button { width: 46px; display: grid; place-items: center; color: rgba(255,255,255,.76); background: transparent; cursor: pointer; transition: background .15s ease, color .15s ease; }
 .titlebar__controls button:hover { color: white; background: rgba(255,255,255,.1); }
 .titlebar__controls .titlebar__close:hover { background: #d85b61; }
+
+.titlebar--macos { height: 32px; }
+.titlebar__macos-controls-space { flex: 0 0 78px; height: 100%; -webkit-app-region: no-drag; }
+.titlebar--macos .titlebar__brand { padding-left: 0; gap: 7px; }
+.titlebar--macos .titlebar__brand strong { font-size: 12px; }
+.titlebar--macos .titlebar__logo { width: 21px; height: 21px; border-radius: 6px; }
+.titlebar--macos .titlebar__logo .provider-icon { width: 17px; height: 17px; }
 
 .workspace {
   position: absolute;

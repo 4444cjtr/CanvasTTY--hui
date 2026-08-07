@@ -17,7 +17,8 @@ import type {
   ProviderId,
   SessionBounds,
   SessionMetadata,
-  SessionSnapshot
+  SessionSnapshot,
+  WindowState
 } from "../../shared/contracts";
 import {
   DEFAULT_HOME_GRID_SIZE,
@@ -95,6 +96,11 @@ export function App(): React.JSX.Element {
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [windowState, setWindowState] = useState<WindowState>({
+    isMacOS: window.canvasTTY.window.isMacOS,
+    maximized: false,
+    fullscreen: false
+  });
 
   const showToast = useCallback((message: string): void => setToast(message), []);
 
@@ -103,6 +109,12 @@ export function App(): React.JSX.Element {
     const timer = window.setTimeout(() => setToast(null), 2_600);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    const unsubscribe = window.canvasTTY.window.onState(setWindowState);
+    void window.canvasTTY.window.getState().then(setWindowState);
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -559,8 +571,13 @@ export function App(): React.JSX.Element {
   }, [activeSessionId, goHome, settings.locale, settings.shortcuts, showToast]);
 
   const rootClasses = useMemo(
-    () => `app app--${settings.palette}`,
-    [settings.palette]
+    () => [
+      "app",
+      `app--${settings.palette}`,
+      windowState.isMacOS ? "app--macos" : "",
+      windowState.isMacOS && windowState.fullscreen ? "app--macos-fullscreen" : ""
+    ].filter(Boolean).join(" "),
+    [settings.palette, windowState.fullscreen, windowState.isMacOS]
   );
   const workspaceSettings = useMemo(() => homeEditDraft ? {
     ...settings,
@@ -570,7 +587,7 @@ export function App(): React.JSX.Element {
 
   return (
     <div className={rootClasses}>
-      <TitleBar locale={settings.locale} />
+      <TitleBar locale={settings.locale} windowState={windowState} onWindowStateChange={setWindowState} />
       <main className="app__content">
         {!ready && <div className="loading-screen">{t(settings.locale, "loading")}</div>}
         <WorkspaceCanvas

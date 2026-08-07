@@ -1,9 +1,10 @@
 interface StartupPageOptions {
   locale: string;
+  isMacOS: boolean;
   error?: string;
 }
 
-export function startupPageUrl({ locale, error }: StartupPageOptions): string {
+export function startupPageUrl({ locale, isMacOS, error }: StartupPageOptions): string {
   const russian = locale.toLowerCase().startsWith("ru");
   const failed = typeof error === "string";
   const title = failed
@@ -13,6 +14,9 @@ export function startupPageUrl({ locale, error }: StartupPageOptions): string {
     ? (russian ? "Проверьте подробности ниже и перезапустите приложение." : "Review the details below and restart the application.")
     : (russian ? "Подготавливаем локальные сервисы…" : "Preparing local services…");
   const detail = failed ? `<pre>${escapeHtml(error)}</pre>` : '<span class="spinner" aria-hidden="true"></span>';
+  const titleBar = isMacOS
+    ? '<header class="macos-titlebar"><strong>CanvasTTY</strong><div class="drag"></div></header>'
+    : '<header><strong>CanvasTTY</strong><button type="button" aria-label="Close" onclick="window.close()">×</button></header>';
 
   const html = `<!doctype html>
 <html lang="${russian ? "ru" : "en"}">
@@ -24,11 +28,13 @@ export function startupPageUrl({ locale, error }: StartupPageOptions): string {
     <style>
       * { box-sizing: border-box; }
       html, body { width: 100%; height: 100%; margin: 0; }
-      body { display: grid; grid-template-rows: 44px 1fr; color: #f7f4ec; background: #292a35; font-family: Inter, system-ui, sans-serif; }
+      body { display: grid; grid-template-rows: ${isMacOS ? "32px" : "44px"} 1fr; color: #f7f4ec; background: #292a35; font-family: Inter, system-ui, sans-serif; }
       header { display: flex; align-items: center; justify-content: space-between; padding-left: 15px; border-bottom: 1px solid rgba(255,255,255,.08); -webkit-app-region: drag; }
       header strong { font-size: 13px; letter-spacing: .02em; }
       button { width: 46px; height: 43px; border: 0; color: rgba(255,255,255,.8); background: transparent; cursor: pointer; font-size: 22px; -webkit-app-region: no-drag; }
       button:hover { color: white; background: #d85b61; }
+      .macos-titlebar { justify-content: flex-start; gap: 10px; padding-left: 78px; }
+      .macos-titlebar .drag { flex: 1; height: 100%; }
       main { display: grid; place-items: center; padding: 32px; background: #aaa7a2; }
       section { width: min(620px, 100%); padding: 28px; border-radius: 18px; color: #2f3038; background: #e4f1cf; box-shadow: 0 18px 48px rgba(30,31,40,.22); }
       h1 { margin: 0 0 9px; font-size: 24px; }
@@ -39,7 +45,7 @@ export function startupPageUrl({ locale, error }: StartupPageOptions): string {
     </style>
   </head>
   <body>
-    <header><strong>CanvasTTY</strong><button type="button" aria-label="Close" onclick="window.close()">×</button></header>
+    ${titleBar}
     <main><section><h1>${title}</h1><p>${message}</p>${detail}</section></main>
   </body>
 </html>`;

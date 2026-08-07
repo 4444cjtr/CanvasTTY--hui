@@ -10,6 +10,7 @@ import type {
   SessionBounds
 } from "../../shared/contracts";
 import { IPC } from "../../shared/contracts";
+import { observeWindowState, readWindowState } from "../windowState";
 import type { SettingsStore } from "../services/SettingsStore";
 import type { TerminalManager } from "../services/TerminalManager";
 import type { LimitsService } from "../services/LimitsService";
@@ -342,17 +343,22 @@ export function registerIpc({
   ipcMain.handle(IPC.terminalRename, (_event, id: string, title: string) => terminals.rename(id, title));
   ipcMain.handle(IPC.terminalDispose, (_event, id: string) => terminals.dispose(id));
 
+  const publishWindowState = (window: BrowserWindow): void => {
+    if (!window.isDestroyed()) window.webContents.send(IPC.windowState, readWindowState(window));
+  };
+
+  const mainWindow = getMainWindow();
+  if (mainWindow) observeWindowState(mainWindow, () => publishWindowState(mainWindow));
+
   ipcMain.on(IPC.windowMinimize, (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
   ipcMain.handle(IPC.windowToggleMaximize, (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);
-    if (!window) return { maximized: false };
+    if (!window) return readWindowState(null);
     window.isMaximized() ? window.unmaximize() : window.maximize();
-    return { maximized: window.isMaximized() };
+    return readWindowState(window);
   });
   ipcMain.on(IPC.windowClose, (event) => BrowserWindow.fromWebContents(event.sender)?.close());
-  ipcMain.handle(IPC.windowGetState, (event) => ({
-    maximized: BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false
-  }));
+  ipcMain.handle(IPC.windowGetState, (event) => readWindowState(BrowserWindow.fromWebContents(event.sender)));
 }
 
 function assertMainRenderer(

@@ -97,10 +97,12 @@ const api: CanvasTTYApi = {
     onRemoved: (listener: (event: SessionRemovedEvent) => void) => subscribe(IPC.terminalRemoved, listener)
   },
   window: {
+    isMacOS: process.platform === "darwin",
     minimize: () => ipcRenderer.send(IPC.windowMinimize),
     toggleMaximize: () => ipcRenderer.invoke(IPC.windowToggleMaximize),
     close: () => ipcRenderer.send(IPC.windowClose),
-    getState: () => ipcRenderer.invoke(IPC.windowGetState)
+    getState: () => ipcRenderer.invoke(IPC.windowGetState),
+    onState: (listener) => subscribe(IPC.windowState, listener)
   }
 };
 
