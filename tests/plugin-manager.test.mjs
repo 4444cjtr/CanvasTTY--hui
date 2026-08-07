@@ -287,6 +287,95 @@ test("plugin download retries transient failures but not permanent ones", async 
   }
 });
 
+test("manifest-only preview retries GitHub API and raw downloads and rejects foreign redirects", async () => {
+  const userData = await mkdtemp(join(tmpdir(), "canvastty-plugin-manifest-retry-"));
+  const core = Buffer.from("<h1>Core</h1>");
+  const extra = Buffer.from("export const extra = true;");
+  const manifest = {
+    apiVersion: 1,
+    id: "com.example.remote-modular",
+    name: "Remote modular",
+    version: "1.0.0",
+    description: "A manifest-only retry fixture.",
+    permissions: [],
+    coreFiles: [{ path: "index.html", bytes: core.length, sha256: sha256(core) }],
+    modules: [{
+      id: "extra",
+      title: "Extra",
+      defaultSelected: false,
+      permissions: [],
+      files: [{ path: "extra.js", bytes: extra.length, sha256: sha256(extra) }]
+    }],
+    contributions: [{
+      id: "core",
+      kind: "canvas-app",
+      title: "Core",
+      entry: "index.html",
+      defaultSize: { width: 480, height: 300 }
+    }]
+  };
+  const originalFetch = globalThis.fetch;
+  let metadataCalls = 0;
+  let rawCalls = 0;
+  const manager = new PluginManager(userData);
+
+  try {
+    globalThis.fetch = async (url) => {
+      if (String(url).startsWith("https://api.github.com/")) {
+        metadataCalls += 1;
+        if (metadataCalls === 1) throw new TypeError("fetch failed");
+        return Response.json({ default_branch: "main" });
+      }
+      rawCalls += 1;
+      if (rawCalls === 1) {
+        let sent = false;
+        return new Response(new ReadableStream({
+          pull(controller) {
+            if (!sent) {
+              sent = true;
+              controller.enqueue(Buffer.from("partial"));
+              return;
+            }
+            controller.error(new TypeError("stream interrupted"));
+          }
+        }), { status: 200 });
+      }
+      return Response.json(manifest);
+    };
+
+    await manager.load();
+    const preview = await manager.previewInstall("https://github.com/example/remote-modular");
+    assert.equal(preview.manifest.id, manifest.id);
+    assert.equal(metadataCalls, 2);
+    assert.equal(rawCalls, 2);
+
+    const foreignUserData = await mkdtemp(join(tmpdir(), "canvastty-plugin-foreign-redirect-"));
+    const foreignManager = new PluginManager(foreignUserData);
+    try {
+      globalThis.fetch = async (url) => {
+        if (String(url).startsWith("https://api.github.com/")) {
+          return Response.json({ default_branch: "main" });
+        }
+        const response = Response.json(manifest);
+        Object.defineProperty(response, "url", { value: "https://example.com/canvastty.plugin.json" });
+        return response;
+      };
+      await foreignManager.load();
+      await assert.rejects(
+        () => foreignManager.previewInstall("https://github.com/example/remote-modular"),
+        /outside raw\.githubusercontent\.com/
+      );
+    } finally {
+      await foreignManager.dispose();
+      await rm(foreignUserData, { recursive: true, force: true });
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    await manager.dispose();
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
 function tarArchive(entries) {
   const blocks = [];
   for (const entry of entries) {

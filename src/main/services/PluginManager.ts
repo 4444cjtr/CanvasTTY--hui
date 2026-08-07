@@ -632,11 +632,14 @@ async function containedFile(root: string, relativePath: string): Promise<string
 }
 
 export async function downloadGithubRepository(sourceUrl: string, destination: string): Promise<void> {
+  await retryGithubDownload(() => downloadGithubRepositoryOnce(sourceUrl, destination));
+}
+
+async function retryGithubDownload<T>(operation: () => Promise<T>): Promise<T> {
   let lastError: unknown = new Error("GitHub plugin download failed.");
   for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt += 1) {
     try {
-      await downloadGithubRepositoryOnce(sourceUrl, destination);
-      return;
+      return await operation();
     } catch (error) {
       lastError = error;
       if (attempt >= DOWNLOAD_ATTEMPTS || !(error instanceof TransientGithubDownloadError)) break;
@@ -827,19 +830,48 @@ async function downloadGithubModuleFiles(
 }
 
 async function githubRepositoryMetadata(sourceUrl: string): Promise<{ owner: string; name: string; branch: string }> {
+  return retryGithubDownload(() => githubRepositoryMetadataOnce(sourceUrl));
+}
+
+async function githubRepositoryMetadataOnce(sourceUrl: string): Promise<{ owner: string; name: string; branch: string }> {
   const source = new URL(sourceUrl);
   const [owner, repositoryWithGit] = source.pathname.split("/").filter(Boolean);
   const name = repositoryWithGit.replace(/\.git$/i, "");
-  const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
-    headers: { accept: "application/vnd.github+json", "user-agent": "CanvasTTY plugin installer" }
-  });
-  if (response.status === 404) throw new Error("GitHub repository was not found or is not public.");
-  if (!response.ok) throw new Error(`GitHub metadata request failed with HTTP ${response.status}.`);
-  const value: unknown = await response.json();
-  if (!isRecord(value) || typeof value.default_branch !== "string" || value.default_branch.length > 200) {
-    throw new Error("GitHub repository metadata is invalid.");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+  timer.unref();
+  try {
+    let response: Response;
+    try {
+      response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+        redirect: "follow",
+        headers: { accept: "application/vnd.github+json", "user-agent": "CanvasTTY plugin installer" },
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (controller.signal.aborted) throw new TransientGithubDownloadError("GitHub metadata request timed out.");
+      throw new TransientGithubDownloadError("GitHub metadata request could not establish a connection.", { cause: error });
+    }
+    const finalUrl = new URL(response.url || `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`);
+    if (finalUrl.protocol !== "https:" || finalUrl.hostname !== "api.github.com") {
+      throw new Error("GitHub metadata request redirected outside api.github.com.");
+    }
+    if (response.status === 404) throw new Error("GitHub repository was not found or is not public.");
+    if (!response.ok) {
+      const message = `GitHub metadata request failed with HTTP ${response.status}.`;
+      if (response.status === 408 || response.status === 429 || response.status >= 500) {
+        throw new TransientGithubDownloadError(message);
+      }
+      throw new Error(message);
+    }
+    const value: unknown = await response.json();
+    if (!isRecord(value) || typeof value.default_branch !== "string" || value.default_branch.length > 200) {
+      throw new Error("GitHub repository metadata is invalid.");
+    }
+    return { owner, name, branch: value.default_branch };
+  } finally {
+    clearTimeout(timer);
   }
-  return { owner, name, branch: value.default_branch };
 }
 
 function githubRawUrl(owner: string, repository: string, branch: string, path: string): string {
@@ -853,16 +885,36 @@ function githubRawUrl(owner: string, repository: string, branch: string, path: s
 }
 
 async function fetchBoundedGithubFile(url: string, maximumBytes: number): Promise<Buffer> {
+  return retryGithubDownload(() => fetchBoundedGithubFileOnce(url, maximumBytes));
+}
+
+async function fetchBoundedGithubFileOnce(url: string, maximumBytes: number): Promise<Buffer> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
   timer.unref();
   try {
-    const response = await fetch(url, {
-      redirect: "follow",
-      headers: { "user-agent": "CanvasTTY plugin installer" },
-      signal: controller.signal
-    });
-    if (!response.ok || !response.body) throw new Error(`GitHub file download failed with HTTP ${response.status}.`);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        redirect: "follow",
+        headers: { "user-agent": "CanvasTTY plugin installer" },
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (controller.signal.aborted) throw new TransientGithubDownloadError("GitHub plugin file download timed out.");
+      throw new TransientGithubDownloadError("GitHub plugin file download could not establish a connection.", { cause: error });
+    }
+    const finalUrl = new URL(response.url || url);
+    if (finalUrl.protocol !== "https:" || finalUrl.hostname !== "raw.githubusercontent.com") {
+      throw new Error("GitHub plugin file redirected outside raw.githubusercontent.com.");
+    }
+    if (!response.ok || !response.body) {
+      const message = `GitHub file download failed with HTTP ${response.status}.`;
+      if (response.status === 408 || response.status === 429 || response.status >= 500) {
+        throw new TransientGithubDownloadError(message);
+      }
+      throw new Error(message);
+    }
     const declared = Number(response.headers.get("content-length"));
     if (Number.isFinite(declared) && declared > maximumBytes) throw new Error("Plugin file exceeds its declared size.");
     const reader = response.body.getReader();
@@ -877,13 +929,18 @@ async function fetchBoundedGithubFile(url: string, maximumBytes: number): Promis
         if (total > maximumBytes) throw new Error("Plugin file exceeds its declared size.");
         chunks.push(chunk);
       }
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new TransientGithubDownloadError("GitHub plugin file download timed out.", { cause: error });
+      }
+      if (error instanceof TypeError) {
+        throw new TransientGithubDownloadError("GitHub plugin file download was interrupted.", { cause: error });
+      }
+      throw error;
     } finally {
       reader.releaseLock();
     }
     return Buffer.concat(chunks, total);
-  } catch (error) {
-    if (controller.signal.aborted) throw new Error("GitHub plugin file download timed out.");
-    throw error;
   } finally {
     clearTimeout(timer);
   }
