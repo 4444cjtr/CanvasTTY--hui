@@ -1,6 +1,7 @@
 import { ipcRenderer } from "electron";
 
 const PLUGIN_HOST_INVOKE = "plugins:host-invoke";
+const PLUGIN_STORAGE_CHANGED = "plugins:storage-changed";
 
 const pluginId = argument("--canvastty-plugin-id=");
 const contributionId = argument("--canvastty-contribution-id=");
@@ -44,6 +45,11 @@ window.addEventListener("message", (event) => {
 function invokeHost(method: string, params: Record<string, unknown>): Promise<unknown> {
   return ipcRenderer.invoke(PLUGIN_HOST_INVOKE, pluginId, contributionId, method, params);
 }
+
+ipcRenderer.on(PLUGIN_STORAGE_CHANGED, (_event, change: unknown) => {
+  if (!isRecord(change) || change.pluginId !== pluginId || typeof change.key !== "string") return;
+  window.postMessage({ source: "canvastty-host", type: "storage-change", key: change.key, value: change.value }, "*");
+});
 
 function argument(prefix: string): string {
   const value = process.argv.find((candidate) => candidate.startsWith(prefix))?.slice(prefix.length);

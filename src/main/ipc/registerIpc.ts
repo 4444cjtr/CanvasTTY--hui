@@ -43,6 +43,7 @@ interface Dependencies {
   closePluginWindows(pluginId: string): void;
   requestPluginLauncher(provider: ProviderId): void;
   requestPluginCanvas(request: PluginCanvasRequest): void;
+  broadcastPluginStorageChange(pluginId: string, key: string, value: unknown): void;
 }
 
 export function registerIpc({
@@ -58,7 +59,8 @@ export function registerIpc({
   openPluginWindow,
   closePluginWindows,
   requestPluginLauncher,
-  requestPluginCanvas
+  requestPluginCanvas,
+  broadcastPluginStorageChange
 }: Dependencies): void {
   ipcMain.handle(IPC.clipboardRead, () => clipboard.readText());
   ipcMain.on(IPC.clipboardWrite, (_event, text: string) => {
@@ -170,9 +172,10 @@ export function registerIpc({
   ipcMain.handle(IPC.pluginsStorageGet, (_event, pluginId: string, key: string) => (
     plugins.storageGet(pluginId, key)
   ));
-  ipcMain.handle(IPC.pluginsStorageSet, (_event, pluginId: string, key: string, value: unknown) => (
-    plugins.storageSet(pluginId, key, value)
-  ));
+  ipcMain.handle(IPC.pluginsStorageSet, async (_event, pluginId: string, key: string, value: unknown) => {
+    await plugins.storageSet(pluginId, key, value);
+    broadcastPluginStorageChange(pluginId, key, value);
+  });
   ipcMain.handle(IPC.pluginsSecretsGet, (_event, pluginId: string, key: string) => (
     pluginSecrets.get(pluginId, key)
   ));
@@ -242,7 +245,9 @@ export function registerIpc({
     }
     if (method === "storage.get") return plugins.storageGet(pluginId, stringValue(values.key, "key"));
     if (method === "storage.set") {
-      await plugins.storageSet(pluginId, stringValue(values.key, "key"), values.value);
+      const key = stringValue(values.key, "key");
+      await plugins.storageSet(pluginId, key, values.value);
+      broadcastPluginStorageChange(pluginId, key, values.value);
       return null;
     }
     if (method === "secrets.get") return pluginSecrets.get(pluginId, stringValue(values.key, "key"));

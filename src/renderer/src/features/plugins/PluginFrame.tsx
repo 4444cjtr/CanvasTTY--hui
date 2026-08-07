@@ -163,7 +163,6 @@ async function handleRequest({
     requirePermission(plugin, "storage");
     const key = stringParam(params.key, "key");
     await window.canvasTTY.plugins.storageSet(pluginId, key, params.value);
-    emitStorage(pluginId, key, params.value);
     return null;
   }
   if (method === "secrets.get") {
@@ -284,10 +283,31 @@ function subscribeStorage(pluginId: string, listener: (key: string, value: unkno
   const listeners = storageListeners.get(pluginId) ?? new Set();
   listeners.add(listener);
   storageListeners.set(pluginId, listeners);
+  startStorageBridge();
   return () => {
     listeners.delete(listener);
     if (listeners.size === 0) storageListeners.delete(pluginId);
+    stopStorageBridge();
   };
+}
+
+// The main process broadcasts every committed plugin storage write, covering
+// both embedded frames and separate plugin windows; forward it to local frames.
+let storageBridge: (() => void) | null = null;
+let storageBridgeRefs = 0;
+
+function startStorageBridge(): void {
+  storageBridgeRefs += 1;
+  storageBridge ??= window.canvasTTY.plugins.onStorageChanged((event) => {
+    emitStorage(event.pluginId, event.key, event.value);
+  });
+}
+
+function stopStorageBridge(): void {
+  storageBridgeRefs -= 1;
+  if (storageBridgeRefs > 0) return;
+  storageBridge?.();
+  storageBridge = null;
 }
 
 function emitStorage(pluginId: string, key: string, value: unknown): void {

@@ -11,6 +11,7 @@ import type {
   CreateSessionRequest,
   PluginCanvasRequest,
   PluginLauncherRequest,
+  PluginStorageChangeEvent,
   SessionBounds,
   SessionEvent,
   SessionRemovedEvent,
@@ -70,7 +71,8 @@ const api: CanvasTTYApi = {
     playlistsRead: (pluginId: string, libraryId: string, playlistId: string) => ipcRenderer.invoke(IPC.pluginsPlaylistsRead, pluginId, libraryId, playlistId),
     playlistsWrite: (pluginId: string, libraryId: string, name: string, content: string) => ipcRenderer.invoke(IPC.pluginsPlaylistsWrite, pluginId, libraryId, name, content),
     onOpenLauncher: (listener: (event: PluginLauncherRequest) => void) => subscribe(IPC.pluginsLauncherRequested, listener),
-    onOpenCanvas: (listener: (event: PluginCanvasRequest) => void) => subscribe(IPC.pluginsCanvasRequested, listener)
+    onOpenCanvas: (listener: (event: PluginCanvasRequest) => void) => subscribe(IPC.pluginsCanvasRequested, listener),
+    onStorageChanged: (listener: (event: PluginStorageChangeEvent) => void) => subscribe(IPC.pluginsStorageChanged, listener)
   },
   browser: {
     getState: () => ipcRenderer.invoke(IPC.browserGetState),

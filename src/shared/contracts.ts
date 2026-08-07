@@ -282,6 +282,12 @@ export interface PluginCanvasRequest {
   sourceCanvasInstanceId?: string;
 }
 
+export interface PluginStorageChangeEvent {
+  pluginId: string;
+  key: string;
+  value: unknown;
+}
+
 export interface PluginMediaLibrary {
   id: string;
   name: string;
@@ -663,6 +669,7 @@ export interface CanvasTTYApi {
     playlistsWrite(pluginId: string, libraryId: string, name: string, content: string): Promise<PluginPlaylistFile>;
     onOpenLauncher(listener: (event: PluginLauncherRequest) => void): () => void;
     onOpenCanvas(listener: (event: PluginCanvasRequest) => void): () => void;
+    onStorageChanged(listener: (event: PluginStorageChangeEvent) => void): () => void;
   };
   browser: {
     getState(): Promise<BrowserSnapshot>;
@@ -742,6 +749,7 @@ export const IPC = {
   pluginsHostInvoke: "plugins:host-invoke",
   pluginsLauncherRequested: "plugins:launcher-requested",
   pluginsCanvasRequested: "plugins:canvas-requested",
+  pluginsStorageChanged: "plugins:storage-changed",
   browserGetState: "browser:get-state",
   browserOpen: "browser:open",
   browserClose: "browser:close",

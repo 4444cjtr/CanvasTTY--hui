@@ -74,13 +74,15 @@ Editor tooling can use the [manifest JSON Schema](canvastty-plugin.schema.json) 
 }
 ```
 
-Plugin and contribution IDs are stable persistence keys. Do not rename them after publishing. Plugin versions use semantic version text. `settingsContribution` optionally references one `canvas-app`; CanvasTTY shows a dedicated **Settings** action for it in the Extensions menu. Every installed `home-widget` also appears beside the built-in widgets in **Settings → Appearance → HOME composition**, while the Extensions card keeps the same Add/Remove action. `minSize` is optional for `canvas-app` and `window` contributions, must not exceed `defaultSize`, and may be as small as 240 × 140 pixels. Older manifests keep the 320 × 220 host minimum. HOME starts with a spacious 16 × 12 logical grid while preserving the original 12 × 8 composition. The editor can resize its visible boundary up to 48 × 36 without shrinking cell dimensions, and adding a widget grows the boundary automatically when needed. Canvas apps use world-space pixels and participate in the same snapping system as terminal cards.
+Plugin and contribution IDs are stable persistence keys. Do not rename them after publishing. Plugin versions use semantic version text. `settingsContribution` optionally references one `canvas-app`; CanvasTTY shows a dedicated **Settings** action for it in the Extensions menu. Every installed `home-widget` also appears beside the built-in widgets in **Settings → Appearance → HOME composition**, where it is added or removed. `minSize` is optional for `canvas-app` and `window` contributions, must not exceed `defaultSize`, and may be as small as 240 × 140 pixels. Older manifests keep the 320 × 220 host minimum. HOME starts with a spacious 16 × 12 logical grid while preserving the original 12 × 8 composition. The editor can resize its visible boundary up to 48 × 36 without shrinking cell dimensions, and adding a widget grows the boundary automatically when needed. Canvas apps use world-space pixels and participate in the same snapping system as terminal cards.
 
 ### Optional modules
 
 A modular manifest declares integrity-checked coreFiles plus up to 16 optional modules. Every file entry contains path, exact bytes, and a SHA-256 digest. CanvasTTY downloads only the manifest for inspection, shows checkboxes, per-module size and permissions, then downloads only the core and selected module files. Changing the selection later replaces the installed package atomically and removes deselected files. A contribution may set module to disappear when that module is not installed.
 
-host.onStorageChange(listener) notifies other live canvas contributions of writes made through host.storage.set, avoiding polling when a plugin uses multiple coordinated cards.
+Module file integrity (exact byte counts and SHA-256 digests) is verified against the hashes declared in the plugin manifest, and the manifest itself is fetched from GitHub over TLS without a separate signature. The trust anchor is therefore the plugin's GitHub repository: a compromised repository can ship a new manifest with matching hashes.
+
+host.onStorageChange(listener) notifies every live contribution of the same plugin — canvases, HOME widgets, and separate windows — of writes made through host.storage.set, avoiding polling when a plugin coordinates several surfaces.
 
 ## Permissions
 
@@ -176,7 +178,7 @@ Context updates include the active CanvasTTY locale and palette. Plugins own the
 2. Open **Settings → Plugins**.
 3. Paste `https://github.com/owner/repository` and choose **Inspect**.
 4. Review the manifest and requested permissions, then confirm **Install**.
-5. Enable/disable or uninstall the package from the same section. HOME widgets can be added or removed there or beside the built-in widgets under **Appearance → HOME composition**. If the manifest declares `settingsContribution`, the plugin card also shows a dedicated **Settings** action.
+5. Enable/disable or uninstall the package from the same section. HOME widgets are added or removed beside the built-in widgets under **Appearance → HOME composition**. If the manifest declares `settingsContribution`, the plugin card also shows a dedicated **Settings** action.
 6. Open **Settings → Appearance → HOME composition**, then choose **Edit HOME** to drag tiles, resize them, or pull the bottom-right HOME boundary. The Settings tile is retained as the recovery entry point; all other core and plugin tiles are optional.
 
 The current installer intentionally rejects private repositories, GitHub `/tree/branch/subdirectory` links, and repositories that require a build step. Publish a ready-to-run static package at the repository root.

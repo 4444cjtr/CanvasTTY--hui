@@ -177,26 +177,21 @@ export function PluginSettingsSection({
                   onChange={(modules) => void runPluginAction(() => onSetPluginModules(plugin.manifest.id, modules))}
                 />
                 <div className="plugin-contribution-list">
-                  {plugin.manifest.contributions.map((contribution) => {
-                    const widgetId = `plugin:${plugin.manifest.id}:${contribution.id}`;
-                    const onHome = contribution.kind === "home-widget"
-                      && settings.homeLayout.some((placement) => placement.widgetId === widgetId);
-                    return (
-                      <div className="plugin-contribution" key={contribution.id}>
-                        <span>
-                          <strong>{contribution.title}</strong>
-                          <small>{t(locale, contributionKindKey(contribution.kind))}</small>
-                        </span>
+                  {plugin.manifest.contributions.map((contribution) => (
+                    <div className="plugin-contribution" key={contribution.id}>
+                      <span>
+                        <strong>{contribution.title}</strong>
+                        <small>{t(locale, contributionKindKey(contribution.kind))}</small>
+                      </span>
+                      {contribution.kind !== "home-widget" && (
                         <button
                           type="button"
                           disabled={busy || !plugin.enabled}
                           onClick={() => void runPluginAction(() => onOpenPluginContribution(plugin, contribution))}
-                        >{contribution.kind === "home-widget"
-                            ? onHome ? t(locale, "removeFromHome") : t(locale, "addToHome")
-                            : t(locale, "open")}</button>
-                      </div>
-                    );
-                  })}
+                        >{t(locale, "open")}</button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </article>
             ))}

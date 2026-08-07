@@ -201,7 +201,8 @@ async function initializeServices(): Promise<void> {
     openPluginWindow,
     closePluginWindows,
     requestPluginLauncher,
-    requestPluginCanvas
+    requestPluginCanvas,
+    broadcastPluginStorageChange
   });
   servicesReady = true;
 }
@@ -402,6 +403,17 @@ function requestPluginCanvas(request: PluginCanvasRequest): void {
   mainWindow.show();
   mainWindow.focus();
   mainWindow.webContents.send(IPC.pluginsCanvasRequested, request);
+}
+
+function broadcastPluginStorageChange(pluginId: string, key: string, value: unknown): void {
+  const change = { pluginId, key, value };
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IPC.pluginsStorageChanged, change);
+  }
+  for (const [window, ownerPluginId] of pluginWindows) {
+    if (ownerPluginId !== pluginId || window.isDestroyed()) continue;
+    window.webContents.send(IPC.pluginsStorageChanged, change);
+  }
 }
 
 function securePluginStorageAvailable(): boolean {
