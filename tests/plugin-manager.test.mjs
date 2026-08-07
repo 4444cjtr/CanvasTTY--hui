@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -369,6 +369,231 @@ test("manifest-only preview retries GitHub API and raw downloads and rejects for
       await foreignManager.dispose();
       await rm(foreignUserData, { recursive: true, force: true });
     }
+  } finally {
+    globalThis.fetch = originalFetch;
+    await manager.dispose();
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("rejects install when a downloaded module file fails integrity verification", async () => {
+  const userData = await mkdtemp(join(tmpdir(), "canvastty-plugin-integrity-"));
+  const core = Buffer.from("<h1>Core</h1>");
+  const extra = Buffer.from("export const extra = true;");
+  const tampered = Buffer.from("export const extra = true?");
+  const modularManifest = (id, extraFile) => ({
+    apiVersion: 1,
+    id,
+    name: "Modular",
+    version: "1.0.0",
+    description: "A modular integrity fixture.",
+    permissions: [],
+    coreFiles: [{ path: "index.html", bytes: core.length, sha256: sha256(core) }],
+    modules: [{
+      id: "extra",
+      title: "Extra",
+      defaultSelected: true,
+      permissions: [],
+      files: [extraFile]
+    }],
+    contributions: [{
+      id: "core",
+      kind: "canvas-app",
+      title: "Core",
+      entry: "index.html",
+      defaultSize: { width: 480, height: 300 }
+    }]
+  });
+  const originalFetch = globalThis.fetch;
+  const served = new Map([["index.html", core]]);
+  let servedManifest = null;
+  const manager = new PluginManager(userData);
+
+  try {
+    globalThis.fetch = async (url) => {
+      const text = String(url);
+      if (text.startsWith("https://api.github.com/")) return Response.json({ default_branch: "main" });
+      const path = text.slice(text.indexOf("/main/") + "/main/".length);
+      if (path === "canvastty.plugin.json") {
+        return new Response(JSON.stringify(servedManifest), { status: 200 });
+      }
+      const content = served.get(path);
+      return content ? new Response(content, { status: 200 }) : new Response("missing", { status: 404 });
+    };
+    await manager.load();
+
+    // Wrong SHA-256: same byte count, different content.
+    servedManifest = modularManifest("com.example.hash-mismatch", {
+      path: "extra.js",
+      bytes: tampered.length,
+      sha256: sha256(extra)
+    });
+    served.set("extra.js", tampered);
+    const hashPreview = await manager.previewInstall("https://github.com/example/modular");
+    await assert.rejects(
+      () => manager.install(hashPreview.token, ["extra"]),
+      /failed integrity verification: extra\.js/
+    );
+    assert.deepEqual(manager.list(), []);
+    assert.equal(
+      (await manager.protocolResponse("canvastty-plugin://com.example.hash-mismatch/extra.js")).status,
+      404
+    );
+    await assert.rejects(() => stat(join(userData, "plugins", "com.example.hash-mismatch")));
+
+    // Wrong byte count: fewer bytes delivered than the manifest declares.
+    servedManifest = modularManifest("com.example.size-mismatch", {
+      path: "extra.js",
+      bytes: extra.length + 4,
+      sha256: sha256(extra)
+    });
+    served.set("extra.js", extra);
+    const sizePreview = await manager.previewInstall("https://github.com/example/modular");
+    await assert.rejects(
+      () => manager.install(sizePreview.token, ["extra"]),
+      /failed integrity verification: extra\.js/
+    );
+    assert.deepEqual(manager.list(), []);
+
+    const registry = JSON.parse(await readFile(join(userData, "plugins.json"), "utf8"));
+    assert.equal(registry["com.example.hash-mismatch"], undefined);
+    assert.equal(registry["com.example.size-mismatch"], undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await manager.dispose();
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("setModules keeps the previous module set when activation fails", async () => {
+  const userData = await mkdtemp(join(tmpdir(), "canvastty-plugin-rollback-"));
+  const core = Buffer.from("<h1>Core</h1>");
+  const one = Buffer.from("<h1>Module one</h1>");
+  const two = Buffer.from("<h1>Module two</h1>");
+  const tamperedTwo = Buffer.from("<h1>Module TWO</h1>");
+  const manifest = {
+    apiVersion: 1,
+    id: "com.example.rollback",
+    name: "Rollback",
+    version: "1.0.0",
+    description: "A modular rollback fixture.",
+    permissions: [],
+    coreFiles: [{ path: "index.html", bytes: core.length, sha256: sha256(core) }],
+    modules: [
+      {
+        id: "one",
+        title: "One",
+        defaultSelected: false,
+        permissions: ["network"],
+        files: [{ path: "one.html", bytes: one.length, sha256: sha256(one) }]
+      },
+      {
+        id: "two",
+        title: "Two",
+        defaultSelected: false,
+        permissions: [],
+        files: [{ path: "two.html", bytes: two.length, sha256: sha256(two) }]
+      }
+    ],
+    contributions: [
+      {
+        id: "core",
+        kind: "canvas-app",
+        title: "Core",
+        entry: "index.html",
+        defaultSize: { width: 480, height: 300 }
+      },
+      {
+        id: "one-app",
+        kind: "canvas-app",
+        title: "One",
+        entry: "one.html",
+        module: "one",
+        defaultSize: { width: 480, height: 300 }
+      },
+      {
+        id: "two-app",
+        kind: "canvas-app",
+        title: "Two",
+        entry: "two.html",
+        module: "two",
+        defaultSize: { width: 480, height: 300 }
+      }
+    ]
+  };
+  const originalFetch = globalThis.fetch;
+  const served = new Map([["index.html", core], ["one.html", one], ["two.html", two]]);
+  const failedPaths = new Set();
+  const manager = new PluginManager(userData);
+
+  try {
+    globalThis.fetch = async (url) => {
+      const text = String(url);
+      if (text.startsWith("https://api.github.com/")) return Response.json({ default_branch: "main" });
+      const path = text.slice(text.indexOf("/main/") + "/main/".length);
+      if (path === "canvastty.plugin.json") return new Response(JSON.stringify(manifest), { status: 200 });
+      if (failedPaths.has(path)) return new Response("boom", { status: 400 });
+      const content = served.get(path);
+      return content ? new Response(content, { status: 200 }) : new Response("missing", { status: 404 });
+    };
+    await manager.load();
+    const preview = await manager.previewInstall("https://github.com/example/rollback");
+    const installed = await manager.install(preview.token, ["one"]);
+    assert.deepEqual(installed.selectedModules, ["one"]);
+    const oneAsset = await manager.protocolResponse("canvastty-plugin://com.example.rollback/one.html");
+    assert.equal(oneAsset.status, 200);
+    assert.equal(await oneAsset.text(), one.toString("utf8"));
+
+    // Integrity failure while activating a new selection: the old set survives.
+    served.set("two.html", tamperedTwo);
+    await assert.rejects(
+      () => manager.setModules(installed.manifest.id, ["two"]),
+      /failed integrity verification: two\.html/
+    );
+    assert.deepEqual(manager.list()[0].selectedModules, ["one"]);
+    const intactAsset = await manager.protocolResponse("canvastty-plugin://com.example.rollback/one.html");
+    assert.equal(intactAsset.status, 200);
+    assert.equal(await intactAsset.text(), one.toString("utf8"));
+    assert.equal(
+      (await manager.protocolResponse("canvastty-plugin://com.example.rollback/two.html")).status,
+      404
+    );
+
+    // Download failure while extending the selection: still the old set.
+    served.set("two.html", two);
+    failedPaths.add("two.html");
+    await assert.rejects(
+      () => manager.setModules(installed.manifest.id, ["one", "two"]),
+      /HTTP 400/
+    );
+    assert.deepEqual(manager.list()[0].selectedModules, ["one"]);
+    assert.equal(
+      (await manager.protocolResponse("canvastty-plugin://com.example.rollback/one.html")).status,
+      200
+    );
+
+    // The persisted registry still holds the previous selection after a reload.
+    const reloaded = new PluginManager(userData);
+    try {
+      await reloaded.load();
+      assert.deepEqual(reloaded.list()[0].selectedModules, ["one"]);
+      const reloadedAsset = await reloaded.protocolResponse(
+        "canvastty-plugin://com.example.rollback/one.html"
+      );
+      assert.equal(reloadedAsset.status, 200);
+      assert.equal(await reloadedAsset.text(), one.toString("utf8"));
+    } finally {
+      await reloaded.dispose();
+    }
+
+    // Sanity check: a working reconfiguration still succeeds after the failures.
+    failedPaths.clear();
+    const updated = await manager.setModules(installed.manifest.id, ["two"]);
+    assert.deepEqual(updated.selectedModules, ["two"]);
+    assert.equal(
+      (await manager.protocolResponse("canvastty-plugin://com.example.rollback/two.html")).status,
+      200
+    );
   } finally {
     globalThis.fetch = originalFetch;
     await manager.dispose();
