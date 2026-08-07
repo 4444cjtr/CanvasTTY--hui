@@ -18,6 +18,7 @@ Electron main process
     ├── TerminalManager → node-pty lifecycle、有界 scrollback 与输出 batching
     ├── LimitsService  → 脱敏后的服务商限额 adapter 与 cache
     ├── PluginManager  → GitHub 安装、manifest、assets、permissions、storage
+    ├── PluginSecretsService → 操作系统保护的插件凭据加密与 fail-closed 可用性
     ├── PluginMediaService → 用户授权媒体目录、ranged audio stream、playlist
     ├── BrowserService → 内置 tab 与隔离 WebContentsView lifecycle
     ├── canvastty-plugin:// → 受 CSP 限制的静态 plugin resource
@@ -32,6 +33,7 @@ Electron main process
 - `src/main/services/LimitsService.ts` 通过已安装 CLI 的 app-server protocol 读取 Codex，通过服务商 usage endpoint 读取 Claude/Kimi。凭据只在可信主进程读取，只通过 HTTPS 发往匹配的服务商，不记录也不通过 IPC 暴露。该服务负责 timeout、structural normalization、cache、stale fallback 与子进程 cleanup；原始服务商响应不会跨越 IPC。
 - `src/main/services/SettingsStore.ts` 会规范化每次更新，并通过串行原子写入持久化。
 - `src/main/services/PluginManager.ts` 安装已构建的静态仓库，不执行 package script；拒绝 symlink 与超大包；持久化启用 registry；只提供包内文件，并执行每插件 permissions/storage quota。
+- `src/main/services/PluginSecretsService.ts` 串行化每个插件的机密写入，通过 Electron `safeStorage` 加密完整的有界 payload，拒绝 plaintext-only backend，并在卸载时删除加密文件。
 - `src/main/services/PluginMediaService.ts` 仅在原生目录选择后保存授权，隐藏绝对路径，跳过 symlink，并以 HTTP Range 提供音频。Playlist 读取限制在授权媒体库内；写入受大小限制，并且只能原子写入 `Playlists/`。
 - `src/main/services/BrowserService.ts` 管理内置浏览器的 `WebContentsView` tab。远程页面使用独立 persistent partition，禁用 Node，启用 context isolation/sandbox，并默认拒绝网站权限。这是 core service，不是 runtime 插件能力。
 - `src/main/services/cliEnvironment.ts` 会在启动任何服务商进程前，用现有用户 CLI 目录补充图形会话的 `PATH`，且不会读取 shell startup script。

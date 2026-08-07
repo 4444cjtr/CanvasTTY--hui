@@ -45,7 +45,8 @@ windows/focus.js
   "name": "Studio Kit",
   "version": "1.0.0",
   "description": "Небольшие поверхности CanvasTTY на реальных данных host.",
-  "permissions": ["storage", "sessions:read", "launcher:open"],
+  "permissions": ["storage", "secrets", "sessions:read", "launcher:open"],
+  "settingsContribution": "notes",
   "contributions": [
     {
       "id": "session-status",
@@ -59,7 +60,8 @@ windows/focus.js
       "kind": "canvas-app",
       "title": "Notes",
       "entry": "apps/notes.html",
-      "defaultSize": { "width": 680, "height": 440 }
+      "defaultSize": { "width": 680, "height": 440 },
+      "minSize": { "width": 320, "height": 180 }
     },
     {
       "id": "focus",
@@ -72,13 +74,20 @@ windows/focus.js
 }
 ```
 
-ID плагина и contribution — стабильные ключи persistence: после публикации их нельзя переименовывать. Версия использует semantic version. HOME начинает с просторной логической сетки 16 × 12, сохраняя исходную композицию 12 × 8. В редакторе видимая граница растягивается до 48 × 36 без уменьшения ячеек, а при нехватке места новый виджет расширяет её автоматически. Canvas app использует world-space pixels и участвует в том же snapping, что терминальные карточки.
+ID плагина и contribution — стабильные ключи persistence: после публикации их нельзя переименовывать. Версия использует semantic version. Опциональный `settingsContribution` ссылается на один `canvas-app`: CanvasTTY показывает для него отдельное действие **Настройки** в меню расширений. Каждый установленный `home-widget` также появляется рядом со встроенными виджетами в разделе **Настройки → Оформление → Состав HOME**, а карточка расширения сохраняет то же действие добавления или удаления. Опциональный `minSize` поддерживается для `canvas-app` и `window`, не может превышать `defaultSize` и ограничен снизу размером 240 × 140 px. Для старых manifest сохраняется минимум хоста 320 × 220 px. HOME начинает с просторной логической сетки 16 × 12, сохраняя исходную композицию 12 × 8. В редакторе видимая граница растягивается до 48 × 36 без уменьшения ячеек, а при нехватке места новый виджет расширяет её автоматически. Canvas app использует world-space pixels и участвует в том же snapping, что терминальные карточки.
+
+### Необязательные модули
+
+Модульный manifest объявляет проверяемые по целостности coreFiles и до 16 необязательных modules. Для каждого файла задаются path, точный размер bytes и SHA-256. CanvasTTY загружает для предпросмотра только manifest, показывает галочки, размер и разрешения каждого модуля, а затем скачивает только ядро и выбранные модули. Последующее изменение выбора атомарно заменяет установленный пакет и удаляет файлы отключённых модулей. Поле module у contribution скрывает его, если соответствующий модуль не установлен.
+
+host.onStorageChange(listener) сообщает другим открытым карточкам плагина об изменениях через host.storage.set, поэтому нескольким карточкам не требуется постоянный polling.
 
 ## Permissions
 
 | Permission | Возможность SDK | Граница данных |
 |:--|:--|:--|
 | `storage` | `storage.get`, `storage.set` | Изолированное JSON-хранилище, 64 КБ на плагин |
+| `secrets` | `secrets.get`, `secrets.set`, `secrets.delete` | Строковые секреты, зашифрованные через Electron `safeStorage`; без защищённого хранилища ОС вызов завершается ошибкой |
 | `sessions:read` | `sessions.list` | Только ID, provider, title, status, startedAt и exitCode |
 | `limits:read` | `limits.get` | Тот же очищенный `LimitsSnapshot`, который использует HOME |
 | `launcher:open` | `launcher.open` | Открывает штатную Focus Card или запуск терминала; не обходит пользовательский выбор |
@@ -112,7 +121,10 @@ host.onContext(({ appearance, contribution }) => {
 const sessions = await host.request("sessions.list");
 await host.storage.set("draft", { text: "Локально для этого плагина" });
 const draft = await host.storage.get("draft");
+await host.secrets.set("oauth-token", token);
+const restoredToken = await host.secrets.get("oauth-token");
 await host.request("launcher.open", { provider: "codex" });
+await host.canvas.open("notes");
 await host.request("window.open", { contributionId: "focus" });
 
 const library = await host.media.pickLibrary();
@@ -126,7 +138,9 @@ if (library) {
 }
 ```
 
-Поддержаны `host.getContext`, `storage.*`, `sessions.list`, `limits.get`, `launcher.open`, `external.open`, `window.open`, `media.*` и `playlists.*`. `window.open` может открыть только contribution типа `window` из того же manifest.
+Поддержаны `host.getContext`, `storage.*`, `secrets.*`, `sessions.list`, `limits.get`, `launcher.open`, `canvas.open`, `external.open`, `window.open`, `media.*` и `playlists.*`. `canvas.open` открывает или фокусирует `canvas-app` того же плагина и по возможности ставит его рядом с вызывающей карточкой. `window.open` может открыть только contribution типа `window` из того же manifest.
+
+Используйте `storage` для несекретных JSON-настроек, а `secrets` — только для OAuth-токенов, API-ключей и других учётных данных. Поддерживается до 32 строковых ключей, 16 КБ на значение и 64 КБ на плагин. Секреты удаляются при uninstall и никогда не сохраняются в plaintext; если ОС не предоставляет защищённое шифрование, вызов явно завершается ошибкой.
 
 Разрешения музыкальных библиотек сохраняются между перезапусками, перечисляются и отзываются только владеющим плагином. Сканирование пропускает symlink и возвращает относительные пути, метаданные и непрозрачные stream URL вместо абсолютного корня библиотеки. При удалении плагина все его разрешения на папки отзываются. Содержимое плейлиста возвращается как записано и не привязано к формату: плеер может использовать стандартные M3U/PLS или собственную JSON-схему; импортированный плейлист сам может содержать абсолютные пути.
 
@@ -162,7 +176,7 @@ Context сообщает текущие locale и palette CanvasTTY. Локал�
 2. Откройте **Настройки → Плагины**.
 3. Вставьте `https://github.com/owner/repository` и нажмите **Проверить**.
 4. Прочитайте manifest и permissions, затем подтвердите **Установить**.
-5. В том же разделе плагин можно включить, выключить, удалить, добавить или убрать его HOME widgets.
+5. В том же разделе плагин можно включить, выключить или удалить. Его HOME widgets добавляются и удаляются как здесь, так и рядом со встроенными виджетами в разделе **Оформление → Состав HOME**. Если manifest объявляет `settingsContribution`, карточка плагина также показывает отдельное действие **Настройки**.
 6. Откройте **Настройки → Оформление → Состав HOME** и нажмите **Редактировать HOME**, чтобы двигать плитки, менять их размер или тянуть правый нижний угол границы HOME. Плитка Settings сохраняется как аварийная точка входа; остальные системные и plugin tiles опциональны.
 
 Установщик намеренно не принимает приватные репозитории, ссылки GitHub вида `/tree/branch/subdirectory` и репозитории, которым нужен build. Публикуйте готовый пакет в корне.

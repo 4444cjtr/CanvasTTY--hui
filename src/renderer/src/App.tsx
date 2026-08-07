@@ -460,8 +460,8 @@ export function App(): React.JSX.Element {
     window.canvasTTY.plugins.previewInstall(sourceUrl)
   ), []);
 
-  const installPlugin = useCallback(async (token: string): Promise<void> => {
-    const installed = await window.canvasTTY.plugins.install(token);
+  const installPlugin = useCallback(async (token: string, selectedModules: string[]): Promise<void> => {
+    const installed = await window.canvasTTY.plugins.install(token, selectedModules);
     setPlugins((current) => [...current.filter((plugin) => plugin.manifest.id !== installed.manifest.id), installed]);
 
     let homeLayout = settings.homeLayout;
@@ -483,6 +483,21 @@ export function App(): React.JSX.Element {
     setPlugins((current) => current.map((plugin) => plugin.manifest.id === pluginId ? updated : plugin));
   }, []);
 
+  const setPluginModules = useCallback(async (pluginId: string, selectedModules: string[]): Promise<void> => {
+    const updated = await window.canvasTTY.plugins.setModules(pluginId, selectedModules);
+    setPlugins((current) => current.map((plugin) => plugin.manifest.id === pluginId ? updated : plugin));
+    const contributions = new Set(updated.manifest.contributions.map((contribution) => contribution.id));
+    await saveSettings({
+      homeLayout: settings.homeLayout.filter((placement) => {
+        const prefix = `plugin:${pluginId}:`;
+        return !placement.widgetId.startsWith(prefix) || contributions.has(placement.widgetId.slice(prefix.length));
+      }),
+      pluginCanvas: settings.pluginCanvas.filter((instance) => (
+        instance.pluginId !== pluginId || contributions.has(instance.contributionId)
+      ))
+    });
+  }, [saveSettings, settings.homeLayout, settings.pluginCanvas]);
+
   const uninstallPlugin = useCallback(async (pluginId: string): Promise<void> => {
     await window.canvasTTY.plugins.uninstall(pluginId);
     setPlugins((current) => current.filter((plugin) => plugin.manifest.id !== pluginId));
@@ -492,6 +507,45 @@ export function App(): React.JSX.Element {
     });
     showToast(t(settings.locale, "pluginRemoved"));
   }, [saveSettings, settings.homeLayout, settings.locale, settings.pluginCanvas, showToast]);
+
+  const openPluginCanvasContribution = useCallback(async (
+    plugin: InstalledPlugin,
+    contribution: Extract<PluginContribution, { kind: "canvas-app" }>,
+    sourceCanvasInstanceId?: string
+  ): Promise<void> => {
+    const existing = settings.pluginCanvas.find((instance) => (
+      instance.pluginId === plugin.manifest.id && instance.contributionId === contribution.id
+    ));
+    if (existing) {
+      setSettingsOpen(false);
+      isHomeCamera.current = false;
+      setCamera(focusCamera(existing.position, existing.size));
+      return;
+    }
+    const index = settings.pluginCanvas.length;
+    const homeSize = homeGridPixelSize(settings.homeGridSize);
+    const source = sourceCanvasInstanceId
+      ? settings.pluginCanvas.find((instance) => instance.id === sourceCanvasInstanceId)
+      : null;
+    const instance = {
+      id: crypto.randomUUID(),
+      pluginId: plugin.manifest.id,
+      contributionId: contribution.id,
+      title: contribution.title,
+      position: source ? {
+        x: source.position.x + source.size.width + 40,
+        y: source.position.y
+      } : {
+        x: homeSize.width + 160 + (index % 2) * 760,
+        y: Math.floor(index / 2) * 500 + 20
+      },
+      size: contribution.defaultSize
+    };
+    await saveSettings({ pluginCanvas: [...settings.pluginCanvas, instance] });
+    setSettingsOpen(false);
+    isHomeCamera.current = false;
+    setCamera(focusCamera(instance.position, instance.size));
+  }, [saveSettings, settings.homeGridSize, settings.pluginCanvas]);
 
   const openPluginContribution = useCallback(async (
     plugin: InstalledPlugin,
@@ -505,25 +559,19 @@ export function App(): React.JSX.Element {
       await toggleHomeWidget(`plugin:${plugin.manifest.id}:${contribution.id}`, contribution.defaultSize);
       return;
     }
+    await openPluginCanvasContribution(plugin, contribution);
+  }, [openPluginCanvasContribution, toggleHomeWidget]);
 
-    const index = settings.pluginCanvas.length;
-    const homeSize = homeGridPixelSize(settings.homeGridSize);
-    const instance = {
-      id: crypto.randomUUID(),
-      pluginId: plugin.manifest.id,
-      contributionId: contribution.id,
-      title: contribution.title,
-      position: {
-        x: homeSize.width + 160 + (index % 2) * 760,
-        y: Math.floor(index / 2) * 500 + 20
-      },
-      size: contribution.defaultSize
-    };
-    await saveSettings({ pluginCanvas: [...settings.pluginCanvas, instance] });
-    setSettingsOpen(false);
-    isHomeCamera.current = false;
-    setCamera(focusCamera(instance.position, instance.size));
-  }, [saveSettings, settings.homeGridSize, settings.pluginCanvas, toggleHomeWidget]);
+  useEffect(() => window.canvasTTY.plugins.onOpenCanvas((request) => {
+    const plugin = plugins.find((candidate) => candidate.manifest.id === request.pluginId);
+    const contribution = plugin?.manifest.contributions.find((candidate) => candidate.id === request.contributionId);
+    if (!plugin || !contribution || contribution.kind !== "canvas-app" || !plugin.enabled) {
+      showToast(t(settings.locale, "pluginActionFailed"));
+      return;
+    }
+    void openPluginCanvasContribution(plugin, contribution, request.sourceCanvasInstanceId)
+      .catch((error) => showToast(error instanceof Error ? error.message : t(settings.locale, "pluginActionFailed")));
+  }), [openPluginCanvasContribution, plugins, settings.locale, showToast]);
 
   const startHomeEditor = useCallback((): void => {
     setSettingsOpen(false);
@@ -662,6 +710,7 @@ export function App(): React.JSX.Element {
         onChange={saveSettings}
         onPreviewPlugin={previewPlugin}
         onInstallPlugin={installPlugin}
+        onSetPluginModules={setPluginModules}
         onSetPluginEnabled={setPluginEnabled}
         onUninstallPlugin={uninstallPlugin}
         onOpenPluginContribution={openPluginContribution}

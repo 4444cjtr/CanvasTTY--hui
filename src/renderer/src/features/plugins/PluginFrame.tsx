@@ -10,6 +10,8 @@ import type {
   SessionSnapshot
 } from "../../../../shared/contracts";
 
+const storageListeners = new Map<string, Set<(key: string, value: unknown) => void>>();
+
 interface PluginFrameProps {
   plugin: InstalledPlugin;
   contribution: PluginContribution;
@@ -17,6 +19,7 @@ interface PluginFrameProps {
   palette: PaletteId;
   sessions: readonly SessionSnapshot[];
   limits: LimitsSnapshot | null;
+  canvasInstanceId?: string;
   className?: string;
   onOpenLauncher(provider: ProviderId): void;
   onError(message: string): void;
@@ -37,6 +40,7 @@ export function PluginFrame({
   palette,
   sessions,
   limits,
+  canvasInstanceId,
   className,
   onOpenLauncher,
   onError
@@ -53,7 +57,8 @@ export function PluginFrame({
       id: plugin.manifest.id,
       name: plugin.manifest.name,
       version: plugin.manifest.version,
-      permissions: plugin.manifest.permissions
+      permissions: plugin.manifest.permissions,
+      modules: plugin.selectedModules
     },
     contribution: {
       id: contribution.id,
@@ -82,6 +87,7 @@ export function PluginFrame({
         context,
         sessions,
         limits,
+        canvasInstanceId,
         onOpenLauncher
       }).then((value) => {
         postToFrame(frame.current, {
@@ -105,11 +111,15 @@ export function PluginFrame({
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [context, limits, onError, onOpenLauncher, plugin, sessions]);
+  }, [canvasInstanceId, context, limits, onError, onOpenLauncher, plugin, sessions]);
 
   useEffect(() => {
     postToFrame(frame.current, { source: "canvastty-host", type: "context", value: context });
   }, [context]);
+
+  useEffect(() => subscribeStorage(plugin.manifest.id, (key, value) => {
+    postToFrame(frame.current, { source: "canvastty-host", type: "storage-change", key, value });
+  }), [plugin.manifest.id]);
 
   return (
     <iframe
@@ -131,6 +141,7 @@ async function handleRequest({
   context,
   sessions,
   limits,
+  canvasInstanceId,
   onOpenLauncher
 }: {
   plugin: InstalledPlugin;
@@ -139,6 +150,7 @@ async function handleRequest({
   context: unknown;
   sessions: readonly SessionSnapshot[];
   limits: LimitsSnapshot | null;
+  canvasInstanceId?: string;
   onOpenLauncher(provider: ProviderId): void;
 }): Promise<unknown> {
   const pluginId = plugin.manifest.id;
@@ -149,7 +161,27 @@ async function handleRequest({
   }
   if (method === "storage.set") {
     requirePermission(plugin, "storage");
-    await window.canvasTTY.plugins.storageSet(pluginId, stringParam(params.key, "key"), params.value);
+    const key = stringParam(params.key, "key");
+    await window.canvasTTY.plugins.storageSet(pluginId, key, params.value);
+    emitStorage(pluginId, key, params.value);
+    return null;
+  }
+  if (method === "secrets.get") {
+    requirePermission(plugin, "secrets");
+    return window.canvasTTY.plugins.secretsGet(pluginId, stringParam(params.key, "key"));
+  }
+  if (method === "secrets.set") {
+    requirePermission(plugin, "secrets");
+    await window.canvasTTY.plugins.secretsSet(
+      pluginId,
+      stringParam(params.key, "key"),
+      secretValue(params.value)
+    );
+    return null;
+  }
+  if (method === "secrets.delete") {
+    requirePermission(plugin, "secrets");
+    await window.canvasTTY.plugins.secretsDelete(pluginId, stringParam(params.key, "key"));
     return null;
   }
   if (method === "sessions.list") {
@@ -226,6 +258,15 @@ async function handleRequest({
     await window.canvasTTY.plugins.openWindow(pluginId, contributionId);
     return null;
   }
+  if (method === "canvas.open") {
+    const contributionId = stringParam(params.contributionId, "contributionId");
+    const target = plugin.manifest.contributions.find((contribution) => (
+      contribution.id === contributionId && contribution.kind === "canvas-app"
+    ));
+    if (!target) throw new Error("Plugin requested an unknown canvas contribution.");
+    await window.canvasTTY.plugins.openCanvas(pluginId, contributionId, canvasInstanceId);
+    return null;
+  }
   throw new Error(`Unsupported plugin method: ${method}.`);
 }
 
@@ -239,6 +280,20 @@ function postToFrame(frame: HTMLIFrameElement | null, message: object): void {
   frame?.contentWindow?.postMessage(message, "*");
 }
 
+function subscribeStorage(pluginId: string, listener: (key: string, value: unknown) => void): () => void {
+  const listeners = storageListeners.get(pluginId) ?? new Set();
+  listeners.add(listener);
+  storageListeners.set(pluginId, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) storageListeners.delete(pluginId);
+  };
+}
+
+function emitStorage(pluginId: string, key: string, value: unknown): void {
+  storageListeners.get(pluginId)?.forEach((listener) => listener(key, structuredClone(value)));
+}
+
 function stringParam(value: unknown, label: string): string {
   if (typeof value !== "string" || value.length === 0 || value.length > 2_048) {
     throw new Error(`Plugin ${label} parameter is invalid.`);
@@ -249,6 +304,13 @@ function stringParam(value: unknown, label: string): string {
 function playlistContent(value: unknown): string {
   if (typeof value !== "string" || new Blob([value]).size > 4 * 1024 * 1024) {
     throw new Error("Plugin playlist content is invalid or exceeds 4 MB.");
+  }
+  return value;
+}
+
+function secretValue(value: unknown): string {
+  if (typeof value !== "string" || new Blob([value]).size > 16 * 1024) {
+    throw new Error("Plugin secret value is invalid or exceeds 16 KB.");
   }
   return value;
 }
