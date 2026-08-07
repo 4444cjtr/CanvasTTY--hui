@@ -49,7 +49,7 @@ const FALLBACK_SETTINGS: AppSettings = {
   edgePan: false,
   edgePanSpeed: "normal",
   zoomSensitivity: "normal",
-  zoomOverApplications: false,
+  zoomOverApplications: true,
   focusActivation: "off",
   hoverFocus: false,
   hoverFocusSpeed: "normal",
@@ -64,6 +64,7 @@ const FALLBACK_SETTINGS: AppSettings = {
   pluginCanvas: [],
   browserCanvas: null,
   browserAgentAccess: true,
+  browserShowAgentPresence: true,
   browserRestoreTabs: true
 };
 
@@ -240,6 +241,15 @@ export function App(): React.JSX.Element {
     await createSession(provider, profile, cwd);
     showToast(`${t(settings.locale, "sessionStarted")}: ${provider}`);
   }, [createSession, settings.locale, showToast]);
+
+  const restartSession = useCallback(async (id: string): Promise<void> => {
+    try {
+      await window.canvasTTY.terminal.restart(id);
+      showToast(t(settings.locale, "sessionRestarted"));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t(settings.locale, "restartFailed"));
+    }
+  }, [settings.locale, showToast]);
 
   const acknowledgeDanger = useCallback(async (provider: AgentProviderId): Promise<void> => {
     if (settings.acknowledgedDangerousProfiles.includes(provider)) return;
@@ -611,6 +621,7 @@ export function App(): React.JSX.Element {
           onRenameSession={renameSession}
           onRenameEnd={() => setRenamingSessionId(null)}
           onSessionBoundsChange={changeSessionBounds}
+          onRestartSession={restartSession}
           onDisposeSession={disposeSession}
           onBrowserBoundsChange={changeBrowserBounds}
           onFocusBrowser={focusBrowser}

@@ -42,7 +42,7 @@ Runtime 插件代码绝不会导入主进程或可信 renderer bundle。HOME wid
 
 插件音乐访问基于 capability，而不是通用文件系统权限。媒体扫描返回 library ID、相对路径、metadata 与 `canvastty-media://` stream URL；原始 playlist 文本是唯一暴露的 format-neutral 文件内容。媒体 URL 只为对应且已启用的插件解析，并且必须位于用户此前选择的 library root 下。卸载插件会撤销其持久化目录授权。
 
-内置浏览器跨两个界面分工：`BrowserCard` 渲染可信的外层 window chrome、tab、navigation、agent badge、download、dialog 与 canvas geometry；`BrowserService` 把活动 native view 定位到卡片测量出的 viewport 上。Semantic summary、编辑 HOME、可信 modal，以及 canvas/card 移动时会隐藏 native view；geometry 稳定前由稳定 renderer surface 填充页面区域。Fractional renderer bounds 扩展到完整覆盖的 device-independent pixel；只有活动 tab 实际变化时才重新挂接 view。Typed pointer bridge 把 native page 的 click/hover activity 返回 canvas selection，同时不阻止页面自身输入。
+内置浏览器跨两个界面分工：`BrowserCard` 渲染可信的外层 window chrome、tab、navigation、agent badge、download、dialog 与 canvas geometry；`BrowserService` 把活动 native view 定位到卡片测量出的 viewport 上。卡片或 camera 移动时 native view 保持实时渲染，并按帧合并 geometry 更新；仅在 semantic summary、编辑 HOME 或可信 modal 后方隐藏。Fractional renderer bounds 扩展到完整覆盖的 device-independent pixel；只有活动 tab 实际变化时才重新挂接 view。Typed pointer bridge 把 native page 的 click/hover activity 返回 canvas selection，并显式恢复页面焦点而不阻止页面输入。仅连接或 heartbeat 不会创建 presence：实际 browser command 后才显示 badge，获得真实 pointer position 后才显示 cursor。
 
 ## Renderer 边界
 

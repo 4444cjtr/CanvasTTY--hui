@@ -169,6 +169,7 @@ function fixtureHtml() {
     <div id="drag-target" role="button" tabindex="0" aria-label="Drag target">Drag target</div>
     <p id="drag-status" role="status">Drag waiting</p>
     <p id="scroll-status" role="status">Scroll waiting</p>
+    <p id="viewport-status" role="status"></p>
     <p id="status" role="status">Waiting</p>
   </main>
   <script>
@@ -194,6 +195,11 @@ function fixtureHtml() {
     window.addEventListener('scroll', () => {
       if (window.scrollY > 0) document.querySelector('#scroll-status').textContent = 'Scroll completed';
     }, { passive: true });
+    const reportViewport = () => {
+      document.querySelector('#viewport-status').textContent = 'Viewport width: ' + window.innerWidth;
+    };
+    window.addEventListener('resize', reportViewport);
+    reportViewport();
   </script>
 `;
 }

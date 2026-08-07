@@ -26,6 +26,7 @@ test("browser native input participates in canvas selection and hover focus", as
   ]);
 
   assert.match(service, /contents\.on\("before-mouse-event"/);
+  assert.match(service, /if \(pointerType === "down"\) contents\.focus\(\)/);
   assert.match(service, /IPC\.browserCanvasPointer/);
   assert.match(service, /mouse\.type === "mouseMove" && this\.pointerTabId !== tab\.id/);
   assert.match(card, /window\.canvasTTY\.browser\.onCanvasPointer/);
@@ -36,7 +37,7 @@ test("browser native input participates in canvas selection and hover focus", as
   assert.match(workspace, /closest\("\.terminal-card, \.browser-card"\)/);
 });
 
-test("browser motion hides the native view and keeps a stable canvas surface", async () => {
+test("browser native view stays live while the canvas and card move", async () => {
   const [card, service, workspace, styles] = await Promise.all([
     readFile(browserCardPath, "utf8"),
     readFile(browserServicePath, "utf8"),
@@ -44,11 +45,27 @@ test("browser motion hides the native view and keeps a stable canvas surface", a
     readFile(stylesPath, "utf8")
   ]);
 
-  assert.match(card, /&& !canvasMoving\s*&& !manipulating/);
-  assert.match(card, /browser-card__motion-surface/);
-  assert.match(workspace, /canvasMoving=\{cameraMoving \|\| panning\}/);
+  assert.doesNotMatch(card, /canvasMoving|manipulating|browser-card__motion-surface/);
+  assert.doesNotMatch(workspace, /cameraMoving|canvasMoving=/);
+  assert.match(card, /\[camera\.x, camera\.y, nativeViewVisible, position, reportViewport/);
+  assert.doesNotMatch(card, /viewportFrame|requestAnimationFrame\(\(\) => \{\s*viewportFrame/);
+  assert.match(card, /const rect = element\.getBoundingClientRect\(\);\s*const state = viewportState\.current;\s*window\.canvasTTY\.browser\.setViewport/);
   assert.match(service, /if \(this\.clipTabId !== active\.id\)/);
+  assert.match(service, /this\.applyPageScale\(active\)/);
+  assert.match(service, /contents\.setZoomFactor\(pageScale\)/);
+  assert.match(service, /contents\.on\("did-navigate",[\s\S]*?this\.applyPageScale\(tab\)/);
   assert.match(styles, /\.browser-card__viewport \{[^}]*inset: 140px 8px 8px;[^}]*background: #272934;/);
+});
+
+test("browser tab chrome highlights only the active tab", async () => {
+  const [card, styles] = await Promise.all([
+    readFile(browserCardPath, "utf8"),
+    readFile(stylesPath, "utf8")
+  ]);
+
+  assert.match(card, /tab\.id === browser\.activeTabId \? "browser-card__tab--active" : ""/);
+  assert.match(styles, /\.browser-card__tab \{[^}]*background: rgba\(255,255,255,\.025\);/);
+  assert.match(styles, /\.browser-card__tab--active \{[^}]*background: rgba\(255,255,255,\.13\);/);
 });
 
 test("browser window actions are separated from tab actions and use the Lucide globe", async () => {

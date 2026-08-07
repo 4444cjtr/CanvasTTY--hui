@@ -16,10 +16,6 @@ export class AgentRegistry {
     this.now = now;
   }
 
-  has(connectionId: string): boolean {
-    return this.values.has(connectionId);
-  }
-
   touch(
     actor: BrowserActor,
     tabId: string | null,
@@ -34,12 +30,12 @@ export class AgentRegistry {
         y: clamp(cursor.y, -10_000, 10_000),
         updatedAt: timestamp
       }
-      : current?.cursor ?? { x: 0, y: 0, updatedAt: timestamp };
+      : current?.cursor ?? { x: 0, y: 0, updatedAt: 0 };
     this.values.set(actor.connectionId, {
       agentId: actor.agentId,
       connectionId: actor.connectionId,
       provider: actor.provider,
-      label: current?.label ?? `${actor.provider} ${actor.agentId.slice(0, 6)}`,
+      label: current?.label ?? providerLabel(actor.provider),
       brandColor: BROWSER_PROVIDER_COLORS[actor.provider],
       terminalSessionId: actor.terminalSessionId,
       currentTabId: tabId ?? current?.currentTabId ?? null,
@@ -54,7 +50,7 @@ export class AgentRegistry {
   heartbeat(actor: BrowserActor, timestamp = this.now()): boolean {
     if (actor.kind !== "agent") return false;
     const current = this.values.get(actor.connectionId);
-    if (!current) return this.touch(actor, null);
+    if (!current) return false;
     current.lastHeartbeatAt = Number.isFinite(timestamp) ? timestamp : this.now();
     current.connectionState = "connected";
     return true;
@@ -99,4 +95,11 @@ export class AgentRegistry {
 
 function clamp(value: number, min: number, max: number): number {
   return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : 0;
+}
+
+function providerLabel(provider: AgentPresenceSnapshot["provider"]): string {
+  if (provider === "codex") return "Codex";
+  if (provider === "claude") return "Claude";
+  if (provider === "kimi") return "Kimi";
+  return "Agent";
 }

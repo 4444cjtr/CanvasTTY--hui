@@ -40,6 +40,24 @@ export function shouldPasteTerminalClipboard(event: TerminalKeyEvent): boolean {
     || (event.metaKey && !event.ctrlKey && !event.shiftKey);
 }
 
+export function shouldScrollTerminalPage(event: TerminalKeyEvent): -1 | 0 | 1 {
+  if (event.type !== "keydown") return 0;
+  if (event.ctrlKey || event.shiftKey || event.metaKey || event.altKey) return 0;
+  if (event.key === "PageUp" || event.code === "PageUp") return -1;
+  if (event.key === "PageDown" || event.code === "PageDown") return 1;
+  return 0;
+}
+
+export function shouldRestartExitedTerminal(event: TerminalKeyEvent, exited: boolean): boolean {
+  return exited
+    && event.type === "keydown"
+    && matchesPhysicalOrLayoutKey(event, "KeyD", "d")
+    && event.ctrlKey
+    && !event.shiftKey
+    && !event.metaKey
+    && !event.altKey;
+}
+
 function matchesPhysicalOrLayoutKey(event: TerminalKeyEvent, code: string, key: string): boolean {
   return event.code === code || event.key.toLowerCase() === key;
 }

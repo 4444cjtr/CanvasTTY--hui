@@ -55,6 +55,14 @@ function assertBridgeError(code) {
   };
 }
 
+async function waitForCondition(predicate, timeoutMs = 1_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for gateway test condition.");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 function authMessage(capability, overrides = {}) {
   return {
     v: AGENT_BRIDGE_PROTOCOL_VERSION,
@@ -168,6 +176,8 @@ async function authenticateClient(t, gateway, registration = {}) {
   await capability.authenticated;
   const response = await client.next((message) => message.type === "authenticated");
   assert.equal(response.v, AGENT_BRIDGE_PROTOCOL_VERSION);
+  assert.equal(typeof response.reconnectToken, "string");
+  assert.equal(response.reconnectToken.length > 0, true);
   return { capability, client, response };
 }
 
@@ -286,16 +296,59 @@ test("AgentGateway supports Windows only when the secure native pipe host is sup
   assert.throws(() => gateway.address, /has not started/i);
 });
 
-test("AgentGateway accepts a capability once and rejects token replay", POSIX_GATEWAY_TEST, async (t) => {
-  const gateway = await startedGateway(t, core());
-  const { capability } = await authenticateClient(t, gateway);
+test("AgentGateway idempotently authenticates live helpers and rotates reconnect capability", POSIX_GATEWAY_TEST, async (t) => {
+  let connected = 0;
+  const disconnects = [];
+  const gateway = await startedGateway(t, core({
+    agentConnected: () => { connected += 1; },
+    agentDisconnected: (_actor, reason) => disconnects.push(reason)
+  }));
+  const first = await authenticateClient(t, gateway);
 
-  const replay = await connectClient(capability.address);
+  const duplicate = await connectClient(first.capability.address);
+  t.after(() => duplicate.destroy());
+  duplicate.send(authMessage(first.capability));
+  const duplicateAuth = await duplicate.next((message) => message.type === "authenticated");
+  assert.equal(duplicateAuth.reconnectToken, first.response.reconnectToken);
+  assert.equal(connected, 1);
+
+  first.client.destroy();
+  await first.client.closed;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(disconnects, []);
+
+  duplicate.send({
+    v: 1,
+    type: "request",
+    id: "duplicate-request",
+    tool: "browser_list_tabs",
+    arguments: {}
+  });
+  const duplicateResponse = await duplicate.next(
+    (message) => message.type === "response" && message.id === "duplicate-request"
+  );
+  assert.equal(duplicateResponse.result.ok, true);
+
+  duplicate.destroy();
+  await duplicate.closed;
+  await waitForCondition(() => disconnects.length === 1);
+  assert.deepEqual(disconnects, ["closed"]);
+
+  const replay = await connectClient(first.capability.address);
   t.after(() => replay.destroy());
-  replay.send(authMessage(capability));
-  const response = await replay.next((message) => message.type === "error");
-  assert.equal(response.error.code, "AUTH_REPLAYED");
-  assert.equal(response.error.retryable, false);
+  replay.send(authMessage(first.capability));
+  const replayResponse = await replay.next((message) => message.type === "error");
+  assert.equal(replayResponse.error.code, "AUTH_REPLAYED");
+  assert.equal(replayResponse.error.retryable, false);
+
+  const reconnect = await connectClient(first.capability.address);
+  t.after(() => reconnect.destroy());
+  reconnect.send(authMessage(first.capability, {
+    capabilityToken: first.response.reconnectToken
+  }));
+  const reconnectAuth = await reconnect.next((message) => message.type === "authenticated");
+  assert.equal(reconnectAuth.reconnectToken, first.response.reconnectToken);
+  assert.equal(connected, 2);
 });
 
 test("AgentGateway rejects expired and identity-mismatched capabilities", POSIX_GATEWAY_TEST, async (t) => {

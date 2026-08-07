@@ -52,6 +52,21 @@ export async function runBrowserElectronSmoke(
     await execute("browser_list_tabs");
     await waitUntil(async () => service.getState().tabs.find((tab) => tab.id === tabId)?.status === "ready");
 
+    service.setViewport({ x: 0, y: 0, width: 410, height: 310, visible: true, canvasScale: 0.5 });
+    await execute("browser_wait_for", {
+      tabId,
+      condition: "text",
+      value: "Viewport width: 820",
+      timeoutMs: 4_000
+    });
+    service.setViewport({ x: 0, y: 0, width: 820, height: 620, visible: true, canvasScale: 1 });
+    await execute("browser_wait_for", {
+      tabId,
+      condition: "text",
+      value: "Viewport width: 820",
+      timeoutMs: 4_000
+    });
+
     const observed = await execute<{
       elements: Array<{ name: string; value?: string | null; ref: BrowserElementRef }>;
     }>("browser_observe", { tabId, limit: 200 });

@@ -47,6 +47,13 @@ test("selecting a terminal moves keyboard focus into the live xterm", async () =
   assert.match(source, /else if \(!selected\) \{\s*terminal\.blur\(\)/);
 });
 
+test("terminal uses one block cursor instead of overlaying a bar on provider cursor cells", async () => {
+  const source = await readFile(terminalCardPath, "utf8");
+
+  assert.match(source, /cursorStyle: "block"/);
+  assert.doesNotMatch(source, /cursorStyle: "bar"/);
+});
+
 test("programmatic hover focus does not leak focus reports into the agent TUI", async () => {
   const source = await readFile(terminalCardPath, "utf8");
 
@@ -96,6 +103,20 @@ test("late input and resize events are guarded after PTY exit", async () => {
   assert.match(source, /session\.metadata\.exitCode !== null/);
   assert.match(source, /tryPtyOperation\(\(\) => session\.process\.write\(data\)\)/);
   assert.match(source, /tryPtyOperation\(\(\) => session\.process\.resize\(safeCols, safeRows\)\)/);
+});
+
+test("an exited PTY can restart in place without recreating its xterm card", async () => {
+  const [card, manager] = await Promise.all([
+    readFile(terminalCardPath, "utf8"),
+    readFile(terminalManagerPath, "utf8")
+  ]);
+
+  assert.match(manager, /restart\(id: string\): SessionSnapshot/);
+  assert.match(manager, /session\.metadata\.exitCode === null/);
+  assert.match(manager, /session\.metadata\.status = "idle"/);
+  assert.match(manager, /this\.bindProcess\(id, session, launched\.process\)/);
+  assert.match(card, /shouldRestartExitedTerminal\(event, sessionExited\.current\)/);
+  assert.match(card, /onRestart\(session\.id\)/);
 });
 
 function effectDependenciesContaining(source, marker) {

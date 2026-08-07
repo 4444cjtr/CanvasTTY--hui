@@ -32,6 +32,8 @@ export class GatewayClient {
   constructor(identity, options = {}) {
     this.identity = identity;
     this.connectTimeoutMs = options.connectTimeoutMs ?? 10_000;
+    this.reconnectDelayMs = options.reconnectDelayMs ?? 100;
+    this.maxReconnectDelayMs = options.maxReconnectDelayMs ?? 2_000;
     this.createConnection = options.createConnection ?? createConnection;
     this.socket = null;
     this.buffer = Buffer.alloc(0);
@@ -40,18 +42,37 @@ export class GatewayClient {
     this.resolveAuthenticated = null;
     this.rejectAuthenticated = null;
     this.heartbeatTimer = null;
+    this.reconnectTimer = null;
+    this.reconnectAttempts = 0;
+    this.ready = false;
     this.closed = false;
   }
 
   connect() {
-    if (this.authenticated) return this.authenticated;
-    this.authenticated = new Promise((resolve, reject) => {
-      this.resolveAuthenticated = resolve;
-      this.rejectAuthenticated = reject;
-    });
-    const socket = this.createConnection(this.identity.address);
+    if (this.closed) return Promise.reject(unavailableError());
+    if (this.ready) return Promise.resolve();
+    if (!this.authenticated) {
+      this.authenticated = new Promise((resolve, reject) => {
+        this.resolveAuthenticated = resolve;
+        this.rejectAuthenticated = reject;
+      });
+    }
+    if (!this.socket && !this.reconnectTimer) this.openConnection();
+    return this.authenticated;
+  }
+
+  openConnection() {
+    if (this.closed || this.socket) return;
+    let socket;
+    try {
+      socket = this.createConnection(this.identity.address);
+    } catch {
+      this.scheduleReconnect();
+      return;
+    }
     this.socket = socket;
-    const timeout = setTimeout(() => this.fail(new BridgeClientError({
+    this.buffer = Buffer.alloc(0);
+    const timeout = setTimeout(() => this.handleDisconnect(socket, new BridgeClientError({
       code: "BRIDGE_UNAVAILABLE",
       message: "CanvasTTY agent browser gateway did not accept the connection.",
       retryable: true
@@ -59,8 +80,7 @@ export class GatewayClient {
     timeout.unref();
     socket.once("connect", () => {
       clearTimeout(timeout);
-      const capabilityToken = this.identity.capabilityToken;
-      this.identity.capabilityToken = "";
+      if (this.socket !== socket || this.closed) return;
       try {
         this.send({
           v: PROTOCOL_VERSION,
@@ -69,24 +89,29 @@ export class GatewayClient {
           connectionId: this.identity.connectionId,
           terminalSessionId: this.identity.terminalSessionId,
           provider: this.identity.provider,
-          capabilityToken
+          capabilityToken: this.identity.capabilityToken
         });
       } catch (error) {
-        this.fail(error instanceof BridgeClientError ? error : unavailableError());
+        this.handleDisconnect(socket, error instanceof BridgeClientError ? error : unavailableError());
       }
     });
-    socket.on("data", (chunk) => this.onData(chunk));
-    socket.on("error", () => this.fail(new BridgeClientError({
-      code: "BRIDGE_UNAVAILABLE",
-      message: "CanvasTTY agent browser gateway connection failed.",
-      retryable: true
-    })));
-    socket.on("close", () => this.fail(new BridgeClientError({
-      code: "BRIDGE_UNAVAILABLE",
-      message: "CanvasTTY agent browser gateway closed.",
-      retryable: true
-    })));
-    return this.authenticated;
+    socket.on("data", (chunk) => this.onData(socket, chunk));
+    socket.on("error", () => {
+      clearTimeout(timeout);
+      this.handleDisconnect(socket, new BridgeClientError({
+        code: "BRIDGE_UNAVAILABLE",
+        message: "CanvasTTY agent browser gateway connection failed.",
+        retryable: true
+      }));
+    });
+    socket.on("close", () => {
+      clearTimeout(timeout);
+      this.handleDisconnect(socket, new BridgeClientError({
+        code: "BRIDGE_UNAVAILABLE",
+        message: "CanvasTTY agent browser gateway closed.",
+        retryable: true
+      }));
+    });
   }
 
   call(tool, args, requestId = randomUUID()) {
@@ -112,6 +137,8 @@ export class GatewayClient {
       reject: rejectPromise,
       timeout: null,
       promise,
+      tool,
+      arguments: validation.value,
       sent: false
     };
     pending.timeout = setTimeout(() => {
@@ -133,17 +160,7 @@ export class GatewayClient {
       return promise;
     }
     void authenticated.then(() => {
-      if (this.pending.get(id) !== pending) return;
-      if (this.closed) {
-        this.rejectPending(id, pending, unavailableError());
-        return;
-      }
-      try {
-        pending.sent = true;
-        this.send({ v: PROTOCOL_VERSION, type: "request", id, tool, arguments: validation.value });
-      } catch (error) {
-        this.rejectPending(id, pending, error instanceof BridgeClientError ? error : unavailableError());
-      }
+      this.flushPending();
     }, (error) => {
       this.rejectPending(id, pending, error instanceof BridgeClientError ? error : unavailableError());
     });
@@ -179,13 +196,18 @@ export class GatewayClient {
   close() {
     const error = unavailableError();
     this.closed = true;
+    this.ready = false;
     this.rejectAuthenticated?.(error);
+    this.authenticated = null;
     this.resolveAuthenticated = null;
     this.rejectAuthenticated = null;
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = null;
-    this.socket?.destroy();
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    const socket = this.socket;
     this.socket = null;
+    socket?.destroy();
     this.failPending(error);
   }
 
@@ -202,8 +224,8 @@ export class GatewayClient {
     this.socket.write(`${json}\n`);
   }
 
-  onData(chunk) {
-    if (this.closed) return;
+  onData(socket, chunk) {
+    if (this.closed || this.socket !== socket) return;
     this.buffer = this.buffer.length === 0 ? chunk : Buffer.concat([this.buffer, chunk]);
     let newline;
     while ((newline = this.buffer.indexOf(0x0a)) !== -1) {
@@ -229,7 +251,7 @@ export class GatewayClient {
         }));
         return;
       }
-      this.onMessage(message);
+      this.onMessage(socket, message);
     }
     if (this.buffer.length > MAX_BRIDGE_PAYLOAD_BYTES) {
       this.fail(new BridgeClientError({
@@ -240,7 +262,8 @@ export class GatewayClient {
     }
   }
 
-  onMessage(message) {
+  onMessage(socket, message) {
+    if (this.socket !== socket || this.closed) return;
     if (!message || typeof message !== "object" || message.v !== PROTOCOL_VERSION) {
       this.fail(new BridgeClientError({
         code: "INVALID_REQUEST",
@@ -250,18 +273,36 @@ export class GatewayClient {
       return;
     }
     if (message.type === "authenticated") {
+      if (
+        this.ready
+        || typeof message.reconnectToken !== "string"
+        || message.reconnectToken.length === 0
+        || message.reconnectToken.length > 128
+      ) {
+        this.fail(new BridgeClientError({
+          code: "INVALID_REQUEST",
+          message: "CanvasTTY gateway returned invalid authentication state.",
+          retryable: false
+        }));
+        return;
+      }
       const interval = Number.isFinite(message.heartbeatIntervalMs) ? message.heartbeatIntervalMs : 5_000;
+      this.identity.capabilityToken = message.reconnectToken;
+      this.ready = true;
+      this.reconnectAttempts = 0;
       this.resolveAuthenticated?.();
       this.resolveAuthenticated = null;
       this.rejectAuthenticated = null;
+      if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = setInterval(() => {
         try {
           this.send({ v: PROTOCOL_VERSION, type: "heartbeat", timestamp: Date.now() });
         } catch {
-          this.close();
+          this.handleDisconnect(socket, unavailableError());
         }
       }, Math.max(1_000, Math.min(5_000, interval)));
       this.heartbeatTimer.unref();
+      this.flushPending();
       return;
     }
     if (message.type === "response") {
@@ -274,19 +315,79 @@ export class GatewayClient {
       return;
     }
     if (message.type === "error") {
-      this.fail(new BridgeClientError(message.error));
+      const error = new BridgeClientError(message.error);
+      if (error.retryable) this.handleDisconnect(socket, error);
+      else this.fail(error);
     }
+  }
+
+  flushPending() {
+    if (!this.ready || this.closed) return;
+    for (const [id, pending] of this.pending) {
+      if (pending.sent) continue;
+      try {
+        pending.sent = true;
+        this.send({
+          v: PROTOCOL_VERSION,
+          type: "request",
+          id,
+          tool: pending.tool,
+          arguments: pending.arguments
+        });
+      } catch (error) {
+        pending.sent = false;
+        this.handleDisconnect(this.socket, error instanceof BridgeClientError ? error : unavailableError());
+        return;
+      }
+    }
+  }
+
+  handleDisconnect(socket, _error) {
+    if (this.closed || !socket || this.socket !== socket) return;
+    const wasReady = this.ready;
+    this.socket = null;
+    this.ready = false;
+    this.buffer = Buffer.alloc(0);
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+    socket.destroy();
+    for (const pending of this.pending.values()) pending.sent = false;
+    if (wasReady) {
+      this.authenticated = null;
+      this.resolveAuthenticated = null;
+      this.rejectAuthenticated = null;
+    }
+    this.scheduleReconnect();
+  }
+
+  scheduleReconnect() {
+    if (this.closed || this.socket || this.reconnectTimer) return;
+    const base = Math.max(0, this.reconnectDelayMs);
+    const maximum = Math.max(base, this.maxReconnectDelayMs);
+    const delay = Math.min(maximum, base * (2 ** Math.min(this.reconnectAttempts, 5)));
+    this.reconnectAttempts += 1;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.openConnection();
+    }, delay);
+    this.reconnectTimer.unref();
   }
 
   fail(error) {
     if (this.closed) return;
     this.closed = true;
+    this.ready = false;
     this.rejectAuthenticated?.(error);
+    this.authenticated = null;
     this.resolveAuthenticated = null;
     this.rejectAuthenticated = null;
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = null;
-    this.socket?.destroy();
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    const socket = this.socket;
+    this.socket = null;
+    socket?.destroy();
     this.failPending(error);
   }
 

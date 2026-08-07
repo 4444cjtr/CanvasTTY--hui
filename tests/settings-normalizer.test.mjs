@@ -38,6 +38,7 @@ const fallback = {
   pluginCanvas: [],
   browserCanvas: null,
   browserAgentAccess: true,
+  browserShowAgentPresence: true,
   browserRestoreTabs: true
 };
 
@@ -102,7 +103,7 @@ test("a non-object candidate yields the fallback wholesale", () => {
   assert.equal(normalizeSettings("settings", fallback), fallback);
 });
 
-test("fresh installs keep optional navigation automation off", async () => {
+test("fresh installs keep edge automation off but allow escaping applications with canvas zoom", async () => {
   const dir = await mkdtemp(join(tmpdir(), "canvastty-settings-"));
   try {
     const store = new SettingsStore(dir, "en");
@@ -110,7 +111,7 @@ test("fresh installs keep optional navigation automation off", async () => {
     assert.equal(store.get().edgePan, false);
     assert.equal(store.get().edgePanSpeed, "normal");
     assert.equal(store.get().zoomSensitivity, "normal");
-    assert.equal(store.get().zoomOverApplications, false);
+    assert.equal(store.get().zoomOverApplications, true);
     assert.equal(store.get().invertTerminalWheel, true);
     assert.equal(store.get().invertCanvasWheel, false);
     assert.equal(store.get().focusActivation, "off");
@@ -120,6 +121,7 @@ test("fresh installs keep optional navigation automation off", async () => {
     assert.deepEqual(store.get().homeGridSize, { columns: 16, rows: 12 });
     assert.equal(store.get().browserCanvas, null);
     assert.equal(store.get().browserAgentAccess, true);
+    assert.equal(store.get().browserShowAgentPresence, true);
     assert.equal(store.get().browserRestoreTabs, true);
     assert.deepEqual(store.get().shortcuts, { home: "Home", renameWindow: "F2" });
   } finally {
@@ -127,13 +129,23 @@ test("fresh installs keep optional navigation automation off", async () => {
   }
 });
 
-test("normalizes browser agent access and tab restore preferences", () => {
-  const disabled = normalizeSettings({ browserAgentAccess: false, browserRestoreTabs: false }, fallback);
+test("normalizes browser agent access, indicators, and tab restore preferences", () => {
+  const disabled = normalizeSettings({
+    browserAgentAccess: false,
+    browserShowAgentPresence: false,
+    browserRestoreTabs: false
+  }, fallback);
   assert.equal(disabled.browserAgentAccess, false);
+  assert.equal(disabled.browserShowAgentPresence, false);
   assert.equal(disabled.browserRestoreTabs, false);
 
-  const invalid = normalizeSettings({ browserAgentAccess: "yes", browserRestoreTabs: 1 }, fallback);
+  const invalid = normalizeSettings({
+    browserAgentAccess: "yes",
+    browserShowAgentPresence: "sometimes",
+    browserRestoreTabs: 1
+  }, fallback);
   assert.equal(invalid.browserAgentAccess, true);
+  assert.equal(invalid.browserShowAgentPresence, true);
   assert.equal(invalid.browserRestoreTabs, true);
 });
 

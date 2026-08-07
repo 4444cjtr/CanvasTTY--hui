@@ -328,6 +328,16 @@ export function SettingsPanel({
                 />
               </SettingGroup>
               <SettingGroup
+                label={t(locale, "browserAgentPresence")}
+                description={t(locale, "browserAgentPresenceDescription")}
+              >
+                <Segmented
+                  value={settings.browserShowAgentPresence ? "on" : "off"}
+                  options={[["on", t(locale, "on")], ["off", t(locale, "off")]]}
+                  onChange={(value) => void onChange({ browserShowAgentPresence: value === "on" })}
+                />
+              </SettingGroup>
+              <SettingGroup
                 label={t(locale, "browserRestoreTabs")}
                 description={t(locale, "browserRestoreTabsDescription")}
               >

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -157,6 +160,50 @@ test("PTY bridge keeps the one-time capability in child env only and honors the 
   assert.equal(bridge.prepareLaunch({ terminalSessionId: "disabled", provider: "codex", cwd: "/tmp" }), null);
 });
 
+test("PTY bridge retains temporary Kimi configuration until session cleanup", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "canvastty-kimi-session-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const kimiHomeDirectory = join(root, "kimi-home");
+  let resolveAuthenticated;
+  const authenticated = new Promise((resolve) => { resolveAuthenticated = resolve; });
+  const gateway = {
+    isEnabled: true,
+    setEnabled(value) { this.isEnabled = value; },
+    registerAgent(input) {
+      return {
+        agentId: "agent-id",
+        connectionId: "connection-id",
+        terminalSessionId: input.terminalSessionId,
+        provider: input.provider,
+        capabilityToken: "one-time-secret-token",
+        address: "/tmp/canvastty.sock",
+        authenticated
+      };
+    },
+    revokeTerminalSession() {}
+  };
+  const bridge = new AgentBrowserBridge(gateway, {
+    helper: { command: "/usr/bin/node", args: ["/app/mcp-helper.mjs"] },
+    runtimeDirectory: join(root, "runtime"),
+    kimiHomeDirectory,
+    probeKimiPerRunConfig: () => false
+  });
+  const launch = bridge.prepareLaunch({
+    terminalSessionId: "terminal-kimi",
+    provider: "kimi",
+    cwd: "/tmp/project"
+  });
+  const mcpPath = join(kimiHomeDirectory, "mcp.json");
+
+  assert.match(await readFile(mcpPath, "utf8"), /canvastty_browser/);
+  resolveAuthenticated();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(await readFile(mcpPath, "utf8"), /canvastty_browser/);
+
+  launch.cleanup();
+  await assert.rejects(readFile(mcpPath, "utf8"), (error) => error?.code === "ENOENT");
+});
+
 test("terminal base environment never inherits a foreign CanvasTTY browser capability", () => {
   const environment = terminalEnvironment({
     PATH: "/usr/bin",
@@ -267,7 +314,7 @@ test("back-to-back MCP cancellation prevents a real GatewayClient request before
   });
 
   socket.emit("connect");
-  socket.emit("data", Buffer.from('{"heartbeatIntervalMs":5000,"type":"authenticated","v":1}\n'));
+  socket.emit("data", Buffer.from('{"heartbeatExpiryMs":15000,"heartbeatIntervalMs":5000,"reconnectToken":"reconnect-capability","type":"authenticated","v":1}\n'));
   await new Promise((resolve) => setImmediate(resolve));
 
   const response = await responsePromise;
@@ -279,3 +326,84 @@ test("back-to-back MCP cancellation prevents a real GatewayClient request before
 
   client.close();
 });
+
+test("GatewayClient reconnects with the rotated token and resends a pending request", async () => {
+  class FakeSocket extends EventEmitter {
+    destroyed = false;
+    writes = [];
+
+    write(value) {
+      this.writes.push(String(value));
+      return true;
+    }
+
+    destroy() {
+      this.destroyed = true;
+    }
+  }
+
+  const sockets = [];
+  const client = new GatewayClient({
+    address: "/tmp/canvastty-reconnect.sock",
+    agentId: "agent-id",
+    connectionId: "connection-id",
+    terminalSessionId: "terminal-id",
+    provider: "kimi",
+    capabilityToken: "initial-capability"
+  }, {
+    createConnection: () => {
+      const socket = new FakeSocket();
+      sockets.push(socket);
+      return socket;
+    },
+    connectTimeoutMs: 1_000,
+    reconnectDelayMs: 1,
+    maxReconnectDelayMs: 1
+  });
+
+  const firstConnection = client.connect();
+  sockets[0].emit("connect");
+  assert.equal(JSON.parse(sockets[0].writes[0]).capabilityToken, "initial-capability");
+  sockets[0].emit("data", Buffer.from(
+    '{"heartbeatExpiryMs":15000,"heartbeatIntervalMs":5000,"reconnectToken":"rotated-capability","type":"authenticated","v":1}\n'
+  ));
+  await firstConnection;
+
+  sockets[0].emit("close");
+  await waitFor(() => sockets.length === 2);
+  const pending = client.call("browser_list_tabs", {}, "reconnect-request");
+  sockets[1].emit("connect");
+  assert.equal(JSON.parse(sockets[1].writes[0]).capabilityToken, "rotated-capability");
+  sockets[1].emit("data", Buffer.from(
+    '{"heartbeatExpiryMs":15000,"heartbeatIntervalMs":5000,"reconnectToken":"rotated-capability","type":"authenticated","v":1}\n'
+  ));
+  await new Promise((resolve) => setImmediate(resolve));
+  const request = sockets[1].writes.map((line) => JSON.parse(line)).find((message) => message.type === "request");
+  assert.equal(request.id, "reconnect-request");
+  assert.equal(request.tool, "browser_list_tabs");
+
+  sockets[1].emit("data", Buffer.from(`${JSON.stringify({
+    v: 1,
+    type: "response",
+    id: "reconnect-request",
+    result: {
+      ok: true,
+      requestId: "reconnect-request",
+      tabId: null,
+      commandSequence: 1,
+      revisionBefore: null,
+      revisionAfter: null,
+      data: { tabs: [] }
+    }
+  })}\n`));
+  assert.equal((await pending).ok, true);
+  client.close();
+});
+
+async function waitFor(predicate, timeoutMs = 1_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for test condition.");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}

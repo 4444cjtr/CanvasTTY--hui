@@ -333,6 +333,7 @@ export function registerIpc({
 
   ipcMain.handle(IPC.terminalList, () => terminals.list());
   ipcMain.handle(IPC.terminalCreate, (_event, request: CreateSessionRequest) => terminals.create(request));
+  ipcMain.handle(IPC.terminalRestart, (_event, id: string) => terminals.restart(id));
   ipcMain.on(IPC.terminalInput, (_event, id: string, data: string) => terminals.input(id, data));
   ipcMain.on(IPC.terminalResize, (_event, id: string, cols: number, rows: number) => {
     terminals.resize(id, cols, rows);

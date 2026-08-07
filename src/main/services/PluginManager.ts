@@ -31,6 +31,8 @@ const MANIFEST_FILE = "canvastty.plugin.json";
 const REGISTRY_FILE = "plugins.json";
 const PREVIEW_TTL_MS = 10 * 60_000;
 const DOWNLOAD_TIMEOUT_MS = 90_000;
+const DOWNLOAD_ATTEMPTS = 3;
+const DOWNLOAD_RETRY_DELAY_MS = 1_500;
 const MAX_PACKAGE_ENTRIES = 500;
 const MAX_PACKAGE_BYTES = 25 * 1024 * 1024;
 const MAX_ASSET_BYTES = 8 * 1024 * 1024;
@@ -490,7 +492,24 @@ async function containedFile(root: string, relativePath: string): Promise<string
   return candidateRealPath;
 }
 
-async function downloadGithubRepository(sourceUrl: string, destination: string): Promise<void> {
+export async function downloadGithubRepository(sourceUrl: string, destination: string): Promise<void> {
+  let lastError: unknown = new Error("GitHub plugin download failed.");
+  for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      await downloadGithubRepositoryOnce(sourceUrl, destination);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= DOWNLOAD_ATTEMPTS || !(error instanceof TransientGithubDownloadError)) break;
+      await delay(DOWNLOAD_RETRY_DELAY_MS * attempt);
+    }
+  }
+  throw lastError;
+}
+
+class TransientGithubDownloadError extends Error {}
+
+async function downloadGithubRepositoryOnce(sourceUrl: string, destination: string): Promise<void> {
   const source = new URL(sourceUrl);
   const [owner, repositoryWithGit] = source.pathname.split("/").filter(Boolean);
   const repository = repositoryWithGit.replace(/\.git$/i, "");
@@ -499,28 +518,52 @@ async function downloadGithubRepository(sourceUrl: string, destination: string):
   timer.unref();
 
   try {
-    const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/tarball`, {
-      redirect: "follow",
-      headers: {
-        accept: "application/vnd.github+json",
-        "user-agent": "CanvasTTY plugin installer"
-      },
-      signal: controller.signal
-    });
+    let response: Response;
+    try {
+      response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/tarball`, {
+        redirect: "follow",
+        headers: {
+          accept: "application/vnd.github+json",
+          "user-agent": "CanvasTTY plugin installer"
+        },
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (controller.signal.aborted) throw new TransientGithubDownloadError("GitHub plugin download timed out.");
+      throw new TransientGithubDownloadError("GitHub plugin download could not establish a connection.", { cause: error });
+    }
     if (response.status === 404) throw new Error("GitHub repository was not found or is not public.");
-    if (!response.ok || !response.body) throw new Error(`GitHub download failed with HTTP ${response.status}.`);
+    if (!response.ok || !response.body) {
+      const message = `GitHub download failed with HTTP ${response.status}.`;
+      if (response.status === 408 || response.status === 429 || response.status >= 500) {
+        throw new TransientGithubDownloadError(message);
+      }
+      throw new Error(message);
+    }
     const contentLength = Number(response.headers.get("content-length"));
     if (Number.isFinite(contentLength) && contentLength > MAX_PACKAGE_BYTES) {
       throw new Error("Plugin archive exceeds the 25 MB download limit.");
     }
-    const tarball = await readGzipTarball(response.body);
+    let tarball: Buffer;
+    try {
+      tarball = await readGzipTarball(response.body);
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new TransientGithubDownloadError("GitHub plugin download was interrupted.", { cause: error });
+      }
+      throw error;
+    }
     await extractGithubTarball(tarball, destination);
-  } catch (error) {
-    if (controller.signal.aborted) throw new Error("GitHub plugin download timed out.");
-    throw error;
   } finally {
     clearTimeout(timer);
   }
+}
+
+function delay(durationMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, durationMs);
+    timer.unref();
+  });
 }
 
 async function readGzipTarball(body: ReadableStream<Uint8Array>): Promise<Buffer> {

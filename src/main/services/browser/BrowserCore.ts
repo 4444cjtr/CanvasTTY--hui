@@ -82,14 +82,14 @@ export class BrowserCore {
     sinceSequence: number,
     listener: (event: BrowserActivityEvent) => void
   ): () => void {
-    this.host.touchActor(actor, null);
     return this.dispatcher.subscribe(sinceSequence, (event) => {
       if (actor.kind === "human" || activityBelongsToActor(event, actor)) listener(event);
     });
   }
 
   agentConnected(actor: BrowserActor): void {
-    this.host.touchActor(actor, null);
+    // Authentication alone is not browser activity; presence starts with the first command.
+    void actor;
   }
 
   agentHeartbeat(actor: BrowserActor, timestamp: number): void {

@@ -2,6 +2,19 @@
 
 [English](CHANGELOG.md) · [Русский](CHANGELOG.ru.md) · [简体中文](CHANGELOG.zh-CN.md)
 
+## 1.1.0
+
+- Scaled native browser pages to the canvas zoom via Chromium zoom factor (clamped 0.5–3), so browser content follows the canvas scale at any zoom.
+- Reported browser viewport bounds synchronously and kept the native view visible during canvas panning, dragging, and resizing; this fixes the 1.0.2 issue where the native browser view could cover a non-maximized window and block canvas controls.
+- Focused the browser tab's web contents on canvas pointer-down, so typing reaches the page without an extra click.
+- Added a Settings toggle for browser agent presence indicators (on by default): presence badges/cursors no longer appear at authentication, cursors render as plain dots without names, and only agents that actually used the browser are shown.
+- Retried GitHub plugin downloads up to three times with backoff on transient failures (timeouts, connection errors, HTTP 408/429/5xx, interrupted streams).
+- Added terminal session restart: a restart button on exited cards and a `Ctrl+D` shortcut; PageUp/PageDown now page the scrollback in the normal buffer, and the terminal cursor is a block.
+- Enabled wheel zoom over applications by default.
+- Synchronized documentation in English, Russian, and Simplified Chinese.
+
+Known issue: HOME layout customization is not finished for external plugins — plugin tiles cannot yet be placed or rearranged in the HOME layout editor. This gap is tracked for future work; contributions are welcome.
+
 ## 1.0.2
 
 - Exposed the built-in browser from HOME as a movable, resizable canvas application with trusted tabs/navigation, downloads, site dialogs, safe tab restore, browser-data clearing, semantic summaries, and stable native-view geometry during camera/card motion.

@@ -98,7 +98,7 @@ function createDefaults(systemLocale: string): AppSettings {
     edgePan: false,
     edgePanSpeed: "normal",
     zoomSensitivity: "normal",
-    zoomOverApplications: false,
+    zoomOverApplications: true,
     focusActivation: "off",
     hoverFocus: false,
     hoverFocusSpeed: "normal",
@@ -113,6 +113,7 @@ function createDefaults(systemLocale: string): AppSettings {
     pluginCanvas: [],
     browserCanvas: null,
     browserAgentAccess: true,
+    browserShowAgentPresence: true,
     browserRestoreTabs: true
   };
 }
@@ -191,6 +192,9 @@ export function normalizeSettings(candidate: unknown, fallback: AppSettings): Ap
     browserAgentAccess: typeof source.browserAgentAccess === "boolean"
       ? source.browserAgentAccess
       : fallback.browserAgentAccess,
+    browserShowAgentPresence: typeof source.browserShowAgentPresence === "boolean"
+      ? source.browserShowAgentPresence
+      : fallback.browserShowAgentPresence,
     browserRestoreTabs: typeof source.browserRestoreTabs === "boolean"
       ? source.browserRestoreTabs
       : fallback.browserRestoreTabs

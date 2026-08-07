@@ -19,6 +19,8 @@ import {
   SHIFT_ENTER_SEQUENCE,
   shouldCopyTerminalSelection,
   shouldPasteTerminalClipboard,
+  shouldRestartExitedTerminal,
+  shouldScrollTerminalPage,
   shouldSendTerminalLineBreak
 } from "./terminalShortcuts";
 import {
@@ -49,6 +51,7 @@ interface TerminalCardProps {
   onRename(id: string, title: string): Promise<void>;
   onRenameEnd(): void;
   onBoundsChange(id: string, bounds: SessionBounds): void;
+  onRestart(id: string): Promise<void>;
   onDispose(id: string): void;
 }
 
@@ -86,6 +89,7 @@ export function TerminalCard({
   onRename,
   onRenameEnd,
   onBoundsChange,
+  onRestart,
   onDispose
 }: TerminalCardProps): React.JSX.Element {
   const terminalHost = useRef<HTMLDivElement>(null);
@@ -96,6 +100,9 @@ export function TerminalCard({
   const hoverFocusTransition = useRef<"focus" | "blur" | null>(null);
   const hoverSelected = useRef(false);
   const suppressFocusReport = useRef(false);
+  const sessionExited = useRef(session.exitCode !== null);
+  sessionExited.current = session.exitCode !== null;
+  const restartAction = useRef<() => Promise<void>>(async () => undefined);
   const invertTerminalWheelRef = useRef(invertTerminalWheel);
   invertTerminalWheelRef.current = invertTerminalWheel;
   const zoomOverApplicationsRef = useRef(zoomOverApplications);
@@ -104,10 +111,23 @@ export function TerminalCard({
   const resizeState = useRef<ResizeState | null>(null);
   const [position, setPosition] = useState(session.position);
   const [size, setSize] = useState(session.size);
+  const [restarting, setRestarting] = useState(false);
   const liveBounds = useRef<SessionBounds>({ position: session.position, size: session.size });
   const summaryMode = zoom < 0.5;
   const summaryScale = summaryMode ? Math.min(2.5, Math.max(1, 0.5 / zoom)) : 1;
   const terminalBackground = terminalTheme(palette).background;
+
+  restartAction.current = async () => {
+    if (restarting || !sessionExited.current) return;
+    setRestarting(true);
+    try {
+      await onRestart(session.id);
+      const terminal = terminalRef.current;
+      if (terminal) window.canvasTTY.terminal.resize(session.id, terminal.cols, terminal.rows);
+    } finally {
+      setRestarting(false);
+    }
+  };
 
   useEffect(() => {
     const bounds = { position: session.position, size: session.size };
@@ -122,7 +142,7 @@ export function TerminalCard({
 
     const terminal = new Terminal({
       cursorBlink: true,
-      cursorStyle: "bar",
+      cursorStyle: "block",
       fontFamily: '"JetBrains Mono", "Cascadia Code", monospace',
       fontSize: 14,
       lineHeight: 1.2,
@@ -134,10 +154,25 @@ export function TerminalCard({
     terminal.loadAddon(fitAddon);
     terminal.open(host);
     terminal.attachCustomKeyEventHandler((event) => {
+      if (shouldRestartExitedTerminal(event, sessionExited.current)) {
+        event.preventDefault();
+        event.stopPropagation();
+        void restartAction.current();
+        return false;
+      }
       if (shouldSendTerminalLineBreak(event)) {
         event.preventDefault();
         event.stopPropagation();
         window.canvasTTY.terminal.input(session.id, SHIFT_ENTER_SEQUENCE);
+        return false;
+      }
+      const pageDirection = shouldScrollTerminalPage(event);
+      if (pageDirection !== 0 && terminal.buffer.active.type === "normal") {
+        // In the normal buffer PgUp/PgDn page the scrollback; in the alternate
+        // buffer they fall through to the application (vim, less, agent TUI).
+        event.preventDefault();
+        event.stopPropagation();
+        terminal.scrollPages(pageDirection);
         return false;
       }
       if (shouldCopyTerminalSelection(event, terminal.hasSelection())) {
@@ -447,6 +482,18 @@ export function TerminalCard({
           )}
         </div>
         <div className="terminal-card__actions">
+          {session.exitCode !== null && (
+            <button
+              className="terminal-card__action terminal-card__action--restart"
+              type="button"
+              disabled={restarting}
+              onClick={() => void restartAction.current()}
+              title={`${t(locale, "restartSession")} · Ctrl+D`}
+              aria-label={t(locale, "restartSession")}
+            >
+              <UiIcon name={restarting ? "working" : "reload"} size={16} />
+            </button>
+          )}
           <button className="terminal-card__action terminal-card__action--close" type="button" onClick={() => onDispose(session.id)} title={t(locale, "close")} aria-label={t(locale, "close")}><UiIcon name="close" size={16} /></button>
         </div>
       </header>

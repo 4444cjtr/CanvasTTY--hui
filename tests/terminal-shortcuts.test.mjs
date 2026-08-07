@@ -4,6 +4,8 @@ import {
   SHIFT_ENTER_SEQUENCE,
   shouldCopyTerminalSelection,
   shouldPasteTerminalClipboard,
+  shouldRestartExitedTerminal,
+  shouldScrollTerminalPage,
   shouldSendTerminalLineBreak
 } from "../src/renderer/src/features/terminal/terminalShortcuts.ts";
 
@@ -58,4 +60,29 @@ test("encodes shift-enter as a modified terminal enter key", () => {
   assert.equal(shouldSendTerminalLineBreak({ ...enter, shiftKey: true, ctrlKey: true }), false);
   assert.equal(shouldSendTerminalLineBreak({ ...enter, shiftKey: true, type: "keyup" }), false);
   assert.equal(SHIFT_ENTER_SEQUENCE, "\u001b[13;2u");
+});
+
+test("ctrl-d restarts only an exited terminal session", () => {
+  const restart = { ...keydown, key: "d", code: "KeyD", ctrlKey: true };
+  assert.equal(shouldRestartExitedTerminal(restart, true), true);
+  assert.equal(shouldRestartExitedTerminal(restart, false), false);
+  assert.equal(shouldRestartExitedTerminal({ ...restart, shiftKey: true }, true), false);
+});
+
+test("plain page-up and page-down page the scrollback viewport", () => {
+  assert.equal(shouldScrollTerminalPage({ ...keydown, key: "PageUp", code: "PageUp" }), -1);
+  assert.equal(shouldScrollTerminalPage({ ...keydown, key: "PageDown", code: "PageDown" }), 1);
+  assert.equal(shouldScrollTerminalPage({ ...keydown, key: "PageUp", code: "" }), -1);
+  assert.equal(shouldScrollTerminalPage({ ...keydown, key: "", code: "PageDown" }), 1);
+});
+
+test("modified page keys stay with the terminal application", () => {
+  const pageUp = { ...keydown, key: "PageUp", code: "PageUp" };
+
+  assert.equal(shouldScrollTerminalPage({ ...pageUp, shiftKey: true }), 0);
+  assert.equal(shouldScrollTerminalPage({ ...pageUp, ctrlKey: true }), 0);
+  assert.equal(shouldScrollTerminalPage({ ...pageUp, metaKey: true }), 0);
+  assert.equal(shouldScrollTerminalPage({ ...pageUp, altKey: true }), 0);
+  assert.equal(shouldScrollTerminalPage({ ...pageUp, type: "keyup" }), 0);
+  assert.equal(shouldScrollTerminalPage(keydown), 0);
 });

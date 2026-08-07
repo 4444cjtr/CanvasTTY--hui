@@ -12,6 +12,16 @@ const actor = {
   cwd: "/tmp/project"
 };
 
+test("heartbeats alone do not invent browser activity or a cursor", () => {
+  const registry = new AgentRegistry(() => 1_000);
+  assert.equal(registry.heartbeat(actor), false);
+  assert.deepEqual(registry.snapshot(), []);
+
+  assert.equal(registry.touch(actor, "tab-1"), true);
+  assert.equal(registry.forTab("tab-1")[0].label, "Codex");
+  assert.deepEqual(registry.forTab("tab-1")[0].cursor, { x: 0, y: 0, updatedAt: 0 });
+});
+
 test("AgentRegistry follows tab/cursor heartbeats and expires presence at 15 seconds", () => {
   let now = 1_000;
   const registry = new AgentRegistry(() => now);

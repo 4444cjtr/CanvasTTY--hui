@@ -56,6 +56,10 @@ npm run dev
 
 CanvasTTY 已提供带权限模型的静态 GitHub 运行时插件，可扩展 HOME 小组件、画布应用和独立 sandbox 窗口。Host SDK 支持持久化的用户音乐目录授权、可 seek 的本地音频流，以及受限的播放列表导入与导出，可用于实现完整的播放器插件。参见[插件开发与安全指南](docs/plugins.zh-CN.md)、[manifest schema](docs/canvastty-plugin.schema.json)和[TypeScript SDK 类型](docs/plugin-api.d.ts)。
 
+社区插件：
+
+- [canvastty-music](https://github.com/Alitryel/canvastty-music) — 由 [@Alitryel](https://github.com/Alitryel) 正在积极开发的音乐播放器插件。
+
 ## 面向智能体的内置浏览器
 
 CanvasTTY 已提供核心内置浏览器，而不是插件权限：可信 React 外壳配合 sandboxed Electron `WebContentsView` 标签页，并使用一个持久化 Chromium profile。浏览器可从 HOME 打开，能够恢复安全的 HTTP(S) 标签页，把网站凭据留在 Chromium 内部，管理下载/上传，并向由 CanvasTTY 启动的 Claude Code、Codex 与 Kimi 会话提供类型化 browser action。

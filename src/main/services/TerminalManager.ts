@@ -69,14 +69,7 @@ export class TerminalManager {
     assertDirectory(request.cwd);
 
     const id = randomUUID();
-    const agentBrowser = request.provider === "terminal"
-      ? null
-      : this.agentBrowser?.prepareLaunch({
-        terminalSessionId: id,
-        provider: request.provider,
-        cwd: request.cwd
-      }) ?? null;
-    const launch = resolveLaunch(request.provider, request.profile, agentBrowser?.args ?? []);
+    const launched = this.spawnProcess(id, request.provider, request.profile, request.cwd);
     const metadata: SessionMetadata = {
       id,
       provider: request.provider,
@@ -91,51 +84,41 @@ export class TerminalManager {
       exitCode: null
     };
 
-    let process: IPty;
-    try {
-      process = pty.spawn(launch.command, launch.args, {
-        name: "xterm-256color",
-        cols: 100,
-        rows: 30,
-        cwd: request.cwd,
-        env: { ...terminalEnvironment(), ...agentBrowser?.environment }
-      });
-    } catch (error) {
-      agentBrowser?.cleanup();
-      throw error;
-    }
-
     const session: ManagedSession = {
       metadata,
-      process,
+      process: launched.process,
       bufferChunks: [],
       bufferStart: 0,
       bufferLength: 0,
       pendingOutput: [],
       outputTimer: null,
-      agentBrowser
+      agentBrowser: launched.agentBrowser
     };
     this.sessions.set(id, session);
-    process.onData((data) => {
-      const current = this.sessions.get(id);
-      if (!current) return;
-
-      appendScrollback(current, data);
-      this.queueOutput(id, current, data);
-    });
-
-    process.onExit(({ exitCode }) => {
-      const current = this.sessions.get(id);
-      if (!current) return;
-
-      this.flushOutput(id, current);
-      current.metadata.exitCode = exitCode;
-      current.metadata.status = exitCode === 0 ? "done" : "failed";
-      current.agentBrowser?.cleanup();
-      this.emitSession(current.metadata);
-    });
+    this.bindProcess(id, session, launched.process);
 
     this.emitSession(metadata);
+    return snapshot(session);
+  }
+
+  restart(id: string): SessionSnapshot {
+    const session = this.sessions.get(id);
+    if (!session) throw new Error("Terminal session does not exist.");
+    if (session.metadata.exitCode === null) throw new Error("Terminal session is still running.");
+
+    const launched = this.spawnProcess(
+      id,
+      session.metadata.provider,
+      session.metadata.profile,
+      session.metadata.cwd
+    );
+    session.process = launched.process;
+    session.agentBrowser = launched.agentBrowser;
+    session.metadata.status = "idle";
+    session.metadata.startedAt = Date.now();
+    session.metadata.exitCode = null;
+    this.bindProcess(id, session, launched.process);
+    this.emitSession(session.metadata);
     return snapshot(session);
   }
 
@@ -214,6 +197,55 @@ export class TerminalManager {
 
   private emitSession(metadata: SessionMetadata): void {
     this.emit(IPC.terminalSession, { session: structuredClone(metadata) });
+  }
+
+  private spawnProcess(
+    id: string,
+    provider: ProviderId,
+    profile: CreateSessionRequest["profile"],
+    cwd: string
+  ): { process: IPty; agentBrowser: PreparedAgentBrowserPtyLaunch | null } {
+    const agentBrowser = provider === "terminal"
+      ? null
+      : this.agentBrowser?.prepareLaunch({ terminalSessionId: id, provider, cwd }) ?? null;
+    const launch = resolveLaunch(provider, profile, agentBrowser?.args ?? []);
+    try {
+      return {
+        process: pty.spawn(launch.command, launch.args, {
+          name: "xterm-256color",
+          cols: 100,
+          rows: 30,
+          cwd,
+          env: { ...terminalEnvironment(), ...agentBrowser?.environment }
+        }),
+        agentBrowser
+      };
+    } catch (error) {
+      agentBrowser?.cleanup();
+      throw error;
+    }
+  }
+
+  private bindProcess(id: string, session: ManagedSession, process: IPty): void {
+    process.onData((data) => {
+      const current = this.sessions.get(id);
+      if (!current || current !== session || current.process !== process) return;
+
+      appendScrollback(current, data);
+      this.queueOutput(id, current, data);
+    });
+
+    process.onExit(({ exitCode }) => {
+      const current = this.sessions.get(id);
+      if (!current || current !== session || current.process !== process) return;
+
+      this.flushOutput(id, current);
+      current.metadata.exitCode = exitCode;
+      current.metadata.status = exitCode === 0 ? "done" : "failed";
+      current.agentBrowser?.cleanup();
+      current.agentBrowser = null;
+      this.emitSession(current.metadata);
+    });
   }
 
   private queueOutput(id: string, session: ManagedSession, data: string): void {

@@ -114,11 +114,6 @@ button { border: 0; }
 .launcher-button--terminal:hover { background: var(--surface-soft); }
 .launcher-button--browser { position: relative; color: var(--text-dark); background: var(--blue); }
 .launcher-button--browser:hover { filter: brightness(1.05); background: var(--blue); }
-.launcher-browser-presence { position: absolute; right: 7px; top: 7px; display: flex; align-items: center; justify-content: flex-end; pointer-events: none; }
-.launcher-browser-presence__badge { --agent-color: #7A8291; min-width: 23px; height: 18px; margin-left: -5px; padding: 0 4px; display: flex; align-items: center; justify-content: center; gap: 2px; border: 1px solid var(--agent-color); border-radius: 9px; color: var(--agent-color); background: #272934; box-shadow: 0 1px 3px rgba(18,19,25,.38); font: 900 7px/1 var(--font-mono); letter-spacing: -.03em; }
-.launcher-browser-presence__badge:first-child { margin-left: 0; }
-.launcher-browser-presence__badge strong { min-width: 8px; display: grid; place-items: center; color: white; font-size: 7px; letter-spacing: -.05em; }
-.launcher-browser-presence__badge--stale { opacity: .58; }
 .settings-button { color: var(--text-dark); background: var(--pink); font-size: 44px; }
 .settings-button:hover { filter: brightness(1.04); }
 
@@ -163,7 +158,9 @@ button { border: 0; }
 .terminal-card__actions { display: flex; align-items: center; gap: 5px; }
 .terminal-card__actions button { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; color: rgba(255,255,255,.72); background: rgba(255,255,255,.06); cursor: pointer; }
 .terminal-card__actions button:hover { color: white; background: rgba(255,255,255,.15); }
+.terminal-card__actions button:disabled { opacity: .56; cursor: wait; }
 .terminal-card__action { transition: color .15s ease, background .15s ease; }
+.terminal-card__action--restart .ui-icon--working { animation: spin 1.2s linear infinite; }
 .terminal-card__actions .terminal-card__action--close:hover { background: var(--danger); }
 .terminal-card__surface { height: calc(100% - 54px); padding: 0; user-select: text; background: var(--terminal-background, #202430); }
 .terminal-card__surface .xterm { height: 100%; }
@@ -215,9 +212,9 @@ button { border: 0; }
 .browser-card__hide:hover { color: white; background: var(--danger); }
 .browser-card__tabs { height: 42px; padding: 6px 8px 0 10px; display: flex; align-items: flex-end; gap: 5px; color: white; background: #272934; }
 .browser-card__tab-list { min-width: 0; flex: 1; display: flex; align-items: flex-end; gap: 3px; overflow: hidden; }
-.browser-card__tab { min-width: 104px; max-width: 190px; height: 36px; flex: 1 1 150px; display: flex; align-items: center; overflow: hidden; border-radius: 9px 9px 0 0; color: rgba(255,255,255,.62); background: rgba(255,255,255,.055); }
-.browser-card__tab:hover { color: rgba(255,255,255,.9); background: rgba(255,255,255,.09); }
-.browser-card__tab--active { color: white; background: #272934; }
+.browser-card__tab { min-width: 104px; max-width: 190px; height: 36px; flex: 1 1 150px; display: flex; align-items: center; overflow: hidden; border-radius: 9px 9px 0 0; color: rgba(255,255,255,.58); background: rgba(255,255,255,.025); }
+.browser-card__tab:not(.browser-card__tab--active):hover { color: rgba(255,255,255,.9); background: rgba(255,255,255,.07); }
+.browser-card__tab--active { color: white; background: rgba(255,255,255,.13); }
 .browser-card__tab-select { min-width: 0; height: 100%; flex: 1; padding: 0 2px 0 9px; display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 6px; overflow: hidden; color: inherit; background: transparent; cursor: pointer; text-align: left; }
 .browser-card__tab-title { overflow: hidden; font-size: 10.5px; font-weight: 780; text-overflow: ellipsis; white-space: nowrap; }
 .browser-card__tab-close { width: 25px; height: 100%; flex: 0 0 25px; display: grid; place-items: center; color: inherit; background: transparent; cursor: pointer; }
@@ -259,8 +256,6 @@ button { border: 0; }
 .browser-card__downloads--active .ui-icon { animation: browser-download 1.2s ease-in-out infinite alternate; }
 @keyframes browser-download { to { transform: translateY(4px); } }
 .browser-card__viewport { position: absolute; inset: 140px 8px 8px; overflow: hidden; background: #272934; }
-.browser-card__motion-surface { position: absolute; inset: 140px 8px 8px; z-index: 7; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; overflow: hidden; padding: 24px; color: white; background: #272934; pointer-events: none; }
-.browser-card__motion-surface strong { max-width: 76%; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
 .browser-card__summary { position: absolute; inset: 54px 0 0; z-index: 10; width: 100%; height: calc(100% - 54px); display: none; align-items: center; justify-content: center; overflow: hidden; padding: 24px; color: white; background: #272934; cursor: zoom-in; }
 .browser-card__summary[data-focus-activation="off"] { cursor: pointer; }
 .browser-card__summary-content { max-width: 76%; display: flex; flex-direction: column; align-items: center; gap: 9px; transform: scale(var(--summary-scale, 1)); text-align: center; }
@@ -275,9 +270,8 @@ button { border: 0; }
 .browser-card__page-state button { min-height: 32px; padding: 0 13px; border-radius: 8px; color: var(--text-dark); background: var(--primary); cursor: pointer; font-size: 10px; font-weight: 850; }
 .browser-card__page-state--error > .ui-icon { color: var(--danger); }
 .browser-card__cursor-layer { position: absolute; inset: 54px 0 0; z-index: 20; overflow: hidden; pointer-events: none; }
-.browser-card__live-cursor { --agent-color: #7A8291; position: absolute; display: flex; align-items: flex-start; gap: 4px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.34)); }
+.browser-card__live-cursor { --agent-color: #7A8291; position: absolute; filter: drop-shadow(0 2px 3px rgba(0,0,0,.34)); }
 .browser-card__live-cursor > span { width: 0; height: 0; border-top: 16px solid var(--agent-color); border-right: 10px solid transparent; transform: rotate(-16deg); transform-origin: top left; }
-.browser-card__live-cursor strong { max-width: 76px; margin-top: 9px; padding: 4px 6px; overflow: hidden; border-radius: 5px; color: white; background: var(--agent-color); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .browser-card__live-cursor--stale { opacity: .58; }
 .browser-card__popover, .browser-card__dialog { position: absolute; z-index: 50; border: 1px solid rgba(255,255,255,.12); border-radius: 13px; color: white; background: #30323e; box-shadow: 0 18px 46px rgba(17,18,24,.42); }
 .browser-card__popover { right: 10px; top: 142px; width: min(350px, calc(100% - 20px)); max-height: calc(100% - 152px); overflow: auto; }

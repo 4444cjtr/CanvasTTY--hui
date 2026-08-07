@@ -3,8 +3,10 @@ import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { gzipSync } from "node:zlib";
 import {
   PluginManager,
+  downloadGithubRepository,
   extractGithubTarball,
   normalizeGithubUrl,
   validatePluginManifest
@@ -163,6 +165,41 @@ test("extracts a bounded GitHub tar root and rejects traversal or links", async 
       }))
     ), join(directory, "too-many-directories")), /500 entry/);
   } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("plugin download retries transient failures but not permanent ones", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "canvastty-plugin-download-"));
+  const tarball = gzipSync(tarArchive([
+    { name: "repository-hash/", type: "5", content: "" },
+    { name: "repository-hash/index.html", type: "0", content: "ok" }
+  ]));
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+
+  try {
+    globalThis.fetch = async () => {
+      calls += 1;
+      if (calls === 1) throw new TypeError("fetch failed");
+      return new Response(tarball, { status: 200 });
+    };
+    await downloadGithubRepository("https://github.com/example/repository.git", directory);
+    assert.equal(calls, 2);
+    assert.equal(await readFile(join(directory, "index.html"), "utf8"), "ok");
+
+    calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      return new Response("nope", { status: 404 });
+    };
+    await assert.rejects(
+      () => downloadGithubRepository("https://github.com/example/missing.git", join(directory, "missing")),
+      /not found or is not public/
+    );
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
     await rm(directory, { recursive: true, force: true });
   }
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AgentProviderId,
   AppSettings,
@@ -63,6 +63,7 @@ interface WorkspaceCanvasProps {
   onDisposePluginCanvas(id: string): void;
   onFocusPluginCanvas(id: string): void;
   onSessionBoundsChange(id: string, bounds: SessionBounds): void;
+  onRestartSession(id: string): Promise<void>;
   onDisposeSession(id: string): void;
   onBrowserBoundsChange(bounds: BrowserCanvasState): void;
   onFocusBrowser(): void;
@@ -114,6 +115,7 @@ export function WorkspaceCanvas({
   onDisposePluginCanvas,
   onFocusPluginCanvas,
   onSessionBoundsChange,
+  onRestartSession,
   onDisposeSession,
   onBrowserBoundsChange,
   onFocusBrowser,
@@ -122,7 +124,6 @@ export function WorkspaceCanvas({
   const viewport = useRef<HTMLDivElement>(null);
   const panState = useRef<PanState | null>(null);
   const [panning, setPanning] = useState(false);
-  const [cameraMoving, setCameraMoving] = useState(false);
   const cameraRef = useRef(camera);
   cameraRef.current = camera;
   const settingsRef = useRef(settings);
@@ -134,18 +135,6 @@ export function WorkspaceCanvas({
   useEffect(() => () => {
     if (edgeFrame.current !== null) cancelAnimationFrame(edgeFrame.current);
   }, []);
-
-  useLayoutEffect(() => {
-    setCameraMoving(true);
-    let settledFrame: number | null = null;
-    const movementFrame = requestAnimationFrame(() => {
-      settledFrame = requestAnimationFrame(() => setCameraMoving(false));
-    });
-    return () => {
-      cancelAnimationFrame(movementFrame);
-      if (settledFrame !== null) cancelAnimationFrame(settledFrame);
-    };
-  }, [camera.x, camera.y, camera.zoom]);
 
   const edgePanStep = (time: number): void => {
     edgeFrame.current = null;
@@ -285,7 +274,6 @@ export function WorkspaceCanvas({
       <div className="workspace__scene" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
         <HomeZone
           settings={settings}
-          browser={browser}
           mediaData={mediaData}
           sessions={sessions}
           limits={limits}
@@ -336,6 +324,7 @@ export function WorkspaceCanvas({
               onRename={onRenameSession}
               onRenameEnd={onRenameEnd}
               onBoundsChange={onSessionBoundsChange}
+              onRestart={onRestartSession}
               onDispose={onDisposeSession}
             />
           ))}
@@ -384,8 +373,8 @@ export function WorkspaceCanvas({
               hoverFocus={settings.hoverFocus}
               hoverFocusSpeed={settings.hoverFocusSpeed}
               selected={browserSelected}
-              canvasMoving={cameraMoving || panning}
               zoomOverApplications={settings.zoomOverApplications}
+              showAgentPresence={settings.browserShowAgentPresence}
               snapTargets={[
                 homeBounds,
                 ...sessions.map((candidate) => ({ position: candidate.position, size: candidate.size })),

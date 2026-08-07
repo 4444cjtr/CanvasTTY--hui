@@ -108,6 +108,7 @@ export interface AppSettings {
   pluginCanvas: PluginCanvasInstance[];
   browserCanvas: BrowserCanvasState | null;
   browserAgentAccess: boolean;
+  browserShowAgentPresence: boolean;
   browserRestoreTabs: boolean;
 }
 
@@ -279,6 +280,7 @@ export interface BrowserViewportBounds extends Size {
   visible: boolean;
   canvasScale?: number;
   captureCanvasWheel?: boolean;
+  showAgentPresence?: boolean;
 }
 
 export type BrowserTabStatus = "loading" | "ready" | "error" | "crashed";
@@ -650,6 +652,7 @@ export interface CanvasTTYApi {
   terminal: {
     list(): Promise<SessionSnapshot[]>;
     create(request: CreateSessionRequest): Promise<SessionSnapshot>;
+    restart(id: string): Promise<SessionSnapshot>;
     input(id: string, data: string): void;
     resize(id: string, cols: number, rows: number): void;
     setBounds(id: string, bounds: SessionBounds): void;
@@ -716,6 +719,7 @@ export const IPC = {
   browserCanvasPointer: "browser:canvas-pointer",
   terminalList: "terminal:list",
   terminalCreate: "terminal:create",
+  terminalRestart: "terminal:restart",
   terminalInput: "terminal:input",
   terminalResize: "terminal:resize",
   terminalBounds: "terminal:bounds",

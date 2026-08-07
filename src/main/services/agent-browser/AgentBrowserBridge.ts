@@ -69,8 +69,6 @@ export class AgentBrowserBridge implements AgentBrowserLaunchCoordinator {
         console.warn("CanvasTTY deferred cleanup of temporary Kimi browser configuration to recovery.");
       }
     };
-    void capability.authenticated.then(releaseConfigurationSafely, releaseConfigurationSafely);
-
     let cleaned = false;
     return {
       agentId: capability.agentId,

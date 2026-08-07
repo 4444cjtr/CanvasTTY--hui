@@ -44,6 +44,8 @@ export function supportsAgentGatewayPlatform(_platform: NodeJS.Platform = proces
 interface CapabilityLease {
   actor: Extract<BrowserActor, { kind: "agent" }>;
   tokenDigest: Buffer;
+  reconnectToken: string | null;
+  reconnectTokenDigest: Buffer | null;
   expiresAt: number;
   used: boolean;
   resolveAuthenticated(): void;
@@ -89,7 +91,7 @@ export class AgentGateway {
     options: WindowsPipeHostTransportOptions
   ) => WindowsPipeHostTransport;
   private readonly leases = new Map<string, CapabilityLease>();
-  private readonly connections = new Map<string, ConnectionState>();
+  private readonly connections = new Map<string, Set<ConnectionState>>();
   private readonly acceptedConnections = new Set<ConnectionState>();
   private server: Server | null = null;
   private windowsTransport: WindowsPipeHostTransport | null = null;
@@ -124,7 +126,7 @@ export class AgentGateway {
     if (enabled) return;
     for (const lease of this.leases.values()) {
       if (!lease.used) lease.rejectAuthenticated(new Error("Agent browser access was disabled."));
-      lease.tokenDigest.fill(0);
+      clearLeaseSecrets(lease);
     }
     this.leases.clear();
     for (const state of [...this.acceptedConnections]) this.disconnect(state, "revoked");
@@ -222,6 +224,8 @@ export class AgentGateway {
     this.leases.set(connectionId, {
       actor,
       tokenDigest: digest(capabilityToken),
+      reconnectToken: null,
+      reconnectTokenDigest: null,
       expiresAt: this.now() + this.capabilityTtlMs,
       used: false,
       resolveAuthenticated,
@@ -242,10 +246,10 @@ export class AgentGateway {
     for (const [connectionId, lease] of this.leases) {
       if (lease.actor.terminalSessionId !== terminalSessionId) continue;
       if (!lease.used) lease.rejectAuthenticated(new Error("Terminal session ended before browser authentication."));
-      lease.tokenDigest.fill(0);
+      clearLeaseSecrets(lease);
       this.leases.delete(connectionId);
     }
-    for (const state of this.connections.values()) {
+    for (const state of [...this.acceptedConnections]) {
       if (state.actor?.terminalSessionId === terminalSessionId) this.disconnect(state, "revoked");
     }
   }
@@ -256,7 +260,7 @@ export class AgentGateway {
     for (const state of [...this.acceptedConnections]) this.disconnect(state, "closed");
     for (const lease of this.leases.values()) {
       if (!lease.used) lease.rejectAuthenticated(new Error("Agent gateway closed before authentication."));
-      lease.tokenDigest.fill(0);
+      clearLeaseSecrets(lease);
     }
     this.leases.clear();
 
@@ -365,14 +369,14 @@ export class AgentGateway {
     state: ConnectionState,
     message: Extract<ReturnType<typeof parseClientMessage>, { type: "authenticate" }>
   ): void {
-    if (this.connections.size >= MAX_CONNECTED_AGENTS) {
+    const activeConnections = this.connections.get(message.connectionId);
+    if (!activeConnections && this.connections.size >= MAX_CONNECTED_AGENTS) {
       throw bridgeError("BRIDGE_BUSY", "Agent browser connection limit reached.", true);
     }
     const lease = this.leases.get(message.connectionId);
     if (!lease) throw bridgeError("AUTH_INVALID", "Agent browser capability is invalid.", false);
-    if (lease.used) throw bridgeError("AUTH_REPLAYED", "Agent browser capability was already used.", false);
-    if (lease.expiresAt <= this.now()) {
-      lease.tokenDigest.fill(0);
+    if (!lease.used && lease.expiresAt <= this.now()) {
+      clearLeaseSecrets(lease);
       this.leases.delete(message.connectionId);
       lease.rejectAuthenticated(new Error("Agent browser capability expired."));
       throw bridgeError("SESSION_EXPIRED", "Agent browser capability expired.", false);
@@ -382,19 +386,38 @@ export class AgentGateway {
       && lease.actor.terminalSessionId === message.terminalSessionId
       && lease.actor.provider === message.provider;
     const suppliedDigest = digest(message.capabilityToken);
-    const tokenMatches = suppliedDigest.length === lease.tokenDigest.length
+    const initialTokenMatches = suppliedDigest.length === lease.tokenDigest.length
       && timingSafeEqual(suppliedDigest, lease.tokenDigest);
+    const reconnectTokenMatches = lease.reconnectTokenDigest !== null
+      && suppliedDigest.length === lease.reconnectTokenDigest.length
+      && timingSafeEqual(suppliedDigest, lease.reconnectTokenDigest);
     suppliedDigest.fill(0);
-    if (!identityMatches || !tokenMatches) {
+    if (!identityMatches) {
       throw bridgeError("AUTH_INVALID", "Agent browser capability is invalid.", false);
     }
 
-    lease.used = true;
-    lease.tokenDigest.fill(0);
+    if (!lease.used) {
+      if (!initialTokenMatches) {
+        throw bridgeError("AUTH_INVALID", "Agent browser capability is invalid.", false);
+      }
+      lease.used = true;
+      lease.reconnectToken = randomBytes(32).toString("base64url");
+      lease.reconnectTokenDigest = digest(lease.reconnectToken);
+    } else if (initialTokenMatches) {
+      if (!activeConnections || activeConnections.size === 0) {
+        throw bridgeError("AUTH_REPLAYED", "Agent browser capability was already used.", false);
+      }
+    } else if (!reconnectTokenMatches) {
+      throw bridgeError("AUTH_INVALID", "Agent browser capability is invalid.", false);
+    }
+
+    const reconnectToken = lease.reconnectToken;
+    if (!reconnectToken) throw bridgeError("INTERNAL_ERROR", "Agent reconnect capability is unavailable.", true);
     state.actor = lease.actor;
     state.authenticated = true;
     state.lastHeartbeatAt = this.now();
-    this.connections.set(lease.actor.connectionId, state);
+    const states = activeConnections ?? new Set<ConnectionState>();
+    const firstConnection = states.size === 0;
     try {
       state.unsubscribe = this.browser.subscribe(lease.actor, 0, (event) => {
         try {
@@ -403,7 +426,9 @@ export class AgentGateway {
           this.disconnect(state, "protocol_error");
         }
       });
-      this.browser.agentConnected?.(lease.actor);
+      states.add(state);
+      this.connections.set(lease.actor.connectionId, states);
+      if (firstConnection) this.browser.agentConnected?.(lease.actor);
     } catch (error) {
       try {
         state.unsubscribe?.();
@@ -411,7 +436,8 @@ export class AgentGateway {
         // The browser rejected registration while tearing down.
       }
       state.unsubscribe = null;
-      this.connections.delete(lease.actor.connectionId);
+      states.delete(state);
+      if (states.size === 0) this.connections.delete(lease.actor.connectionId);
       lease.rejectAuthenticated(new Error("Browser core rejected the agent connection."));
       throw bridgeError("INTERNAL_ERROR", "Browser core rejected the agent connection.", true);
     }
@@ -420,7 +446,8 @@ export class AgentGateway {
       v: AGENT_BRIDGE_PROTOCOL_VERSION,
       type: "authenticated",
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
-      heartbeatExpiryMs: HEARTBEAT_EXPIRY_MS
+      heartbeatExpiryMs: HEARTBEAT_EXPIRY_MS,
+      reconnectToken
     });
   }
 
@@ -501,16 +528,15 @@ export class AgentGateway {
     const now = this.now();
     for (const [connectionId, lease] of this.leases) {
       if (!lease.used && lease.expiresAt <= now) {
-        lease.tokenDigest.fill(0);
+        clearLeaseSecrets(lease);
         lease.rejectAuthenticated(new Error("Agent browser capability expired."));
         this.leases.delete(connectionId);
       }
     }
-    for (const state of this.connections.values()) {
-      if (now - state.lastHeartbeatAt > HEARTBEAT_EXPIRY_MS) this.disconnect(state, "expired");
-    }
-    for (const state of this.acceptedConnections) {
-      if (!state.authenticated && now - state.connectedAt > HEARTBEAT_EXPIRY_MS) {
+    for (const state of [...this.acceptedConnections]) {
+      if (state.authenticated && now - state.lastHeartbeatAt > HEARTBEAT_EXPIRY_MS) {
+        this.disconnect(state, "expired");
+      } else if (!state.authenticated && now - state.connectedAt > HEARTBEAT_EXPIRY_MS) {
         this.disconnect(state, "expired");
       }
     }
@@ -530,11 +556,15 @@ export class AgentGateway {
     state.unsubscribe = null;
     try {
       if (state.actor) {
-        this.connections.delete(state.actor.connectionId);
-        try {
-          this.browser.agentDisconnected?.(state.actor, reason);
-        } catch {
-          // A host callback cannot keep a revoked capability socket alive.
+        const states = this.connections.get(state.actor.connectionId);
+        const removed = states?.delete(state) ?? false;
+        if (removed && states?.size === 0) {
+          this.connections.delete(state.actor.connectionId);
+          try {
+            this.browser.agentDisconnected?.(state.actor, reason);
+          } catch {
+            // A host callback cannot keep a revoked capability socket alive.
+          }
         }
       }
     } finally {
@@ -545,6 +575,13 @@ export class AgentGateway {
 
 function digest(value: string): Buffer {
   return createHash("sha256").update(value, "utf8").digest();
+}
+
+function clearLeaseSecrets(lease: CapabilityLease): void {
+  lease.tokenDigest.fill(0);
+  lease.reconnectTokenDigest?.fill(0);
+  lease.reconnectTokenDigest = null;
+  lease.reconnectToken = null;
 }
 
 async function createEndpoint(

@@ -116,6 +116,7 @@ export type ServerMessage =
     type: "authenticated";
     heartbeatIntervalMs: number;
     heartbeatExpiryMs: number;
+    reconnectToken: string;
   }
   | {
     v: typeof AGENT_BRIDGE_PROTOCOL_VERSION;

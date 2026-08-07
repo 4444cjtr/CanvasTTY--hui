@@ -10,7 +10,8 @@ test("browser viewport expands fractional edges instead of exposing compositor g
     height: 50.1,
     visible: true,
     canvasScale: 0.92,
-    captureCanvasWheel: true
+    captureCanvasWheel: true,
+    showAgentPresence: true
   }), {
     x: 10,
     y: 20,
@@ -18,7 +19,8 @@ test("browser viewport expands fractional edges instead of exposing compositor g
     height: 51,
     visible: true,
     canvasScale: 0.92,
-    captureCanvasWheel: true
+    captureCanvasWheel: true,
+    showAgentPresence: true
   });
 });
 
@@ -38,6 +40,26 @@ test("browser viewport rejects invalid geometry and clamps negative sizes", () =
     width: 0,
     height: 0,
     visible: false,
-    captureCanvasWheel: false
+    captureCanvasWheel: false,
+    showAgentPresence: false
   });
+});
+
+test("browser viewport keeps page scaling inside Chromium's supported range", () => {
+  assert.equal(normalizeBrowserViewportBounds({
+    x: 0,
+    y: 0,
+    width: 400,
+    height: 300,
+    visible: false,
+    canvasScale: 0.2
+  })?.canvasScale, 0.5);
+  assert.equal(normalizeBrowserViewportBounds({
+    x: 0,
+    y: 0,
+    width: 400,
+    height: 300,
+    visible: true,
+    canvasScale: 8
+  })?.canvasScale, 3);
 });

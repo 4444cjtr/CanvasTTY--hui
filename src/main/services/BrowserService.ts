@@ -103,7 +103,8 @@ export class BrowserService {
     width: 0,
     height: 0,
     visible: false,
-    captureCanvasWheel: false
+    captureCanvasWheel: false,
+    showAgentPresence: false
   };
   private persisted: PersistedBrowserState = { version: 1, tabs: [], activeTabId: null };
   private downloads: BrowserDownloadSnapshot[] = [];
@@ -567,6 +568,7 @@ export class BrowserService {
               ? "leave"
               : null;
       if (pointerType) {
+        if (pointerType === "down") contents.focus();
         this.pointerTabId = pointerType === "leave" ? null : tab.id;
         const payload: BrowserCanvasPointerEvent = {
           tabId: tab.id,
@@ -631,6 +633,7 @@ export class BrowserService {
       if (isSafeBrowserUrl(url)) tab.lastSafeUrl = url;
       tab.status = "ready";
       tab.crashState = null;
+      this.applyPageScale(tab);
       void this.persistRuntime();
       this.emit();
     });
@@ -884,6 +887,7 @@ export class BrowserService {
       this.clipTabId = active.id;
     }
     this.clipView.setBounds({ x: left, y: top, width: right - left, height: bottom - top });
+    this.applyPageScale(active);
     active.view.setBounds({
       x: this.viewport.x - left,
       y: this.viewport.y - top,
@@ -897,6 +901,13 @@ export class BrowserService {
       this.clipOwnerId = owner.id;
     }
     this.syncPresenceOverlay({ owner, tabId: active.id, left, top, right, bottom });
+  }
+
+  private applyPageScale(tab: BrowserTab): void {
+    const contents = tab.view.webContents;
+    if (contents.isDestroyed()) return;
+    const pageScale = this.viewport.canvasScale ?? 1;
+    if (Math.abs(contents.getZoomFactor() - pageScale) > 0.001) contents.setZoomFactor(pageScale);
   }
 
   private hideClipView(): void {
@@ -923,11 +934,12 @@ export class BrowserService {
   private syncPresenceOverlay(
     geometry: { owner: BrowserWindow; tabId: string; left: number; top: number; right: number; bottom: number } | null
   ): void {
-    if (!geometry) {
+    if (!geometry || !this.viewport.showAgentPresence) {
+      if (geometry) void this.automation.setAgentPresences(geometry.tabId, []);
       if (this.presenceWindow && !this.presenceWindow.isDestroyed()) this.presenceWindow.hide();
       return;
     }
-    const values = this.agents.forTab(geometry.tabId);
+    const values = this.agents.forTab(geometry.tabId).filter((presence) => presence.cursor.updatedAt > 0);
     const useTrustedWindow = !(process.platform === "linux" && process.env.XDG_SESSION_TYPE === "wayland");
     void this.automation.setAgentPresences(geometry.tabId, useTrustedWindow ? [] : values);
     if (!useTrustedWindow) return;
@@ -947,7 +959,6 @@ export class BrowserService {
     const offsetY = geometry.top - this.viewport.y;
     const payload = values.map((presence) => ({
       id: presence.connectionId,
-      label: presence.label,
       color: presence.brandColor,
       x: presence.cursor.x - offsetX,
       y: presence.cursor.y - offsetY,
@@ -1002,10 +1013,7 @@ export class BrowserService {
   }
 
   private touchActor(actor: BrowserActor, tabId: string | null, cursor?: BrowserPointerResult): void {
-    const initialCursor = actor.kind === "agent" && !this.agents.has(actor.connectionId) && !cursor
-      ? { x: this.viewport.width / 2, y: this.viewport.height / 2 }
-      : cursor;
-    if (!this.agents.touch(actor, tabId ?? this.activeTabId, initialCursor)) return;
+    if (!this.agents.touch(actor, tabId ?? this.activeTabId, cursor)) return;
     this.presenceChanged();
   }
 
@@ -1151,7 +1159,7 @@ function displayUrl(value: string): string {
 }
 
 function presenceOverlayUrl(): string {
-  const html = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><style>html,body,#root{position:fixed;inset:0;margin:0;overflow:hidden;background:transparent;pointer-events:none}.marker{position:absolute;transform:translate(-3px,-3px);pointer-events:none}.dot{display:block;width:10px;height:10px;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 5px #0008}.label{display:block;margin:3px 0 0 8px;padding:2px 5px;border-radius:4px;color:#fff;font:600 10px/14px system-ui,sans-serif;white-space:nowrap;box-shadow:0 1px 4px #0007}</style><div id="root"></div><script>globalThis.renderPresence=(values)=>{const root=document.getElementById('root');root.replaceChildren(...values.map(v=>{const marker=document.createElement('div');marker.className='marker';marker.style.left=v.x+'px';marker.style.top=v.y+'px';marker.style.opacity=v.stale?'.45':'1';const dot=document.createElement('span');dot.className='dot';dot.style.background=v.color;const label=document.createElement('span');label.className='label';label.style.background=v.color;label.textContent=v.label;marker.append(dot,label);return marker;}));};</script>`;
+  const html = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><style>html,body,#root{position:fixed;inset:0;margin:0;overflow:hidden;background:transparent;pointer-events:none}.marker{position:absolute;transform:translate(-3px,-3px);pointer-events:none}.dot{display:block;width:10px;height:10px;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 5px #0008}</style><div id="root"></div><script>globalThis.renderPresence=(values)=>{const root=document.getElementById('root');root.replaceChildren(...values.map(v=>{const marker=document.createElement('div');marker.className='marker';marker.style.left=v.x+'px';marker.style.top=v.y+'px';marker.style.opacity=v.stale?'.45':'1';const dot=document.createElement('span');dot.className='dot';dot.style.background=v.color;marker.append(dot);return marker;}));};</script>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 

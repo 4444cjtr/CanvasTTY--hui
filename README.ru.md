@@ -56,6 +56,10 @@ npm run dev
 
 CanvasTTY включает permissioned runtime для готовых статических GitHub-пакетов: HOME widgets, canvas apps и отдельные sandboxed окна. Host SDK поддерживает постоянные разрешения на выбранные пользователем музыкальные папки, seekable-потоки локального аудио и ограниченный импорт/экспорт плейлистов — этого достаточно для полноценного плеера-плагина. См. [руководство автора и модель безопасности](docs/plugins.ru.md), [схему manifest](docs/canvastty-plugin.schema.json) и [TypeScript-типы SDK](docs/plugin-api.d.ts).
 
+Плагины сообщества:
+
+- [canvastty-music](https://github.com/Alitryel/canvastty-music) — музыкальный плеер, который активно разрабатывает [@Alitryel](https://github.com/Alitryel).
+
 ## Встроенный браузер для агентов
 
 CanvasTTY включает core-браузер, а не plugin capability: доверенная React-панель поверх sandboxed Electron `WebContentsView` с единым постоянным Chromium-профилем. Браузер запускается из HOME, восстанавливает безопасные HTTP(S)-вкладки, оставляет учётные данные сайтов внутри Chromium, управляет загрузками и даёт типизированные browser actions сессиям Claude Code, Codex и Kimi, запущенным через CanvasTTY.
