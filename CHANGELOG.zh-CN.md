@@ -2,6 +2,19 @@
 
 [English](CHANGELOG.md) · [Русский](CHANGELOG.ru.md) · [简体中文](CHANGELOG.zh-CN.md)
 
+## 1.2.0
+
+- macOS 新增原生窗口 chrome：隐藏式 title bar 配 traffic-light 按钮、紧凑 brand bar，并正确处理原生 fullscreen；Linux 和 Windows 保持现有自定义边框。
+- 通过 Electron safeStorage 提供操作系统级加密的插件 secrets（无系统 keyring 时 fail-closed）：逐次调用权限检查、配额、变更事件，以及卸载时的清理。
+- 插件现在可以提供在 sandboxed frame 中打开的设置入口、声明 canvas 最小尺寸，并在当前 canvas 旁打开同一插件的另一个 canvas。
+- 插件 HOME 小组件在 Appearance → HOME composition 中与内置小组件并列显示，可像内置组件一样添加或移除——这弥补了 1.1.0 的已知不足；Settings → Plugins 仅保留安装/卸载。
+- 新增插件可选模块：安装时勾选、逐文件 SHA-256 与字节数校验、带 rollback 的原子重配置，模块派生权限统一应用于 SDK 授权与插件资源 CSP。
+- 插件 storage 变更事件现在由主进程广播：同一插件的 canvas、HOME 小组件和独立窗口可以互相看到对方的写入。
+- 加固插件下载：重定向仅限 `api.github.com` 与 `raw.githubusercontent.com`，模块下载复用 1.1.0 的 retry/backoff。
+- 文档补充了可选模块的信任模型：文件完整性锚定在经 TLS 从 GitHub 获取的插件 manifest 上，manifest 本身没有独立签名。
+
+已知不足：已安装的插件暂时无法就地更新——请先卸载再重新安装以获取新版本。更新操作已在计划中。
+
 ## 1.1.0
 
 - 浏览器原生页面通过 Chromium zoom factor 跟随画布缩放（限制在 0.5–3），任意画布缩放级别下浏览器内容都与画布比例一致。
