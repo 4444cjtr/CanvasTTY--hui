@@ -215,7 +215,9 @@ test("installs only selected integrity-checked modules and can change the select
     const updated = await manager.setModules(installed.manifest.id, ["extra"]);
     assert.deepEqual(updated.selectedModules, ["extra"]);
     assert.deepEqual(updated.manifest.permissions, ["storage", "network"]);
-    assert.equal((await manager.protocolResponse("canvastty-plugin://com.example.modular/extra.js")).status, 200);
+    const moduleAsset = await manager.protocolResponse("canvastty-plugin://com.example.modular/extra.js");
+    assert.equal(moduleAsset.status, 200);
+    assert.match(moduleAsset.headers.get("content-security-policy"), /connect-src https:/);
   } finally {
     await manager.dispose();
     await rm(userData, { recursive: true, force: true });

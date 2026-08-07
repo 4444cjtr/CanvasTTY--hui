@@ -366,7 +366,7 @@ export class PluginManager {
         });
       }
 
-      const plugin = this.requireEnabledPlugin(url.hostname);
+      const plugin = activePlugin(this.requireEnabledPlugin(url.hostname));
       const relativePath = decodeAssetPath(url.pathname);
       const root = join(this.pluginRoot, plugin.manifest.id);
       const path = await containedFile(root, relativePath);
