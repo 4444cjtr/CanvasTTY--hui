@@ -206,6 +206,7 @@ export function SettingsPanel({
               </SettingGroup>
               <HomeAppearanceSettings
                 settings={settings}
+                plugins={plugins}
                 onToggleHomeWidget={onToggleHomeWidget}
                 onEditHome={onEditHome}
               />

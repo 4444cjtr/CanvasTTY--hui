@@ -74,7 +74,7 @@ Editor tooling can use the [manifest JSON Schema](canvastty-plugin.schema.json) 
 }
 ```
 
-Plugin and contribution IDs are stable persistence keys. Do not rename them after publishing. Plugin versions use semantic version text. `settingsContribution` optionally references one `canvas-app`; CanvasTTY shows a dedicated **Settings** action for it in the Extensions menu. `minSize` is optional for `canvas-app` and `window` contributions, must not exceed `defaultSize`, and may be as small as 240 × 140 pixels. Older manifests keep the 320 × 220 host minimum. HOME starts with a spacious 16 × 12 logical grid while preserving the original 12 × 8 composition. The editor can resize its visible boundary up to 48 × 36 without shrinking cell dimensions, and adding a widget grows the boundary automatically when needed. Canvas apps use world-space pixels and participate in the same snapping system as terminal cards.
+Plugin and contribution IDs are stable persistence keys. Do not rename them after publishing. Plugin versions use semantic version text. `settingsContribution` optionally references one `canvas-app`; CanvasTTY shows a dedicated **Settings** action for it in the Extensions menu. Every installed `home-widget` also appears beside the built-in widgets in **Settings → Appearance → HOME composition**, while the Extensions card keeps the same Add/Remove action. `minSize` is optional for `canvas-app` and `window` contributions, must not exceed `defaultSize`, and may be as small as 240 × 140 pixels. Older manifests keep the 320 × 220 host minimum. HOME starts with a spacious 16 × 12 logical grid while preserving the original 12 × 8 composition. The editor can resize its visible boundary up to 48 × 36 without shrinking cell dimensions, and adding a widget grows the boundary automatically when needed. Canvas apps use world-space pixels and participate in the same snapping system as terminal cards.
 
 ### Optional modules
 
@@ -176,7 +176,7 @@ Context updates include the active CanvasTTY locale and palette. Plugins own the
 2. Open **Settings → Plugins**.
 3. Paste `https://github.com/owner/repository` and choose **Inspect**.
 4. Review the manifest and requested permissions, then confirm **Install**.
-5. Enable/disable or uninstall the package from the same section. HOME widgets can be added or removed there. If the manifest declares `settingsContribution`, the plugin card also shows a dedicated **Settings** action.
+5. Enable/disable or uninstall the package from the same section. HOME widgets can be added or removed there or beside the built-in widgets under **Appearance → HOME composition**. If the manifest declares `settingsContribution`, the plugin card also shows a dedicated **Settings** action.
 6. Open **Settings → Appearance → HOME composition**, then choose **Edit HOME** to drag tiles, resize them, or pull the bottom-right HOME boundary. The Settings tile is retained as the recovery entry point; all other core and plugin tiles are optional.
 
 The current installer intentionally rejects private repositories, GitHub `/tree/branch/subdirectory` links, and repositories that require a build step. Publish a ready-to-run static package at the repository root.

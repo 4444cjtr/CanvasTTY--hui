@@ -74,7 +74,7 @@ windows/focus.js
 }
 ```
 
-插件和 contribution 的 ID 是稳定的持久化键，发布后不要重命名。插件版本使用语义化版本文本。可选的 `settingsContribution` 引用一个 `canvas-app`，CanvasTTY 会在扩展菜单中为它显示独立的 **Settings** 操作。`canvas-app` 和 `window` 可以声明可选的 `minSize`；它不能大于 `defaultSize`，最小可设为 240 × 140 px。旧 manifest 继续使用宿主的 320 × 220 px 最小值。HOME 以宽敞的 16 × 12 逻辑网格起步，同时保留原有的 12 × 8 构图。编辑器可以把可见边界扩展到 48 × 36，且不缩小单元格尺寸；需要时添加小组件会自动扩展边界。画布应用使用世界坐标像素，并参与与终端卡片相同的吸附系统。
+插件和 contribution 的 ID 是稳定的持久化键，发布后不要重命名。插件版本使用语义化版本文本。可选的 `settingsContribution` 引用一个 `canvas-app`，CanvasTTY 会在扩展菜单中为它显示独立的 **Settings** 操作。每个已安装的 `home-widget` 也会与内置小组件一起显示在 **设置 → 外观 → HOME 组成** 中，同时扩展卡片仍保留相同的添加或移除操作。`canvas-app` 和 `window` 可以声明可选的 `minSize`；它不能大于 `defaultSize`，最小可设为 240 × 140 px。旧 manifest 继续使用宿主的 320 × 220 px 最小值。HOME 以宽敞的 16 × 12 逻辑网格起步，同时保留原有的 12 × 8 构图。编辑器可以把可见边界扩展到 48 × 36，且不缩小单元格尺寸；需要时添加小组件会自动扩展边界。画布应用使用世界坐标像素，并参与与终端卡片相同的吸附系统。
 
 ### 可选模块
 
@@ -176,7 +176,7 @@ if (library) {
 2. 打开 **Settings → Plugins**。
 3. 粘贴 `https://github.com/owner/repository` 并选择 **Inspect**。
 4. 查看 manifest 和请求的权限，然后确认 **Install**。
-5. 在同一个区块启用/禁用或卸载该包，也可以在那里添加或移除 HOME 小组件。如果 manifest 声明了 `settingsContribution`，插件卡片还会显示独立的 **Settings** 操作。
+5. 在同一个区块启用、禁用或卸载该包。HOME 小组件既可以在这里添加或移除，也可以在 **外观 → HOME 组成** 中与内置小组件一起管理。如果 manifest 声明了 `settingsContribution`，插件卡片还会显示独立的 **Settings** 操作。
 6. 打开 **Settings → Appearance → HOME composition**，然后选择 **Edit HOME**，即可拖动磁贴、调整大小，或拉动 HOME 边界的右下角。Settings 磁贴会保留为恢复入口；其余所有核心磁贴和插件磁贴都是可选的。
 
 当前安装器会刻意拒绝私有仓库、GitHub `/tree/branch/subdirectory` 链接以及需要构建步骤的仓库。请把可直接运行的静态包发布到仓库根目录。
