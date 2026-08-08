@@ -78,6 +78,9 @@ const EMPTY_BROWSER_SNAPSHOT: BrowserSnapshot = {
   pendingDialog: null
 };
 
+const DEFAULT_FOCUS_ZOOM = 0.92;
+const PLUGIN_CANVAS_FOCUS_ZOOM = 1;
+
 export function App(): React.JSX.Element {
   const [settings, setSettings] = useState(FALLBACK_SETTINGS);
   const [sessions, setSessions] = useState<SessionSnapshot[]>([]);
@@ -323,7 +326,7 @@ export function App(): React.JSX.Element {
     setActiveSessionId(null);
     setBrowserSelected(false);
     isHomeCamera.current = false;
-    setCamera(focusCamera(instance.position, instance.size));
+    setCamera(focusCamera(instance.position, instance.size, PLUGIN_CANVAS_FOCUS_ZOOM));
   }, [settings.pluginCanvas]);
 
   const openBrowser = useCallback(async (): Promise<void> => {
@@ -519,7 +522,7 @@ export function App(): React.JSX.Element {
     if (existing) {
       setSettingsOpen(false);
       isHomeCamera.current = false;
-      setCamera(focusCamera(existing.position, existing.size));
+      setCamera(focusCamera(existing.position, existing.size, PLUGIN_CANVAS_FOCUS_ZOOM));
       return;
     }
     const index = settings.pluginCanvas.length;
@@ -544,7 +547,7 @@ export function App(): React.JSX.Element {
     await saveSettings({ pluginCanvas: [...settings.pluginCanvas, instance] });
     setSettingsOpen(false);
     isHomeCamera.current = false;
-    setCamera(focusCamera(instance.position, instance.size));
+    setCamera(focusCamera(instance.position, instance.size, PLUGIN_CANVAS_FOCUS_ZOOM));
   }, [saveSettings, settings.homeGridSize, settings.pluginCanvas]);
 
   const openPluginContribution = useCallback(async (
@@ -759,9 +762,12 @@ function homeCamera(homeGridSize: HomeGridSize): CameraState {
   };
 }
 
-function focusCamera(position: Point, size: { width: number; height: number }): CameraState {
+function focusCamera(
+  position: Point,
+  size: { width: number; height: number },
+  zoom = DEFAULT_FOCUS_ZOOM
+): CameraState {
   const { width: viewportWidth, height: viewportHeight } = canvasViewportSize();
-  const zoom = 0.92;
   return {
     zoom,
     x: viewportWidth / 2 - (position.x + size.width / 2) * zoom,

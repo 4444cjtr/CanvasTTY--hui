@@ -399,7 +399,8 @@ export function BrowserCard({
         width: size.width,
         height: size.height,
         transform: `translate(${position.x}px, ${position.y}px)`,
-        "--summary-scale": summaryScale
+        "--summary-scale": summaryScale,
+        "--summary-content-width": `${Math.max(0, (size.width - 48) / summaryScale)}px`
       } as React.CSSProperties}
     >
       <header

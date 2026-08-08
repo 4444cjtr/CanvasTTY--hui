@@ -176,7 +176,7 @@ button { border: 0; }
 .terminal-card__summary { position: absolute; inset: 54px 0 0; width: 100%; height: calc(100% - 54px); display: none; align-items: center; justify-content: center; overflow: hidden; padding: 0; color: white; background: var(--terminal-background, #202430); cursor: zoom-in; text-align: left; }
 .terminal-card__summary[data-focus-activation="off"] { cursor: pointer; }
 .terminal-card__summary:hover { background: #242936; }
-.terminal-card__summary-content { max-width: 78%; display: flex; align-items: center; gap: 22px; transform: scale(var(--summary-scale, 1)); transform-origin: center; }
+.terminal-card__summary-content { width: var(--summary-content-width); max-width: calc(100% - 72px); display: flex; align-items: center; justify-content: center; gap: 22px; transform: scale(var(--summary-scale, 1)); transform-origin: center; }
 .terminal-card__summary-copy { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
 .terminal-card__summary strong { overflow: hidden; font-size: 36px; font-weight: 850; line-height: 1.05; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
 .terminal-card__summary span { color: rgba(255,255,255,.58); font-size: 21px; font-weight: 750; line-height: 1; }
@@ -199,7 +199,7 @@ button { border: 0; }
 .plugin-canvas-card__header small { color: var(--text-muted-on-dark); font-size: 10px; }
 .plugin-canvas-card__header button { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; color: rgba(255,255,255,.72); background: rgba(255,255,255,.06); cursor: pointer; }
 .plugin-canvas-card__header button:hover { color: white; background: var(--danger); }
-.plugin-canvas-card__frame { height: calc(100% - 54px); background: white; }
+.plugin-canvas-card__frame { height: calc(100% - 54px); background: transparent; }
 .plugin-canvas-card__summary { position: absolute; inset: 54px 0 0; width: 100%; height: calc(100% - 54px); display: none; align-items: center; justify-content: center; padding: 24px; color: white; background: var(--surface); cursor: zoom-in; }
 .plugin-canvas-card__summary > span { max-width: 76%; display: flex; flex-direction: column; gap: 7px; transform: scale(var(--summary-scale, 1)); }
 .plugin-canvas-card__summary strong, .plugin-canvas-card__summary small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -266,7 +266,7 @@ button { border: 0; }
 .browser-card__viewport { position: absolute; inset: 140px 8px 8px; overflow: hidden; background: #272934; }
 .browser-card__summary { position: absolute; inset: 54px 0 0; z-index: 10; width: 100%; height: calc(100% - 54px); display: none; align-items: center; justify-content: center; overflow: hidden; padding: 24px; color: white; background: #272934; cursor: zoom-in; }
 .browser-card__summary[data-focus-activation="off"] { cursor: pointer; }
-.browser-card__summary-content { max-width: 76%; display: flex; flex-direction: column; align-items: center; gap: 9px; transform: scale(var(--summary-scale, 1)); text-align: center; }
+.browser-card__summary-content { width: var(--summary-content-width); max-width: calc(100% - 48px); display: flex; flex-direction: column; align-items: center; gap: 9px; transform: scale(var(--summary-scale, 1)); text-align: center; }
 .browser-card__summary strong, .browser-card__summary small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .browser-card__summary strong { font-size: 31px; letter-spacing: -.025em; }
 .browser-card__summary small { color: var(--text-muted-on-dark); font-size: 16px; }

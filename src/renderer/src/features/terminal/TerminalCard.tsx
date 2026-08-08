@@ -441,6 +441,7 @@ export function TerminalCard({
         height: size.height,
         transform: `translate(${position.x}px, ${position.y}px)`,
         "--summary-scale": summaryScale,
+        "--summary-content-width": `${Math.max(0, (size.width - 72) / summaryScale)}px`,
         "--terminal-background": terminalBackground
       } as React.CSSProperties}
     >
