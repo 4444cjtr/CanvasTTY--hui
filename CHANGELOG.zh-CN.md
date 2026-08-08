@@ -2,6 +2,11 @@
 
 [English](CHANGELOG.md) · [Русский](CHANGELOG.ru.md) · [简体中文](CHANGELOG.zh-CN.md)
 
+## 1.2.1
+
+- 插件 canvas 应用现在以原生 `1.0` 比例打开和重新聚焦，避免小数缩放造成的模糊；透明 iframe 背景也消除了圆角插件窗口周围的亮色接缝。
+- Terminal 与 Browser 的语义摘要现在会在反向缩放前预留宽度并保持内容居中，因此在画布大幅缩小时，图标和文本不再被裁切。
+
 ## 1.2.0
 
 - macOS 新增原生窗口 chrome：隐藏式 title bar 配 traffic-light 按钮、紧凑 brand bar，并正确处理原生 fullscreen；Linux 和 Windows 保持现有自定义边框。

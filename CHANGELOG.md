@@ -2,6 +2,11 @@
 
 [English](CHANGELOG.md) · [Русский](CHANGELOG.ru.md) · [简体中文](CHANGELOG.zh-CN.md)
 
+## 1.2.1
+
+- Plugin canvas apps now open and refocus at native `1.0` scale, avoiding fractional-scale blur; their transparent iframe backdrop also removes the bright seam around rounded plugin windows.
+- Terminal and Browser semantic summaries now reserve width before counter-scaling and keep their content centered, preventing icons and text from being clipped at distant canvas zoom levels.
+
 ## 1.2.0
 
 - Added native macOS window chrome: a hidden title bar with traffic-light buttons, a compact brand bar, and correct native-fullscreen behavior; Linux and Windows keep the existing custom frame.
