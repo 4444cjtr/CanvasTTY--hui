@@ -10,7 +10,6 @@ export interface BrowserCanvasRectangle extends Point, Size {}
 export interface BrowserCanvasWheelSequenceSnapshot {
   active: boolean;
   collisionLatched: boolean;
-  generation: number;
   lastWheelAt: number;
   pointer: Point | null;
 }
@@ -41,21 +40,19 @@ export class BrowserCanvasWheelSequence {
   private state: BrowserCanvasWheelSequenceSnapshot = {
     active: false,
     collisionLatched: false,
-    generation: 0,
     lastWheelAt: 0,
     pointer: null
   };
 
-  begin(pointer: Point, now: number): { generation: number; started: boolean } {
+  begin(pointer: Point, now: number): { started: boolean } {
     const started = !this.state.active;
     this.state = {
       active: true,
       collisionLatched: started ? false : this.state.collisionLatched,
-      generation: started ? this.state.generation + 1 : this.state.generation,
       lastWheelAt: now,
       pointer: { ...pointer }
     };
-    return { generation: this.state.generation, started };
+    return { started };
   }
 
   shouldFreeze(rectangle: BrowserCanvasRectangle | null): boolean {

@@ -20,8 +20,7 @@ import type {
 } from "../../../../shared/contracts";
 import { BROWSER_PROVIDER_COLORS } from "../../../../shared/contracts";
 import {
-  canvasNavigationBindingConflicts,
-  canvasWheelBindingConflicts,
+  canvasOverrideBindingConflicts,
   defaultCanvasWheelBinding
 } from "../../../../shared/canvasNavigation";
 import { UiIcon } from "../../components/UiIcon";
@@ -149,10 +148,10 @@ export function SettingsPanel({
       ([candidateAction, value]) => candidateAction !== action && value.toLowerCase() === shortcut.toLowerCase()
     );
     const conflictsWithNavigation = settings.canvasNavigationOverride !== null
-      && canvasNavigationBindingConflicts(settings.canvasNavigationOverride, shortcut);
+      && canvasOverrideBindingConflicts(settings.canvasNavigationOverride, shortcut);
     const conflictsWithWheel = settings.canvasWheelCaptureMode === "key"
       && settings.canvasWheelOverride !== null
-      && canvasWheelBindingConflicts(settings.canvasWheelOverride, shortcut);
+      && canvasOverrideBindingConflicts(settings.canvasWheelOverride, shortcut);
     if (conflict || conflictsWithNavigation || conflictsWithWheel) {
       setShortcutError(t(locale, "shortcutConflict"));
       return;
@@ -320,7 +319,6 @@ export function SettingsPanel({
                   <CanvasNavigationShortcutEditor
                     open={open}
                     locale={locale}
-                    mode="wheel"
                     label={t(locale, "canvasWheelOverride")}
                     binding={settings.canvasWheelOverride}
                     actionShortcuts={Object.values(settings.shortcuts)}
@@ -343,7 +341,6 @@ export function SettingsPanel({
                 <CanvasNavigationShortcutEditor
                   open={open}
                   locale={locale}
-                  mode="navigation"
                   label={t(locale, "canvasNavigationOverride")}
                   binding={settings.canvasNavigationOverride}
                   actionShortcuts={Object.values(settings.shortcuts)}

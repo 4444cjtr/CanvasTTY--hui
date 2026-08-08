@@ -24,10 +24,8 @@ window.addEventListener("wheel", (event) => {
     topFrame: window === window.top,
     viewportWidth: window.innerWidth,
     viewportHeight: window.innerHeight,
-    altKey: event.altKey,
     ctrlKey: event.ctrlKey,
     metaKey: event.metaKey,
-    shiftKey: event.shiftKey
   };
   if (!wheelDecision || now - wheelDecision.lastEventAt >= BROWSER_PAGE_WHEEL_IDLE_MS) {
     const value = ipcRenderer.sendSync(BROWSER_PAGE_WHEEL_DECISION_CHANNEL, input);

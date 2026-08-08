@@ -40,7 +40,6 @@ interface TerminalCardProps {
   focusActivation: FocusActivation;
   invertTerminalWheel: boolean;
   captureCanvasWheelOverWidgets: boolean;
-  canvasOverrideActive: boolean;
   focused: boolean;
   focusChangeSource: "explicit" | "hover";
   selected: boolean;
@@ -78,7 +77,6 @@ export function TerminalCard({
   focusActivation,
   invertTerminalWheel,
   captureCanvasWheelOverWidgets,
-  canvasOverrideActive,
   focused,
   focusChangeSource,
   selected,
@@ -102,8 +100,8 @@ export function TerminalCard({
   const restartAction = useRef<() => Promise<void>>(async () => undefined);
   const invertTerminalWheelRef = useRef(invertTerminalWheel);
   invertTerminalWheelRef.current = invertTerminalWheel;
-  const captureCanvasWheelRef = useRef(captureCanvasWheelOverWidgets || canvasOverrideActive);
-  captureCanvasWheelRef.current = captureCanvasWheelOverWidgets || canvasOverrideActive;
+  const captureCanvasWheelRef = useRef(captureCanvasWheelOverWidgets);
+  captureCanvasWheelRef.current = captureCanvasWheelOverWidgets;
   const dragState = useRef<DragState | null>(null);
   const resizeState = useRef<ResizeState | null>(null);
   const [position, setPosition] = useState(session.position);

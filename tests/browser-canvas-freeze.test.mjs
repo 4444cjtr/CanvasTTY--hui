@@ -68,7 +68,6 @@ test("wheel sequence refreshes its pointer and reports expiration from the last 
 
   assert.equal(first.started, true);
   assert.equal(second.started, false);
-  assert.equal(second.generation, first.generation);
   assert.deepEqual(sequence.snapshot().pointer, { x: 30, y: 40 });
   assert.equal(sequence.expired(1_369), false);
   assert.equal(sequence.expired(1_370), true);

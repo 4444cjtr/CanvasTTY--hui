@@ -15,10 +15,7 @@ import type {
   AgentPresenceSnapshot,
   BrowserActivityEvent,
   BrowserActor,
-  BrowserCanvasFreezeFrameEvent,
-  BrowserCanvasNavigationPointerEvent,
   BrowserCanvasPointerEvent,
-  BrowserCanvasWheelEvent,
   BrowserCommand,
   BrowserDialogSnapshot,
   BrowserDownloadSnapshot,
@@ -35,28 +32,16 @@ import { AgentRegistry } from "./browser/AgentRegistry.ts";
 import type { CanvasNavigationInputController } from "./CanvasNavigationOverride.ts";
 import { BrowserAutomationService, type BrowserPointerResult } from "./browser/BrowserAutomationService.ts";
 import {
-  BROWSER_CANVAS_WHEEL_IDLE_MS,
-  BrowserCanvasFreezeFrameStore,
-  BrowserCanvasWheelSequence,
-  browserCanvasNativeWheelSinkLayout,
-  browserVisibleRectangle,
-  createBrowserCanvasNativeWheelSink,
-  encodeBrowserCanvasFreezeFrame
+  browserVisibleRectangle
 } from "./browser/BrowserCanvasFreeze.ts";
-import type { BrowserCanvasNativeWheelSink } from "./browser/BrowserCanvasFreeze.ts";
 import {
   BrowserCanvasCursorController,
   browserCanvasNavigationCursor
 } from "./browser/BrowserCanvasCursor.ts";
+import { BrowserCanvasGestureController } from "./browser/BrowserCanvasGestureController.ts";
+import { BrowserCanvasPointerRouter } from "./browser/BrowserCanvasPointerRouter.ts";
 import { BrowserCanvasSinkViewportController } from "./browser/BrowserCanvasSinkViewport.ts";
 import { BrowserAuditStore } from "./browser/BrowserAuditStore.ts";
-import {
-  BrowserPageWheelSequence,
-  browserPageWheelClientPoint,
-  browserWheelOwner,
-  browserCanvasNavigationPointerType,
-  toCanvasPageWheelInput
-} from "./browser/BrowserCanvasWheel.ts";
 import type { BrowserWheelDecision } from "./browser/BrowserCanvasWheel.ts";
 import { normalizeBrowserViewportBounds } from "./browser/BrowserViewport.ts";
 import { BrowserCore, type BrowserCoreHost, type BrowserCoreTab } from "./browser/BrowserCore.ts";
@@ -101,21 +86,6 @@ interface DownloadWaiter {
   abort?: () => void;
 }
 
-interface BrowserFreezePointerRelay {
-  tabId: string;
-  button: NonNullable<Electron.MouseInputEvent["button"]>;
-  clickCount: number;
-  lastClient: { x: number; y: number };
-}
-
-interface BrowserNativeWheelSinkPointerRelay {
-  tabId: string;
-  target: "browser" | "owner";
-  button: NonNullable<Electron.MouseInputEvent["button"]>;
-  clickCount: number;
-  lastClient: { x: number; y: number };
-}
-
 export interface BrowserServiceOptions {
   userDataPath?: string;
   downloadRoot?: string;
@@ -137,6 +107,8 @@ export class BrowserService {
   private readonly audit: BrowserAuditStore;
   private readonly automation = new BrowserAutomationService();
   private readonly agents: AgentRegistry;
+  private readonly canvasGestures: BrowserCanvasGestureController;
+  private readonly canvasPointers: BrowserCanvasPointerRouter;
   private readonly clipView = new View();
   private readonly readyPromise: Promise<void>;
   private readonly downloadWaiters = new Set<DownloadWaiter>();
@@ -162,26 +134,6 @@ export class BrowserService {
   private clipOwnerId: number | null = null;
   private clipTabId: string | null = null;
   private pointerTabId: string | null = null;
-  private canvasDragTabId: string | null = null;
-  private rendererCanvasGestureActive = false;
-  private canvasNavigationActive = false;
-  private inputFocused = false;
-  private canvasWheelCaptureMode: CanvasWheelCaptureMode;
-  private browserWheelPoint: { tabId: string; point: { x: number; y: number }; observedAt: number } | null = null;
-  private readonly pageWheelSequence = new BrowserPageWheelSequence();
-  private readonly ownerWheelSequence = new BrowserCanvasWheelSequence();
-  private readonly freezeFrameStore = new BrowserCanvasFreezeFrameStore();
-  private ownerWheelSequenceTimer: NodeJS.Timeout | null = null;
-  private freezeCapturePromise: Promise<void> | null = null;
-  private freezeCaptureQueued = false;
-  private freezeCaptureAfterSequence = false;
-  private freezeFrameActive = false;
-  private freezeFrameTabId: string | null = null;
-  private freezeFrameEventGeneration = 0;
-  private freezePointerRelay: BrowserFreezePointerRelay | null = null;
-  private nativeWheelSink: BrowserCanvasNativeWheelSink | null = null;
-  private restoringNativeWheelSinkTabId: string | null = null;
-  private nativeWheelSinkPointerRelay: BrowserNativeWheelSinkPointerRelay | null = null;
   private presenceWindow: BrowserWindow | null = null;
   private presenceWindowReady: Promise<void> | null = null;
 
@@ -189,7 +141,6 @@ export class BrowserService {
     this.getOwner = getOwner;
     this.now = options.now ?? Date.now;
     this.canvasNavigationInput = options.canvasNavigationInput ?? null;
-    this.canvasWheelCaptureMode = options.canvasWheelCaptureMode ?? "key";
     const userDataPath = options.userDataPath ?? app.getPath("userData");
     const downloadRoot = join(options.downloadRoot ?? join(app.getPath("downloads"), "CanvasTTY"), randomUUID());
     this.restoreTabsEnabled = options.restoreTabs ?? true;
@@ -201,6 +152,49 @@ export class BrowserService {
     });
     this.audit = new BrowserAuditStore(userDataPath, { now: this.now });
     this.agents = new AgentRegistry(this.now);
+    this.canvasGestures = new BrowserCanvasGestureController({
+      getOwner: () => this.getOwner(),
+      getViewport: () => this.viewport,
+      getActiveTab: () => this.activeTabId ? this.tabs.get(this.activeTabId) ?? null : null,
+      getTab: (tabId) => this.tabs.get(tabId),
+      isVisible: () => this.visible,
+      isDisposed: () => this.disposed,
+      getOverrideState: () => ({
+        wheelActive: this.canvasNavigationInput?.wheelActive ?? false,
+        navigationActive: this.canvasNavigationInput?.active ?? false
+      }),
+      getCursorScreenPoint: () => screen.getCursorScreenPoint(),
+      requestSurfaceSync: () => this.syncViews(),
+      beforeSequenceEnd: () => this.canvasPointers.cancelSequenceRelays(),
+      shouldDeferIdleEnd: () => this.canvasPointers.hasFreezePointerRelay,
+      sendWheel: (payload) => {
+        const owner = this.getOwner();
+        if (owner && !owner.isDestroyed()) owner.webContents.send(IPC.browserCanvasWheel, payload);
+      },
+      sendFreezeFrame: (payload) => {
+        const owner = this.getOwner();
+        if (owner && !owner.isDestroyed()) owner.webContents.send(IPC.browserCanvasFreezeFrame, payload);
+      }
+    }, {
+      captureMode: options.canvasWheelCaptureMode ?? "key",
+      now: this.now
+    });
+    this.canvasPointers = new BrowserCanvasPointerRouter({
+      getOwner: () => this.getOwner(),
+      getViewport: () => this.viewport,
+      getTab: (tabId) => this.tabs.get(tabId),
+      getTabs: () => this.tabs.values(),
+      getNativeWheelSink: () => this.canvasGestures.activeNativeSink,
+      getFrozenTabId: () => this.canvasGestures.frozenTabId,
+      isFreezeActive: () => this.canvasGestures.isFreezeActive,
+      isNavigationOverrideActive: () => this.canvasNavigationInput?.active ?? false,
+      getCursorScreenPoint: () => screen.getCursorScreenPoint(),
+      endWheelSequence: (reason) => this.canvasGestures.endSequence(reason),
+      sendNavigationPointer: (payload) => {
+        const owner = this.getOwner();
+        if (owner && !owner.isDestroyed()) owner.webContents.send(IPC.browserCanvasNavigationPointer, payload);
+      }
+    });
 
     const host: BrowserCoreHost = {
       getSnapshot: () => this.getState(),
@@ -268,10 +262,10 @@ export class BrowserService {
     await this.readyPromise;
     if (this.disposed) return;
     await this.persistRuntime();
-    if (this.canvasDragTabId !== null) this.cancelCanvasDrag(this.canvasDragTabId);
-    this.endOwnerWheelSequence("browser-closed", false);
-    this.freezeFrameStore.invalidateCapture();
-    this.inputFocused = false;
+    this.canvasPointers.cancelNavigationGesture();
+    this.canvasGestures.endSequence("browser-closed", false);
+    this.canvasGestures.invalidateCapture();
+    this.canvasGestures.setInputFocused(false);
     this.visible = false;
     this.hideClipView();
     this.destroyPresenceWindow();
@@ -286,87 +280,23 @@ export class BrowserService {
   }
 
   setInputFocused(focused: boolean): void {
-    if (this.inputFocused === focused) return;
-    this.inputFocused = focused;
+    this.canvasGestures.setInputFocused(focused);
   }
 
   setCanvasWheelCaptureMode(mode: CanvasWheelCaptureMode): void {
-    this.canvasWheelCaptureMode = mode;
+    this.canvasGestures.setCaptureMode(mode);
   }
 
   decidePageWheel(sender: WebContents, input: unknown): BrowserWheelDecision {
-    const failClosed = {
-      generation: 0,
-      owner: "canvas"
-    } satisfies BrowserWheelDecision;
-    const wheel = toCanvasPageWheelInput(input);
-    if (
-      !wheel
-      || !this.visible
-      || this.viewport.surface !== "native"
-      || this.activeTabId === null
-    ) return failClosed;
-    const tab = this.tabs.get(this.activeTabId);
-    if (!tab || tab.view.webContents !== sender || sender.isDestroyed()) return failClosed;
-    const owner = this.getOwner();
-    if (!owner || owner.isDestroyed()) return failClosed;
-
-    const decision = this.pageWheelSequence.decide(browserWheelOwner({
-      surface: this.viewport.surface,
-      focused: this.inputFocused,
-      captureMode: this.canvasWheelCaptureMode,
-      wheelOverrideActive: this.canvasNavigationInput?.wheelActive ?? false,
-      canvasOverrideActive: this.canvasNavigationInput?.active ?? false,
-      ctrlKey: wheel.ctrlKey,
-      metaKey: wheel.metaKey
-    }), this.now());
-    const clientPoint = this.browserWheelClientPoint(tab.id, owner, input);
-    if (decision.owner === "canvas") {
-      this.beginOwnerWheelSequence(clientPoint, "browser-frame-sync-ipc");
-    }
-    return decision;
+    return this.canvasGestures.decidePageWheel(sender, input);
   }
 
   handlePageWheel(sender: WebContents, input: unknown): void {
-    if (!this.visible || this.viewport.surface === "hidden" || this.activeTabId === null) return;
-    const tab = this.tabs.get(this.activeTabId);
-    if (!tab || tab.view.webContents !== sender || sender.isDestroyed()) return;
-    const wheel = toCanvasPageWheelInput(input);
-    if (!wheel) return;
-    const generation = pageWheelGeneration(input);
-    const sequenceOwner = generation === null
-      ? null
-      : this.pageWheelSequence.touch(generation, this.now());
-    if (sequenceOwner === null || sequenceOwner === "page") return;
-    const owner = this.getOwner();
-    if (!owner || owner.isDestroyed()) return;
-    const clientPoint = this.browserWheelClientPoint(tab.id, owner, input);
-    this.beginOwnerWheelSequence(clientPoint, "browser-frame-async-ipc");
-    const payload: BrowserCanvasWheelEvent = {
-      tabId: tab.id,
-      clientX: clientPoint.x,
-      clientY: clientPoint.y,
-      ...wheel,
-      wheelOverrideActive: this.canvasNavigationInput?.wheelActive ?? false,
-      canvasOverrideActive: this.canvasNavigationInput?.active ?? false
-    };
-    owner.webContents.send(IPC.browserCanvasWheel, payload);
+    this.canvasGestures.handlePageWheel(sender, input);
   }
 
   beginRendererWheelSequence(input: unknown): void {
-    if (!input || typeof input !== "object" || Array.isArray(input)) return;
-    const values = input as Record<string, unknown>;
-    if (!Number.isFinite(values.clientX) || !Number.isFinite(values.clientY)) return;
-    const owner = this.getOwner();
-    if (!owner || owner.isDestroyed()) return;
-    const content = owner.getContentBounds();
-    const clientX = values.clientX as number;
-    const clientY = values.clientY as number;
-    if (clientX < 0 || clientY < 0 || clientX >= content.width || clientY >= content.height) return;
-    this.beginOwnerWheelSequence({
-      x: clientX,
-      y: clientY
-    }, "renderer-sync-ipc");
+    this.canvasGestures.beginRendererSequence(input);
   }
 
   async setRestoreTabs(enabled: boolean): Promise<void> {
@@ -386,9 +316,9 @@ export class BrowserService {
     const draining = this.core.shutdown();
     await this.persistRuntime().catch(() => undefined);
     this.visible = false;
-    this.inputFocused = false;
-    this.endOwnerWheelSequence("service-disposed", false);
-    this.freezeFrameStore.clear();
+    this.canvasGestures.setInputFocused(false);
+    this.canvasGestures.endSequence("service-disposed", false);
+    this.canvasGestures.clear();
     clearInterval(this.presenceTimer);
     this.destroyRuntimeTabs();
     if (this.browserSession && this.browserPagePreloadId) {
@@ -501,39 +431,22 @@ export class BrowserService {
     const previous = this.viewport;
     this.viewport = normalized;
     if (normalized.surface === "hidden") {
-      this.inputFocused = false;
-      this.cancelCanvasNavigationGesture();
-      this.endOwnerWheelSequence("viewport-removed", false);
-      this.freezeFrameStore.invalidateCapture();
+      this.canvasPointers.cancelNavigationGesture();
     }
+    this.canvasGestures.viewportChanged(previous, normalized);
     this.syncViews();
-    if (normalized.surface === "native" && (
-      previous.width !== normalized.width
-      || previous.height !== normalized.height
-      || previous.canvasScale !== normalized.canvasScale
-    )) {
-      if (this.freezeFrameActive) this.freezeCaptureAfterSequence = true;
-      else this.refreshFreezeFrame();
-    }
   }
 
   setCanvasNavigationActive(active: boolean): void {
-    if (this.canvasNavigationActive === active) return;
-    this.canvasNavigationActive = active;
-    this.syncCanvasCursors();
+    this.canvasPointers.setNavigationActive(active);
   }
 
   setRendererCanvasGestureActive(active: boolean): void {
-    if (this.rendererCanvasGestureActive === active) return;
-    this.rendererCanvasGestureActive = active;
-    this.syncCanvasCursors();
+    this.canvasPointers.setRendererGestureActive(active);
   }
 
   cancelCanvasNavigationGesture(): void {
-    const hadRendererGesture = this.rendererCanvasGestureActive;
-    this.rendererCanvasGestureActive = false;
-    if (this.canvasDragTabId !== null) this.cancelCanvasDrag(this.canvasDragTabId);
-    else if (hadRendererGesture) this.syncCanvasCursors();
+    this.canvasPointers.cancelNavigationGesture();
   }
 
   setAgentPresences(values: readonly AgentPresenceSnapshot[]): void {
@@ -590,8 +503,8 @@ export class BrowserService {
     }
     const normalized = this.policy.assertNavigationUrl(url);
     const tab = this.createRuntimeTab(randomUUID(), normalized);
-    this.endOwnerWheelSequence("new-active-tab", false);
-    this.freezeFrameStore.invalidateCapture();
+    this.canvasGestures.endSequence("new-active-tab", false);
+    this.canvasGestures.invalidateCapture();
     this.activeTabId = tab.id;
     await this.persistRuntime();
     this.syncViews();
@@ -603,15 +516,13 @@ export class BrowserService {
   private async hostActivateTab(tabId: string): Promise<BrowserSnapshot> {
     await this.ensureRuntime();
     const tab = this.requireTab(tabId);
-    if (this.canvasDragTabId !== null && this.canvasDragTabId !== tab.id) {
-      this.cancelCanvasDrag(this.canvasDragTabId);
-    }
-    this.endOwnerWheelSequence("active-tab-changed", false);
-    this.freezeFrameStore.invalidateCapture();
+    this.canvasPointers.cancelNavigationGesture();
+    this.canvasGestures.endSequence("active-tab-changed", false);
+    this.canvasGestures.invalidateCapture();
     this.activeTabId = tab.id;
     await this.persistRuntime();
     this.syncViews();
-    this.refreshFreezeFrame();
+    this.canvasGestures.refreshFrame();
     if (this.viewport.surface === "native" && !tab.view.webContents.isDestroyed()) tab.view.webContents.focus();
     this.emit();
     return this.getState();
@@ -621,8 +532,8 @@ export class BrowserService {
     await this.ensureRuntime();
     const tab = this.requireTab(tabId);
     if (this.activeTabId === tabId) {
-      this.endOwnerWheelSequence("active-tab-closed", false);
-      this.freezeFrameStore.invalidateCapture();
+      this.canvasGestures.endSequence("active-tab-closed", false);
+      this.canvasGestures.invalidateCapture();
     }
     this.tabs.delete(tabId);
     this.destroyTab(tab);
@@ -722,7 +633,7 @@ export class BrowserService {
       canvasSinkViewport: new BrowserCanvasSinkViewportController(view.webContents)
     };
     this.tabs.set(id, tab);
-    tab.canvasCursor.set(browserCanvasNavigationCursor(this.canvasNavigationActive, false));
+    tab.canvasCursor.set(browserCanvasNavigationCursor(this.canvasNavigationInput?.active ?? false, false));
     this.bindTab(tab);
     void this.automation.register(id, view.webContents, tab.documentRevision, (dialog) => {
       if (dialog && this.tabs.has(id)) this.pendingDialogs.set(id, dialog);
@@ -768,56 +679,14 @@ export class BrowserService {
     });
     contents.on("will-attach-webview", (event) => event.preventDefault());
     contents.on("before-mouse-event", (event, mouse) => {
-      const nativeSink = this.nativeWheelSink?.tabId === tab.id ? this.nativeWheelSink : null;
+      const nativeSink = this.canvasGestures.activeNativeSink?.tabId === tab.id
+        ? this.canvasGestures.activeNativeSink
+        : null;
       if ((this.viewport.surface !== "native" && !nativeSink) || this.activeTabId !== tab.id) return;
       const owner = this.getOwner();
       if (!owner || owner.isDestroyed()) return;
-      if (mouse.type === "mouseWheel") {
-        this.browserWheelPoint = {
-          tabId: tab.id,
-          point: nativeSink
-            ? { ...nativeSink.pointer }
-            : { x: this.viewport.x + mouse.x, y: this.viewport.y + mouse.y },
-          observedAt: this.now()
-        };
-      }
-      const canvasOverrideActive = this.canvasNavigationInput?.active ?? false;
-      const mouseClientPoint = this.nativeWheelSink?.tabId === tab.id
-        ? this.ownerPointerClientPoint(owner, this.nativeWheelSink.pointer, mouse)
-        : { x: this.viewport.x + mouse.x, y: this.viewport.y + mouse.y };
-
-      const navigationPointerType = browserCanvasNavigationPointerType(
-        mouse,
-        canvasOverrideActive,
-        this.canvasDragTabId === tab.id || this.rendererCanvasGestureActive
-      );
-      if (navigationPointerType) {
-        if (navigationPointerType === "down") {
-          this.canvasDragTabId = tab.id;
-          this.syncCanvasCursors();
-        }
-        if (navigationPointerType === "up" || navigationPointerType === "cancel") {
-          this.canvasDragTabId = null;
-          this.rendererCanvasGestureActive = false;
-          this.syncCanvasCursors();
-        }
-        const payload: BrowserCanvasNavigationPointerEvent = {
-          tabId: tab.id,
-          type: navigationPointerType,
-          clientX: mouseClientPoint.x,
-          clientY: mouseClientPoint.y
-        };
-        event.preventDefault();
-        owner.webContents.send(IPC.browserCanvasNavigationPointer, payload);
-        return;
-      }
-      if ((this.canvasDragTabId === tab.id || this.rendererCanvasGestureActive)
-        && mouse.type === "mouseLeave") {
-        event.preventDefault();
-        return;
-      }
-
-      if (this.relayNativeWheelSinkPointerFromBrowser(event, mouse, owner, tab)) return;
+      this.canvasGestures.observeBrowserWheel(tab.id, mouse);
+      if (this.canvasPointers.handleBrowserMouse(tab, owner, event, mouse)) return;
 
       const pointerType = mouse.type === "mouseDown" && mouse.button === "left"
         ? "down"
@@ -856,8 +725,8 @@ export class BrowserService {
     contents.on("did-start-navigation", (_details, _url, isInPlace, isMainFrame) => {
       if (!isMainFrame) return;
       if (!isInPlace && this.activeTabId === tab.id) {
-        this.endOwnerWheelSequence("active-tab-navigation");
-        this.freezeFrameStore.invalidateCapture();
+        this.canvasGestures.endSequence("active-tab-navigation");
+        this.canvasGestures.invalidateCapture();
       }
       tab.loading = true;
       tab.status = "loading";
@@ -873,7 +742,7 @@ export class BrowserService {
     contents.on("did-stop-loading", () => {
       tab.loading = false;
       if (tab.status !== "crashed" && tab.status !== "error") tab.status = "ready";
-      if (this.activeTabId === tab.id) this.refreshFreezeFrame();
+      if (this.activeTabId === tab.id) this.canvasGestures.refreshFrame();
       this.emit();
     });
     contents.on("did-finish-load", () => tab.canvasCursor.refresh());
@@ -915,10 +784,10 @@ export class BrowserService {
       this.emit();
     });
     contents.on("render-process-gone", (_event, details) => {
-      this.cancelCanvasDrag(tab.id);
+      this.canvasPointers.cancelTab(tab.id);
       if (this.activeTabId === tab.id) {
-        this.endOwnerWheelSequence("active-tab-crashed", false);
-        this.freezeFrameStore.invalidateCapture();
+        this.canvasGestures.endSequence("active-tab-crashed", false);
+        this.canvasGestures.invalidateCapture();
       }
       tab.loading = false;
       tab.status = "crashed";
@@ -928,10 +797,10 @@ export class BrowserService {
     contents.on("destroyed", () => {
       tab.canvasCursor.dispose();
       tab.canvasSinkViewport.dispose();
-      this.cancelCanvasDrag(tab.id);
+      this.canvasPointers.cancelTab(tab.id);
       if (this.activeTabId === tab.id) {
-        this.endOwnerWheelSequence("active-tab-destroyed", false);
-        this.freezeFrameStore.invalidateCapture();
+        this.canvasGestures.endSequence("active-tab-destroyed", false);
+        this.canvasGestures.invalidateCapture();
       }
       if (!this.tabs.has(tab.id)) return;
       tab.loading = false;
@@ -1122,10 +991,10 @@ export class BrowserService {
   }
 
   private destroyTab(tab: BrowserTab): void {
-    this.cancelCanvasDrag(tab.id);
+    this.canvasPointers.cancelTab(tab.id);
     if (this.activeTabId === tab.id) {
-      this.endOwnerWheelSequence("active-tab-destroyed", false);
-      this.freezeFrameStore.invalidateCapture();
+      this.canvasGestures.endSequence("active-tab-destroyed", false);
+      this.canvasGestures.invalidateCapture();
     }
     tab.canvasCursor.dispose();
     tab.canvasSinkViewport.dispose();
@@ -1135,419 +1004,6 @@ export class BrowserService {
     if (this.pointerTabId === tab.id) this.pointerTabId = null;
     tab.view.setVisible(false);
     if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close({ waitForBeforeUnload: false });
-  }
-
-  private cancelCanvasDrag(tabId: string): void {
-    if (this.canvasDragTabId !== tabId) return;
-    this.canvasDragTabId = null;
-    this.syncCanvasCursors();
-    const owner = this.getOwner();
-    if (!owner || owner.isDestroyed()) return;
-    owner.webContents.send(IPC.browserCanvasNavigationPointer, {
-      tabId,
-      type: "cancel",
-      clientX: 0,
-      clientY: 0
-    } satisfies BrowserCanvasNavigationPointerEvent);
-  }
-
-  private syncCanvasCursors(): void {
-    for (const tab of this.tabs.values()) {
-      tab.canvasCursor.set(browserCanvasNavigationCursor(
-        this.canvasNavigationActive,
-        this.canvasDragTabId === tab.id || this.rendererCanvasGestureActive
-      ));
-    }
-  }
-
-  private beginOwnerWheelSequence(
-    point: { x: number; y: number },
-    source: "native-before-mouse" | "renderer-sync-ipc" | "browser-frame-sync-ipc" | "browser-frame-async-ipc"
-  ): boolean {
-    if (!this.visible || this.viewport.surface === "hidden" || this.activeTabId === null) return false;
-    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
-    const transition = this.ownerWheelSequence.begin(point, this.now());
-    this.scheduleOwnerWheelSequenceEnd();
-    if (transition.started) {
-      const proposedNativeWheelSink = source === "browser-frame-sync-ipc"
-        ? createBrowserCanvasNativeWheelSink(this.activeTabId, this.viewport, point)
-        : null;
-      const sinkTab = proposedNativeWheelSink
-        ? this.tabs.get(proposedNativeWheelSink.tabId)
-        : undefined;
-      this.nativeWheelSink = proposedNativeWheelSink && sinkTab?.canvasSinkViewport.preserve(
-        proposedNativeWheelSink.viewport
-      )
-        ? proposedNativeWheelSink
-        : null;
-      this.refreshFreezeFrame();
-      if (this.nativeWheelSink) this.restoringNativeWheelSinkTabId = null;
-    }
-    this.syncViews();
-    return this.nativeWheelSink?.tabId === this.activeTabId;
-  }
-
-  private scheduleOwnerWheelSequenceEnd(): void {
-    if (this.ownerWheelSequenceTimer) clearTimeout(this.ownerWheelSequenceTimer);
-    this.ownerWheelSequenceTimer = setTimeout(() => {
-      this.ownerWheelSequenceTimer = null;
-      if (!this.ownerWheelSequence.expired(this.now())) {
-        this.scheduleOwnerWheelSequenceEnd();
-        return;
-      }
-      this.endOwnerWheelSequence("wheel-idle");
-    }, BROWSER_CANVAS_WHEEL_IDLE_MS);
-  }
-
-  private endOwnerWheelSequence(reason: string, sync = true): void {
-    if (reason === "wheel-idle" && this.freezePointerRelay !== null) {
-      this.scheduleOwnerWheelSequenceEnd();
-      return;
-    }
-    if (this.ownerWheelSequenceTimer) {
-      clearTimeout(this.ownerWheelSequenceTimer);
-      this.ownerWheelSequenceTimer = null;
-    }
-    if (this.freezePointerRelay !== null) this.cancelFreezePointerRelay();
-    if (this.nativeWheelSinkPointerRelay !== null) this.cancelNativeWheelSinkPointerRelay();
-    const frozenTabId = this.freezeFrameTabId;
-    const wasFrozen = this.freezeFrameActive;
-    const nativeSinkTabId = this.nativeWheelSink?.tabId ?? this.restoringNativeWheelSinkTabId;
-    if (this.nativeWheelSink) this.restoringNativeWheelSinkTabId = this.nativeWheelSink.tabId;
-    this.ownerWheelSequence.end();
-    this.pageWheelSequence.reset();
-    this.nativeWheelSink = null;
-    if (sync && !this.disposed) this.syncViews();
-    const completeVisualRestore = (): void => {
-      if (this.ownerWheelSequence.snapshot().active) return;
-      if (nativeSinkTabId && this.restoringNativeWheelSinkTabId === nativeSinkTabId) {
-        this.restoringNativeWheelSinkTabId = null;
-      }
-      if (wasFrozen && frozenTabId && this.freezeFrameTabId === frozenTabId) {
-        this.freezeFrameActive = false;
-        this.freezeFrameTabId = null;
-        this.sendFreezeFrame(frozenTabId, false, this.freezeFrameStore.frameFor(frozenTabId));
-      }
-      if (this.freezeCaptureAfterSequence) {
-        this.freezeCaptureAfterSequence = false;
-        if (sync && !this.disposed && this.viewport.surface === "native") {
-          this.refreshFreezeFrame();
-        }
-      }
-    };
-
-    if (nativeSinkTabId) this.tabs.get(nativeSinkTabId)?.canvasSinkViewport.restore();
-    completeVisualRestore();
-  }
-
-  private activateFreezeFrame(tabId: string): void {
-    if (this.freezeFrameActive && this.freezeFrameTabId === tabId) return;
-    this.freezeFrameActive = true;
-    this.freezeFrameTabId = tabId;
-    this.sendFreezeFrame(tabId, true, this.freezeFrameStore.frameFor(tabId));
-  }
-
-  private refreshFreezeFrame(): void {
-    if (this.disposed || !this.visible || this.viewport.surface !== "native" || this.activeTabId === null) return;
-    const tab = this.tabs.get(this.activeTabId);
-    if (!tab || tab.view.webContents.isDestroyed()) return;
-    if (this.freezeCapturePromise) {
-      this.freezeCaptureQueued = true;
-      return;
-    }
-    const token = this.freezeFrameStore.beginCapture(tab.id);
-    const contents = tab.view.webContents;
-    const capture = (async (): Promise<void> => {
-      try {
-        const image = await contents.capturePage(undefined, { stayHidden: true, stayAwake: true });
-        const dataUrl = encodeBrowserCanvasFreezeFrame(image);
-        if (!dataUrl) {
-          this.freezeFrameStore.failCapture(token);
-          return;
-        }
-        const frame = this.freezeFrameStore.commitCapture(token, dataUrl);
-        if (!frame) return;
-        const active = this.freezeFrameActive && this.freezeFrameTabId === frame.tabId;
-        this.sendFreezeFrame(frame.tabId, active, frame.dataUrl);
-      } catch {
-        this.freezeFrameStore.failCapture(token);
-      }
-    })();
-    this.freezeCapturePromise = capture;
-    void capture.finally(() => {
-      if (this.freezeCapturePromise === capture) this.freezeCapturePromise = null;
-      if (!this.freezeCaptureQueued) return;
-      this.freezeCaptureQueued = false;
-      this.refreshFreezeFrame();
-    });
-  }
-
-  private sendFreezeFrame(tabId: string, active: boolean, dataUrl: string | null): void {
-    const owner = this.getOwner();
-    if (!owner || owner.isDestroyed()) return;
-    const payload = {
-      tabId,
-      generation: ++this.freezeFrameEventGeneration,
-      active,
-      dataUrl
-    } satisfies BrowserCanvasFreezeFrameEvent;
-    owner.webContents.send(IPC.browserCanvasFreezeFrame, payload);
-  }
-
-  private relayFreezePointerFromOwner(
-    event: Electron.Event,
-    mouse: Electron.MouseInputEvent
-  ): boolean {
-    const relay = this.freezePointerRelay;
-    if (relay) {
-      if (
-        mouse.type !== "mouseMove"
-        && mouse.type !== "mouseUp"
-        && mouse.type !== "mouseLeave"
-        && mouse.type !== "contextMenu"
-      ) {
-        return false;
-      }
-      event.preventDefault();
-      relay.lastClient = { x: mouse.x, y: mouse.y };
-      if (mouse.type === "mouseLeave") {
-        this.cancelFreezePointerRelay();
-        this.endOwnerWheelSequence("freeze-pointer-left");
-        return true;
-      }
-      this.sendFreezePointerInput(relay.tabId, mouse, relay.button, relay.clickCount);
-      if (mouse.type === "mouseUp" && mouse.button === relay.button) {
-        this.freezePointerRelay = null;
-        this.endOwnerWheelSequence("freeze-pointer-ended");
-      }
-      return true;
-    }
-    if (
-      this.canvasNavigationActive
-      || (this.canvasNavigationInput?.active ?? false)
-      || this.rendererCanvasGestureActive
-      || this.canvasDragTabId !== null
-    ) {
-      return false;
-    }
-    if (!this.freezeFrameActive || this.freezeFrameTabId === null || !this.pointInsideViewport(mouse)) {
-      return false;
-    }
-    if (mouse.type === "contextMenu") {
-      event.preventDefault();
-      this.sendFreezePointerInput(this.freezeFrameTabId, mouse, mouse.button ?? "right", mouse.clickCount ?? 1);
-      return true;
-    }
-    if (mouse.type !== "mouseDown" || mouse.button === undefined) return false;
-    const tab = this.tabs.get(this.freezeFrameTabId);
-    if (!tab || tab.view.webContents.isDestroyed()) return false;
-    event.preventDefault();
-    const clickCount = Math.max(1, mouse.clickCount ?? 1);
-    tab.view.webContents.focus();
-    this.freezePointerRelay = {
-      tabId: tab.id,
-      button: mouse.button,
-      clickCount,
-      lastClient: { x: mouse.x, y: mouse.y }
-    };
-    this.sendFreezePointerInput(tab.id, mouse, mouse.button, clickCount);
-    return true;
-  }
-
-  private sendFreezePointerInput(
-    tabId: string,
-    mouse: Electron.MouseInputEvent,
-    button: NonNullable<Electron.MouseInputEvent["button"]>,
-    clickCount: number
-  ): void {
-    const tab = this.tabs.get(tabId);
-    if (!tab || tab.view.webContents.isDestroyed()) return;
-    tab.view.webContents.sendInputEvent({
-      type: mouse.type,
-      x: Math.round(mouse.x - this.viewport.x),
-      y: Math.round(mouse.y - this.viewport.y),
-      button,
-      clickCount,
-      modifiers: mouse.modifiers
-    });
-  }
-
-  private cancelFreezePointerRelay(): void {
-    const relay = this.freezePointerRelay;
-    if (!relay) return;
-    this.freezePointerRelay = null;
-    const tab = this.tabs.get(relay.tabId);
-    if (tab && !tab.view.webContents.isDestroyed()) {
-      tab.view.webContents.sendInputEvent({
-        type: "mouseUp",
-        x: Math.round(relay.lastClient.x - this.viewport.x),
-        y: Math.round(relay.lastClient.y - this.viewport.y),
-        button: relay.button,
-        clickCount: relay.clickCount
-      });
-    }
-  }
-
-  private relayNativeWheelSinkPointerFromBrowser(
-    event: Electron.Event,
-    mouse: Electron.MouseInputEvent,
-    owner: BrowserWindow,
-    tab: BrowserTab
-  ): boolean {
-    const relay = this.nativeWheelSinkPointerRelay;
-    if (relay?.tabId === tab.id) {
-      if (relay.target === "browser") {
-        if (mouse.type === "mouseUp" && mouse.button === relay.button) {
-          this.nativeWheelSinkPointerRelay = null;
-        }
-        return false;
-      }
-      if (!nativeWheelSinkPointerEvent(mouse)) return false;
-      event.preventDefault();
-      const point = this.ownerPointerClientPoint(owner, relay.lastClient, mouse);
-      relay.lastClient = point;
-      this.sendNativeWheelSinkPointerToOwner(owner, mouse, relay, point);
-      if (mouse.type === "mouseUp" && mouse.button === relay.button) {
-        this.nativeWheelSinkPointerRelay = null;
-      }
-      return true;
-    }
-
-    const sink = this.nativeWheelSink;
-    if (
-      !sink
-      || sink.tabId !== tab.id
-      || (mouse.type !== "mouseDown" && mouse.type !== "contextMenu")
-      || mouse.button === undefined
-    ) return false;
-
-    event.preventDefault();
-    const point = this.ownerPointerClientPoint(owner, sink.pointer, mouse);
-    this.endOwnerWheelSequence("native-wheel-sink-pointer");
-    const target = this.viewport.surface === "native" && this.pointInsideViewport(point)
-      ? "browser"
-      : "owner";
-    const nextRelay: BrowserNativeWheelSinkPointerRelay = {
-      tabId: tab.id,
-      target,
-      button: mouse.button,
-      clickCount: Math.max(1, mouse.clickCount ?? 1),
-      lastClient: point
-    };
-    if (mouse.type === "mouseDown") this.nativeWheelSinkPointerRelay = nextRelay;
-    if (target === "browser") {
-      this.sendNativeWheelSinkPointerToBrowser(tab, mouse, nextRelay, point);
-    } else {
-      this.sendNativeWheelSinkPointerToOwner(owner, mouse, nextRelay, point);
-    }
-    return true;
-  }
-
-  private relayNativeWheelSinkPointerFromOwner(
-    event: Electron.Event,
-    mouse: Electron.MouseInputEvent,
-    owner: BrowserWindow
-  ): boolean {
-    const relay = this.nativeWheelSinkPointerRelay;
-    if (!relay || !nativeWheelSinkPointerEvent(mouse)) return false;
-    const point = this.ownerPointerClientPoint(owner, relay.lastClient, mouse);
-    relay.lastClient = point;
-    if (relay.target === "owner") {
-      if (mouse.type === "mouseUp" && mouse.button === relay.button) {
-        this.nativeWheelSinkPointerRelay = null;
-      }
-      return false;
-    }
-    event.preventDefault();
-    const tab = this.tabs.get(relay.tabId);
-    if (tab && !tab.view.webContents.isDestroyed()) {
-      this.sendNativeWheelSinkPointerToBrowser(tab, mouse, relay, point);
-    }
-    if (mouse.type === "mouseUp" && mouse.button === relay.button) {
-      this.nativeWheelSinkPointerRelay = null;
-    }
-    return true;
-  }
-
-  private sendNativeWheelSinkPointerToBrowser(
-    tab: BrowserTab,
-    mouse: Electron.MouseInputEvent,
-    relay: BrowserNativeWheelSinkPointerRelay,
-    point: { x: number; y: number }
-  ): void {
-    tab.view.webContents.sendInputEvent({
-      type: mouse.type,
-      x: Math.round(point.x - this.viewport.x),
-      y: Math.round(point.y - this.viewport.y),
-      button: relay.button,
-      clickCount: relay.clickCount,
-      modifiers: mouse.modifiers
-    });
-  }
-
-  private sendNativeWheelSinkPointerToOwner(
-    owner: BrowserWindow,
-    mouse: Electron.MouseInputEvent,
-    relay: BrowserNativeWheelSinkPointerRelay,
-    point: { x: number; y: number }
-  ): void {
-    owner.webContents.sendInputEvent({
-      type: mouse.type,
-      x: Math.round(point.x),
-      y: Math.round(point.y),
-      button: relay.button,
-      clickCount: relay.clickCount,
-      modifiers: mouse.modifiers
-    });
-  }
-
-  private cancelNativeWheelSinkPointerRelay(): void {
-    const relay = this.nativeWheelSinkPointerRelay;
-    if (!relay) return;
-    this.nativeWheelSinkPointerRelay = null;
-    const owner = this.getOwner();
-    if (!owner || owner.isDestroyed()) return;
-    const mouseUp: Electron.MouseInputEvent = {
-      type: "mouseUp",
-      x: relay.lastClient.x,
-      y: relay.lastClient.y,
-      button: relay.button,
-      clickCount: relay.clickCount,
-      modifiers: []
-    };
-    if (relay.target === "browser") {
-      const tab = this.tabs.get(relay.tabId);
-      if (tab && !tab.view.webContents.isDestroyed()) {
-        this.sendNativeWheelSinkPointerToBrowser(tab, mouseUp, relay, relay.lastClient);
-      }
-    } else {
-      this.sendNativeWheelSinkPointerToOwner(owner, mouseUp, relay, relay.lastClient);
-    }
-  }
-
-  private ownerPointerClientPoint(
-    owner: BrowserWindow,
-    fallback: { x: number; y: number },
-    mouse?: Electron.MouseInputEvent
-  ): { x: number; y: number } {
-    const globalX = mouse?.globalX;
-    const globalY = mouse?.globalY;
-    const pointer = typeof globalX === "number" && Number.isFinite(globalX)
-      && typeof globalY === "number" && Number.isFinite(globalY)
-      ? { x: globalX, y: globalY }
-      : screen.getCursorScreenPoint();
-    const content = owner.getContentBounds();
-    const point = { x: pointer.x - content.x, y: pointer.y - content.y };
-    return point.x >= 0 && point.y >= 0 && point.x < content.width && point.y < content.height
-      ? point
-      : { ...fallback };
-  }
-
-  private pointInsideViewport(point: { x: number; y: number }): boolean {
-    return point.x >= this.viewport.x
-      && point.y >= this.viewport.y
-      && point.x < this.viewport.x + this.viewport.width
-      && point.y < this.viewport.y + this.viewport.height;
   }
 
   private syncViews(): void {
@@ -1570,16 +1026,13 @@ export class BrowserService {
       return;
     }
 
-    if (this.ownerWheelSequence.shouldFreeze(visibleRectangle)) {
-      this.activateFreezeFrame(active.id);
+    const canvasSurface = this.canvasGestures.surfaceDecision(active.id, visibleRectangle, content);
+    if (canvasSurface.kind !== "normal") {
       if (this.presenceWindow && !this.presenceWindow.isDestroyed()) this.presenceWindow.hide();
-      const sinkLayout = this.nativeWheelSink?.tabId === active.id
-        ? browserCanvasNativeWheelSinkLayout(this.nativeWheelSink, content)
-        : null;
-      if (sinkLayout) {
+      if (canvasSurface.kind === "sink") {
         this.mountClipTab(owner, active);
-        this.clipView.setBounds(sinkLayout.clip);
-        active.view.setBounds(sinkLayout.view);
+        this.clipView.setBounds(canvasSurface.layout.clip);
+        active.view.setBounds(canvasSurface.layout.view);
         active.view.setVisible(true);
         this.clipView.setVisible(true);
       } else {
@@ -1634,29 +1087,6 @@ export class BrowserService {
     if (Math.abs(contents.getZoomFactor() - pageScale) > 0.001) contents.setZoomFactor(pageScale);
   }
 
-  private browserWheelClientPoint(
-    tabId: string,
-    owner: BrowserWindow,
-    input: unknown
-  ): { x: number; y: number } {
-    const contentBounds = owner.getContentBounds();
-    const eventPoint = browserPageWheelClientPoint(input, {
-      ownerScreenBounds: contentBounds,
-      viewport: this.viewport
-    });
-    if (eventPoint) return eventPoint;
-    const nativePoint = this.browserWheelPoint;
-    if (
-      nativePoint?.tabId === tabId
-      && this.now() - nativePoint.observedAt < BROWSER_CANVAS_WHEEL_IDLE_MS
-    ) return { ...nativePoint.point };
-    const pointer = screen.getCursorScreenPoint();
-    return {
-      x: pointer.x - contentBounds.x,
-      y: pointer.y - contentBounds.y
-    };
-  }
-
   private hideClipView(): void {
     this.pointerTabId = null;
     for (const tab of this.tabs.values()) {
@@ -1675,51 +1105,20 @@ export class BrowserService {
     owner.on("unmaximize", sync);
     owner.on("show", sync);
     owner.on("hide", () => {
-      this.endOwnerWheelSequence("owner-hidden", false);
+      this.canvasGestures.endSequence("owner-hidden", false);
       sync();
     });
-    owner.on("blur", () => this.endOwnerWheelSequence("owner-blurred"));
+    owner.on("blur", () => this.canvasGestures.endSequence("owner-blurred"));
     owner.webContents.on("before-mouse-event", (event, mouse) => {
       if (mouse.type === "mouseWheel") {
-        this.beginOwnerWheelSequence({ x: mouse.x, y: mouse.y }, "native-before-mouse");
+        this.canvasGestures.beginOwnerSequence({ x: mouse.x, y: mouse.y }, "native-before-mouse");
       }
-      if (this.relayNativeWheelSinkPointerFromOwner(event, mouse, owner)) return;
-      if (this.relayFreezePointerFromOwner(event, mouse)) return;
-      this.relayNativeCanvasDragFromOwner(owner, event, mouse);
+      this.canvasPointers.handleOwnerMouse(event, mouse, owner);
     });
     owner.once("closed", () => {
-      this.endOwnerWheelSequence("owner-closed", false);
+      this.canvasGestures.endSequence("owner-closed", false);
       this.destroyPresenceWindow();
     });
-  }
-
-  private relayNativeCanvasDragFromOwner(
-    owner: BrowserWindow,
-    event: Electron.Event,
-    mouse: Electron.MouseInputEvent
-  ): void {
-    const tabId = this.canvasDragTabId;
-    if (tabId === null) return;
-    const type = mouse.type === "mouseMove"
-      ? "move"
-      : mouse.type === "mouseUp" && mouse.button === "left"
-        ? "up"
-        : mouse.type === "mouseLeave"
-          ? "cancel"
-          : null;
-    if (type === null) return;
-    if (type === "up" || type === "cancel") {
-      this.canvasDragTabId = null;
-      this.syncCanvasCursors();
-    }
-    event.preventDefault();
-    const payload = {
-      tabId,
-      type,
-      clientX: mouse.x,
-      clientY: mouse.y
-    } satisfies BrowserCanvasNavigationPointerEvent;
-    owner.webContents.send(IPC.browserCanvasNavigationPointer, payload);
   }
 
   private syncPresenceOverlay(
@@ -1914,21 +1313,6 @@ export class BrowserService {
     const owner = this.getOwner();
     if (owner && !owner.isDestroyed()) owner.webContents.send(IPC.browserActivity, { event });
   }
-}
-
-function pageWheelGeneration(value: unknown): number | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const generation = Reflect.get(value, "generation");
-  return typeof generation === "number" && Number.isInteger(generation) && generation > 0
-    ? generation
-    : null;
-}
-
-function nativeWheelSinkPointerEvent(mouse: Electron.MouseInputEvent): boolean {
-  return mouse.type === "mouseDown"
-    || mouse.type === "mouseMove"
-    || mouse.type === "mouseUp"
-    || mouse.type === "contextMenu";
 }
 
 function downloadStatus(state: string): BrowserDownloadStatus {

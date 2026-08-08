@@ -4,11 +4,10 @@ import type {
   Point,
   Size
 } from "../../../shared/contracts.ts";
+import { BROWSER_CANVAS_WHEEL_IDLE_MS } from "./BrowserCanvasFreeze.ts";
 
 const MAX_WHEEL_DELTA = 1_200;
 const LINE_DELTA_CSS_PIXELS = 16;
-export const BROWSER_PAGE_WHEEL_IDLE_MS = 250;
-
 export type BrowserWheelOwner = "page" | "canvas";
 
 export interface BrowserWheelDecision {
@@ -29,10 +28,8 @@ export interface BrowserWheelOwnershipInput {
 export interface CanvasPageWheelInput {
   deltaX: number;
   deltaY: number;
-  altKey: boolean;
   ctrlKey: boolean;
   metaKey: boolean;
-  shiftKey: boolean;
 }
 
 export interface BrowserPageWheelPointContext {
@@ -57,7 +54,7 @@ export class BrowserPageWheelSequence {
   private lastWheelAt = 0;
 
   decide(requestedOwner: BrowserWheelOwner, now: number): BrowserWheelDecision {
-    if (this.owner !== null && now - this.lastWheelAt < BROWSER_PAGE_WHEEL_IDLE_MS) {
+    if (this.owner !== null && now - this.lastWheelAt < BROWSER_CANVAS_WHEEL_IDLE_MS) {
       this.lastWheelAt = now;
       return { generation: this.generation, owner: this.owner };
     }
@@ -71,7 +68,7 @@ export class BrowserPageWheelSequence {
     if (
       this.owner === null
       || generation !== this.generation
-      || now - this.lastWheelAt >= BROWSER_PAGE_WHEEL_IDLE_MS
+      || now - this.lastWheelAt >= BROWSER_CANVAS_WHEEL_IDLE_MS
     ) return null;
     this.lastWheelAt = now;
     return this.owner;
@@ -80,10 +77,6 @@ export class BrowserPageWheelSequence {
   reset(): void {
     this.owner = null;
     this.lastWheelAt = 0;
-  }
-
-  snapshot(): BrowserWheelDecision | null {
-    return this.owner === null ? null : { generation: this.generation, owner: this.owner };
   }
 }
 
@@ -107,14 +100,12 @@ export function toCanvasPageWheelInput(value: unknown): CanvasPageWheelInput | n
   const deltaMode = finiteNumber(value.deltaMode);
   const viewportWidth = finiteNumber(value.viewportWidth);
   const viewportHeight = finiteNumber(value.viewportHeight);
-  const altKey = booleanValue(value.altKey);
   const ctrlKey = booleanValue(value.ctrlKey);
   const metaKey = booleanValue(value.metaKey);
-  const shiftKey = booleanValue(value.shiftKey);
   if (
     deltaX === null || deltaY === null || deltaMode === null
     || viewportWidth === null || viewportHeight === null
-    || altKey === null || ctrlKey === null || metaKey === null || shiftKey === null
+    || ctrlKey === null || metaKey === null
     || !Number.isInteger(deltaMode) || deltaMode < 0 || deltaMode > 2
     || viewportWidth <= 0 || viewportHeight <= 0
   ) return null;
@@ -124,7 +115,7 @@ export function toCanvasPageWheelInput(value: unknown): CanvasPageWheelInput | n
   const normalizedX = clampDelta(deltaX * scaleX);
   const normalizedY = clampDelta(deltaY * scaleY);
   if (normalizedX === 0 && normalizedY === 0) return null;
-  return { deltaX: normalizedX, deltaY: normalizedY, altKey, ctrlKey, metaKey, shiftKey };
+  return { deltaX: normalizedX, deltaY: normalizedY, ctrlKey, metaKey };
 }
 
 export function browserPageWheelClientPoint(

@@ -4,7 +4,7 @@ import {
   canvasWheelIntent,
   normalizeCanvasWheelDeltas,
   shouldCanvasOwnWheel
-} from "../src/renderer/src/features/workspace/canvasNavigation.ts";
+} from "../src/shared/canvasNavigation.ts";
 
 const settings = {
   invertCanvasWheel: false,

@@ -1,4 +1,4 @@
-import type { CanvasWheelCaptureMode } from "./contracts.ts";
+import type { CanvasWheelCaptureMode, ZoomSensitivity } from "./contracts.ts";
 
 export type CanvasNavigationPlatform = "darwin" | "other";
 
@@ -17,8 +17,32 @@ export interface ParsedCanvasNavigationBinding {
 
 export type CanvasNavigationModifier = "Ctrl" | "Alt" | "Shift" | "Meta";
 
+export interface CanvasWheelDeltas {
+  deltaX: number;
+  deltaY: number;
+}
+
+export type CanvasWheelIntent =
+  | { kind: "pan"; deltaX: number; deltaY: number }
+  | { kind: "zoom"; factor: number; source: "modifier" | "wheel" };
+
+export interface CanvasWheelIntentSettings {
+  invertCanvasWheel: boolean;
+  useScrollWheelToZoom: boolean;
+  zoomSensitivity: ZoomSensitivity;
+}
+
 const MODIFIER_ORDER: readonly CanvasNavigationModifier[] = ["Ctrl", "Alt", "Shift", "Meta"];
 const MODIFIER_SET = new Set<string>(MODIFIER_ORDER);
+const LINE_DELTA_PIXELS = 16;
+const MIN_MODIFIER_ZOOM_FACTOR = 0.75;
+const MAX_MODIFIER_ZOOM_FACTOR = 1.25;
+const WHEEL_ZOOM_BASE = 0.0012;
+export const ZOOM_SENSITIVITY_FACTORS: Record<ZoomSensitivity, number> = {
+  slow: 0.5,
+  normal: 1,
+  fast: 2
+};
 const NAMED_KEYS = new Set([
   "Home", "End", "PageUp", "PageDown", "Space", "Enter", "Escape", "Tab",
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Delete", "Insert", "Backspace"
@@ -74,28 +98,14 @@ export function parseCanvasNavigationBinding(value: unknown): ParsedCanvasNaviga
   };
 }
 
-export function normalizeCanvasNavigationBinding(
+export function normalizeCanvasOverrideBinding(
   value: unknown,
-  _platform: CanvasNavigationPlatform,
   actionShortcuts: readonly string[] = []
 ): string | null {
   const parsed = parseCanvasNavigationBinding(value);
   if (!parsed) return null;
   const canonical = formatCanvasNavigationBinding(parsed);
-  return actionShortcuts.some((shortcut) => canvasNavigationBindingConflicts(canonical, shortcut))
-    ? null
-    : canonical;
-}
-
-export function normalizeCanvasWheelBinding(
-  value: unknown,
-  _platform: CanvasNavigationPlatform,
-  actionShortcuts: readonly string[] = []
-): string | null {
-  const parsed = parseCanvasNavigationBinding(value);
-  if (!parsed) return null;
-  const canonical = formatCanvasNavigationBinding(parsed);
-  return actionShortcuts.some((shortcut) => canvasWheelBindingConflicts(canonical, shortcut))
+  return actionShortcuts.some((shortcut) => canvasOverrideBindingConflicts(canonical, shortcut))
     ? null
     : canonical;
 }
@@ -136,7 +146,7 @@ export function normalizeCanvasNavigationInputKey(key: string, code?: string): s
   return normalizeCanvasNavigationKey(key);
 }
 
-export function canvasNavigationBindingConflicts(binding: string, shortcut: string): boolean {
+export function canvasOverrideBindingConflicts(binding: string, shortcut: string): boolean {
   const parsedBinding = parseCanvasNavigationBinding(binding);
   const parsedShortcut = parseShortcut(shortcut);
   if (!parsedBinding || !parsedShortcut) return false;
@@ -145,10 +155,68 @@ export function canvasNavigationBindingConflicts(binding: string, shortcut: stri
   return parsedBinding.key === parsedShortcut.key;
 }
 
-export function canvasWheelBindingConflicts(binding: string, shortcut: string): boolean {
-  const parsedBinding = parseCanvasNavigationBinding(binding);
-  if (!parsedBinding || parsedBinding.key === null) return false;
-  return canvasNavigationBindingConflicts(binding, shortcut);
+export function normalizeCanvasWheelDeltas(
+  deltaX: number,
+  deltaY: number,
+  deltaMode: number,
+  viewport: { width: number; height: number }
+): CanvasWheelDeltas {
+  const safeX = Number.isFinite(deltaX) ? deltaX : 0;
+  const safeY = Number.isFinite(deltaY) ? deltaY : 0;
+  if (deltaMode === 1) {
+    return { deltaX: safeX * LINE_DELTA_PIXELS, deltaY: safeY * LINE_DELTA_PIXELS };
+  }
+  if (deltaMode === 2) {
+    return {
+      deltaX: safeX * Math.max(0, viewport.width),
+      deltaY: safeY * Math.max(0, viewport.height)
+    };
+  }
+  return { deltaX: safeX, deltaY: safeY };
+}
+
+export function canvasWheelIntent(
+  deltas: CanvasWheelDeltas,
+  modifiers: { ctrlKey: boolean; metaKey: boolean },
+  settings: CanvasWheelIntentSettings
+): CanvasWheelIntent {
+  if (modifiers.ctrlKey || modifiers.metaKey) {
+    return {
+      kind: "zoom",
+      factor: clamp(Math.exp(-deltas.deltaY / 100), MIN_MODIFIER_ZOOM_FACTOR, MAX_MODIFIER_ZOOM_FACTOR),
+      source: "modifier"
+    };
+  }
+  if (settings.useScrollWheelToZoom) {
+    const deltaY = settings.invertCanvasWheel ? -deltas.deltaY : deltas.deltaY;
+    return {
+      kind: "zoom",
+      factor: wheelZoomFactor(deltaY, settings.zoomSensitivity),
+      source: "wheel"
+    };
+  }
+  const multiplier = settings.invertCanvasWheel ? -1 : 1;
+  return {
+    kind: "pan",
+    deltaX: deltas.deltaX * multiplier,
+    deltaY: deltas.deltaY * multiplier
+  };
+}
+
+export function shouldCanvasOwnWheel(input: {
+  overFocusedWidget: boolean;
+  wheelOverrideActive: boolean;
+  canvasOverrideActive: boolean;
+  captureCanvasWheelOverWidgets: boolean;
+}): boolean {
+  return !input.overFocusedWidget
+    || input.wheelOverrideActive
+    || input.canvasOverrideActive
+    || input.captureCanvasWheelOverWidgets;
+}
+
+export function wheelZoomFactor(deltaY: number, sensitivity: ZoomSensitivity): number {
+  return Math.exp(-deltaY * WHEEL_ZOOM_BASE * ZOOM_SENSITIVITY_FACTORS[sensitivity]);
 }
 
 export function canvasNavigationModifierFromKey(key: string): CanvasNavigationModifier | null {
@@ -187,4 +255,8 @@ function parseShortcut(shortcut: string): { modifiers: readonly CanvasNavigation
 
 function isCanvasNavigationModifier(value: string): value is CanvasNavigationModifier {
   return MODIFIER_SET.has(value);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }

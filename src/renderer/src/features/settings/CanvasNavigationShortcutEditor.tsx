@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { LocaleId } from "../../../../shared/contracts";
 import {
-  canvasNavigationBindingConflicts,
+  canvasOverrideBindingConflicts,
   canvasNavigationModifierFromKey,
-  canvasWheelBindingConflicts,
   formatCanvasNavigationBinding,
-  normalizeCanvasNavigationBinding,
   normalizeCanvasNavigationInputKey,
-  normalizeCanvasWheelBinding,
+  normalizeCanvasOverrideBinding,
   type CanvasNavigationModifier
 } from "../../../../shared/canvasNavigation";
 import { t } from "../../lib/i18n";
@@ -16,7 +14,6 @@ import { displayCanvasNavigationBinding } from "../../lib/shortcuts";
 interface CanvasNavigationShortcutEditorProps {
   open: boolean;
   locale: LocaleId;
-  mode: "wheel" | "navigation";
   label: string;
   binding: string | null;
   actionShortcuts: readonly string[];
@@ -28,7 +25,6 @@ interface CanvasNavigationShortcutEditorProps {
 export function CanvasNavigationShortcutEditor({
   open,
   locale,
-  mode,
   label,
   binding,
   actionShortcuts,
@@ -81,18 +77,14 @@ export function CanvasNavigationShortcutEditor({
   const save = async (key: string | null): Promise<void> => {
     if (commitInFlight.current) return;
     const candidate = formatCanvasNavigationBinding({ modifiers: [...modifiersRef.current], key });
-    const platform = isMacOS ? "darwin" : "other";
-    const normalized = mode === "wheel"
-      ? normalizeCanvasWheelBinding(candidate, platform)
-      : normalizeCanvasNavigationBinding(candidate, platform);
+    const normalized = normalizeCanvasOverrideBinding(candidate);
     if (!normalized) {
       modifiersRef.current.clear();
       setPreview(null);
-      setError(t(locale, mode === "wheel" ? "canvasWheelShortcutInvalid" : "canvasNavigationShortcutInvalid"));
+      setError(t(locale, "canvasOverrideShortcutInvalid"));
       return;
     }
-    const conflicts = mode === "wheel" ? canvasWheelBindingConflicts : canvasNavigationBindingConflicts;
-    if (actionShortcuts.some((shortcut) => conflicts(normalized, shortcut))) {
+    if (actionShortcuts.some((shortcut) => canvasOverrideBindingConflicts(normalized, shortcut))) {
       modifiersRef.current.clear();
       setPreview(null);
       setError(t(locale, "shortcutConflict"));
@@ -130,7 +122,7 @@ export function CanvasNavigationShortcutEditor({
     addEventModifiers(modifiersRef.current, event);
     const key = normalizeCanvasNavigationInputKey(event.key, event.code);
     if (!key || modifiersRef.current.size === 0) {
-      setError(t(locale, mode === "wheel" ? "canvasWheelShortcutInvalid" : "canvasNavigationShortcutInvalid"));
+      setError(t(locale, "canvasOverrideShortcutInvalid"));
       return;
     }
     setPreview(displayCanvasNavigationBinding(

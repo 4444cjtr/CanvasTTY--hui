@@ -377,10 +377,6 @@ export interface BrowserCanvasWheelEvent {
   deltaY: number;
   ctrlKey: boolean;
   metaKey: boolean;
-  altKey: boolean;
-  shiftKey: boolean;
-  wheelOverrideActive: boolean;
-  canvasOverrideActive: boolean;
 }
 
 export interface BrowserCanvasFreezeFrameEvent {

@@ -64,10 +64,8 @@ test("browser page wheel input validates, normalizes delta modes, and clamps bot
   }), {
     deltaX: 32,
     deltaY: -48,
-    altKey: true,
     ctrlKey: false,
-    metaKey: true,
-    shiftKey: false
+    metaKey: true
   });
   assert.deepEqual(toCanvasPageWheelInput({
     deltaX: 2,
@@ -82,10 +80,8 @@ test("browser page wheel input validates, normalizes delta modes, and clamps bot
   }), {
     deltaX: 1_200,
     deltaY: -1_200,
-    altKey: false,
     ctrlKey: true,
-    metaKey: false,
-    shiftKey: true
+    metaKey: false
   });
 });
 
@@ -103,10 +99,8 @@ test("browser page pixel wheel preserves DOM direction and modifiers", () => {
   }), {
     deltaX: -12,
     deltaY: 24,
-    altKey: false,
     ctrlKey: true,
-    metaKey: false,
-    shiftKey: true
+    metaKey: false
   });
 });
 
@@ -124,10 +118,8 @@ test("browser page wheel clamps pixel deltas on both axes", () => {
   }), {
     deltaX: 1_200,
     deltaY: -1_200,
-    altKey: false,
     ctrlKey: false,
-    metaKey: false,
-    shiftKey: false
+    metaKey: false
   });
 });
 

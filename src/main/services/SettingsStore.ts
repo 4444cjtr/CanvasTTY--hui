@@ -29,8 +29,7 @@ import {
 import {
   canvasNavigationPlatform,
   defaultCanvasWheelBinding,
-  normalizeCanvasNavigationBinding,
-  normalizeCanvasWheelBinding,
+  normalizeCanvasOverrideBinding,
   type CanvasNavigationPlatform
 } from "../../shared/canvasNavigation.ts";
 
@@ -178,9 +177,8 @@ export function normalizeSettings(
     : source.canvasNavigationOverride;
   const canvasNavigationOverride = navigationOverrideCandidate === null
     ? null
-    : normalizeCanvasNavigationBinding(
+    : normalizeCanvasOverrideBinding(
       navigationOverrideCandidate,
-      platform,
       Object.values(shortcuts)
     );
   const wheelCapture = normalizeCanvasWheelCapture(source, fallback, platform, Object.values(shortcuts));
@@ -269,7 +267,7 @@ function normalizeCanvasWheelCapture(
   const rawBinding = source.canvasWheelOverride;
   const normalizedSourceBinding = rawBinding === null || rawBinding === undefined
     ? null
-    : normalizeCanvasWheelBinding(rawBinding, platform, actionShortcuts);
+    : normalizeCanvasOverrideBinding(rawBinding, actionShortcuts);
   const invalidSourceBinding = hasBinding && rawBinding !== null && rawBinding !== undefined
     && normalizedSourceBinding === null;
 

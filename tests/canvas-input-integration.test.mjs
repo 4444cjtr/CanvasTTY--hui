@@ -6,6 +6,18 @@ const workspacePath = new URL(
   "../src/renderer/src/features/workspace/WorkspaceCanvas.tsx",
   import.meta.url
 );
+const wheelNavigationPath = new URL(
+  "../src/renderer/src/features/workspace/useCanvasWheelNavigation.ts",
+  import.meta.url
+);
+const pointerNavigationPath = new URL(
+  "../src/renderer/src/features/workspace/useCanvasPointerNavigation.ts",
+  import.meta.url
+);
+const browserPointerRouterPath = new URL(
+  "../src/main/services/browser/BrowserCanvasPointerRouter.ts",
+  import.meta.url
+);
 const terminalAdapterPath = new URL(
   "../src/renderer/src/features/terminal/terminalMouseCoordinates.ts",
   import.meta.url
@@ -32,11 +44,11 @@ const homeZonePath = new URL(
 );
 
 test("workspace decides wheel ownership in a non-passive capture listener", async () => {
-  const source = await readFile(workspacePath, "utf8");
+  const source = await readFile(wheelNavigationPath, "utf8");
   assert.match(source, /addEventListener\("wheel", handleWheel, \{ capture: true, passive: false \}\)/);
   assert.ok(source.indexOf("shouldCanvasOwnWheel") < source.indexOf("event.preventDefault()"));
-  assert.match(source, /cameraRef\.current = next;\s*onCameraChange\(next\)/);
-  assert.match(source, /flushWheelPan\(\);\s*zoomAt/);
+  assert.match(source, /flushPan\(\);\s*zoomAt/);
+  assert.match(source, /requestAnimationFrame\(flushPan\)/);
 });
 
 test("xterm skips coordinate wheel adaptation before the workspace consumes canvas-owned wheel", async () => {
@@ -75,29 +87,29 @@ test("only input-bearing home widgets opt into logical wheel focus", async () =>
 });
 
 test("native Browser override pointer capture precedes ordinary Browser focus", async () => {
-  const source = await readFile(browserServicePath, "utf8");
-  const navigation = source.indexOf("browserCanvasNavigationPointerType(");
-  const focus = source.indexOf('if (pointerType === "down") {', navigation);
-  assert.ok(navigation >= 0 && focus > navigation);
-  assert.match(source.slice(focus), /contents\.focus\(\);\s*this\.setInputFocused\(true\)/);
-  assert.match(source, /event\.preventDefault\(\);\s*owner\.webContents\.send\(IPC\.browserCanvasNavigationPointer/);
+  const [service, router] = await Promise.all([
+    readFile(browserServicePath, "utf8"),
+    readFile(browserPointerRouterPath, "utf8")
+  ]);
+  const routing = service.indexOf("this.canvasPointers.handleBrowserMouse");
+  const focus = service.indexOf('if (pointerType === "down") {', routing);
+  assert.ok(routing >= 0 && focus > routing);
+  assert.match(router, /browserCanvasNavigationPointerType\(/);
+  assert.match(router, /event\.preventDefault\(\);\s*this\.host\.sendNavigationPointer/);
+  assert.match(service.slice(focus), /contents\.focus\(\);\s*this\.setInputFocused\(true\)/);
 });
 
 test("canvas pan stays latched while crossing the native Browser boundary", async () => {
-  const [workspace, service, preload, ipc] = await Promise.all([
-    readFile(workspacePath, "utf8"),
-    readFile(browserServicePath, "utf8"),
+  const [pointerNavigation, preload, ipc] = await Promise.all([
+    readFile(pointerNavigationPath, "utf8"),
     readFile(preloadPath, "utf8"),
     readFile(ipcPath, "utf8")
   ]);
-  assert.match(workspace, /setPointerGestureActive\(true\)/);
-  assert.match(workspace, /setPointerGestureActive\(false\)/);
-  assert.match(workspace, /if \(panState\.current && event\.type !== "down"\) \{[\s\S]*?event\.type === "move"[\s\S]*?panTo\(event\.clientX, event\.clientY\)/);
+  assert.match(pointerNavigation, /setPointerGestureActive\(true\)/);
+  assert.match(pointerNavigation, /setPointerGestureActive\(false\)/);
+  assert.match(pointerNavigation, /if \(panState\.current && event\.type !== "down"\) \{[\s\S]*?event\.type === "move"[\s\S]*?panTo\(event\.clientX, event\.clientY\)/);
   assert.match(preload, /setPointerGestureActive: \(active: boolean\) => ipcRenderer\.send/);
   assert.match(ipc, /browser\.setRendererCanvasGestureActive\(active\)/);
-  assert.match(service, /this\.canvasDragTabId === tab\.id \|\| this\.rendererCanvasGestureActive/);
-  assert.match(service, /browserCanvasNavigationCursor\([\s\S]*?this\.rendererCanvasGestureActive/);
-  assert.match(service, /owner\.webContents\.on\("before-mouse-event"[\s\S]*?relayNativeCanvasDragFromOwner/);
 });
 
 test("navigation shortcut editor suspends the active binding and captures both chord forms", async () => {
@@ -113,8 +125,8 @@ test("navigation shortcut editor suspends the active binding and captures both c
   assert.match(settings, /value=\{settings\.canvasWheelCaptureMode\}/);
   assert.match(settings, /\[\["off", "Off"\], \["always", "On"\], \["key", "Key"\]\]/);
   assert.match(settings, /settings\.canvasWheelCaptureMode === "key"/);
-  assert.match(settings, /mode="wheel"[\s\S]*binding=\{settings\.canvasWheelOverride\}/);
+  assert.match(settings, /binding=\{settings\.canvasWheelOverride\}/);
   assert.match(settings, /allowDisable=\{false\}/);
-  assert.match(settings, /mode="navigation"[\s\S]*binding=\{settings\.canvasNavigationOverride\}/);
+  assert.match(settings, /binding=\{settings\.canvasNavigationOverride\}/);
   assert.match(settings, /canvasOverrideBindingsMatch/);
 });

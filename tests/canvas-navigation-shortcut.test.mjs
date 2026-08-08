@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  canvasNavigationBindingConflicts,
   activeCanvasWheelBinding,
-  canvasWheelBindingConflicts,
+  canvasOverrideBindingConflicts,
   isCanvasNavigationBindingActive,
-  normalizeCanvasNavigationBinding,
-  normalizeCanvasWheelBinding,
+  normalizeCanvasOverrideBinding,
   normalizeCanvasNavigationInputKey,
   parseCanvasNavigationBinding,
   shouldCaptureWidgetWheel
@@ -33,17 +31,10 @@ test("wheel capture modes keep Off, On, Key, and full navigation ownership disti
 });
 
 test("normalizes order and accepts the platform zoom modifier by itself", () => {
-  assert.equal(normalizeCanvasNavigationBinding("Alt+Ctrl", "darwin"), "Ctrl+Alt");
-  assert.equal(normalizeCanvasNavigationBinding("Meta", "darwin"), "Meta");
-  assert.equal(normalizeCanvasNavigationBinding("Ctrl", "other"), "Ctrl");
-  assert.equal(normalizeCanvasNavigationBinding("Ctrl+Alt", "other"), "Ctrl+Alt");
-});
-
-test("wheel override accepts the platform zoom modifier by itself", () => {
-  assert.equal(normalizeCanvasWheelBinding("Meta", "darwin"), "Meta");
-  assert.equal(normalizeCanvasWheelBinding("Ctrl", "other"), "Ctrl");
-  assert.equal(normalizeCanvasNavigationBinding("Meta", "darwin"), "Meta");
-  assert.equal(normalizeCanvasNavigationBinding("Ctrl", "other"), "Ctrl");
+  assert.equal(normalizeCanvasOverrideBinding("Alt+Ctrl"), "Ctrl+Alt");
+  assert.equal(normalizeCanvasOverrideBinding("Meta"), "Meta");
+  assert.equal(normalizeCanvasOverrideBinding("Ctrl"), "Ctrl");
+  assert.equal(normalizeCanvasOverrideBinding("Ctrl+Alt"), "Ctrl+Alt");
 });
 
 test("extra modifiers keep a configured override active", () => {
@@ -63,19 +54,13 @@ test("extra modifiers keep a configured override active", () => {
 });
 
 test("modifier-only overrides coexist with action shortcuts while ordinary chords conflict", () => {
-  assert.equal(canvasNavigationBindingConflicts("Alt", "Alt+R"), false);
-  assert.equal(canvasNavigationBindingConflicts("Alt+K", "Ctrl+Alt+K"), true);
-  assert.equal(canvasNavigationBindingConflicts("Alt+K", "Alt+R"), false);
-  assert.equal(normalizeCanvasNavigationBinding("Alt", "darwin", ["Alt+R"]), "Alt");
-  assert.equal(normalizeCanvasNavigationBinding("Meta+H", "darwin", ["Meta+H"]), null);
-});
-
-test("modifier-only wheel overrides coexist with keyboard shortcuts", () => {
-  assert.equal(canvasWheelBindingConflicts("Meta", "Meta+H"), false);
-  assert.equal(canvasWheelBindingConflicts("Ctrl", "Ctrl+R"), false);
-  assert.equal(canvasWheelBindingConflicts("Meta+Space", "Meta+Space"), true);
-  assert.equal(normalizeCanvasWheelBinding("Meta", "darwin", ["Meta+H"]), "Meta");
-  assert.equal(normalizeCanvasWheelBinding("Meta+Space", "darwin", ["Meta+Space"]), null);
+  assert.equal(canvasOverrideBindingConflicts("Alt", "Alt+R"), false);
+  assert.equal(canvasOverrideBindingConflicts("Alt+K", "Ctrl+Alt+K"), true);
+  assert.equal(canvasOverrideBindingConflicts("Alt+K", "Alt+R"), false);
+  assert.equal(canvasOverrideBindingConflicts("Meta", "Meta+H"), false);
+  assert.equal(canvasOverrideBindingConflicts("Meta+Space", "Meta+Space"), true);
+  assert.equal(normalizeCanvasOverrideBinding("Alt", ["Alt+R"]), "Alt");
+  assert.equal(normalizeCanvasOverrideBinding("Meta+H", ["Meta+H"]), null);
 });
 
 test("normalizes ordinary chord keys by physical code across keyboard layouts", () => {
