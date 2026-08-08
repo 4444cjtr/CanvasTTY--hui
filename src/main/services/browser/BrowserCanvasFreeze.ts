@@ -7,7 +7,7 @@ export const BROWSER_CANVAS_FREEZE_MAX_BYTES = Math.floor(1.5 * 1024 * 1024);
 
 export interface BrowserCanvasRectangle extends Point, Size {}
 
-export interface BrowserCanvasWheelSequenceSnapshot {
+interface BrowserCanvasWheelSequenceState {
   active: boolean;
   collisionLatched: boolean;
   lastWheelAt: number;
@@ -37,7 +37,7 @@ export interface BrowserCanvasFreezeImage {
 }
 
 export class BrowserCanvasWheelSequence {
-  private state: BrowserCanvasWheelSequenceSnapshot = {
+  private state: BrowserCanvasWheelSequenceState = {
     active: false,
     collisionLatched: false,
     lastWheelAt: 0,
@@ -80,13 +80,6 @@ export class BrowserCanvasWheelSequence {
       pointer: null
     };
     return true;
-  }
-
-  snapshot(): BrowserCanvasWheelSequenceSnapshot {
-    return {
-      ...this.state,
-      pointer: this.state.pointer ? { ...this.state.pointer } : null
-    };
   }
 }
 

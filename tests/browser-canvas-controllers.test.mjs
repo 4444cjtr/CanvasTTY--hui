@@ -108,11 +108,11 @@ test("BrowserCanvasGestureController latches focus-aware page ownership until re
     { generation: 1, owner: "page" }
   );
 
-  harness.controller.endSequence("test-reset", false);
+  harness.controller.endSequence(false);
   harness.setNow(1_400);
   const next = harness.controller.decidePageWheel(harness.contents, wheelInput({ metaKey: true }));
   assert.deepEqual(next, { generation: 2, owner: "canvas" });
-  harness.controller.endSequence("test-cleanup", false);
+  harness.controller.endSequence(false);
 });
 
 test("BrowserCanvasGestureController owns freeze, sink, relay, and restoration order", () => {
@@ -140,7 +140,7 @@ test("BrowserCanvasGestureController owns freeze, sink, relay, and restoration o
   });
 
   harness.trace.length = 0;
-  harness.controller.endSequence("test-complete");
+  harness.controller.endSequence();
   assert.deepEqual(harness.trace.slice(0, 4).map((entry) => Array.isArray(entry) ? entry[0] : entry), [
     "pointer:cancel",
     "surface:sync",
@@ -158,7 +158,7 @@ test("BrowserCanvasGestureController preserves a canvas sequence across placehol
   harness.setViewport({ surface: "placeholder" });
   harness.controller.handlePageWheel(harness.contents, { ...wheelInput(), generation: decision.generation });
   assert.ok(harness.trace.some((entry) => Array.isArray(entry) && entry[0] === "wheel"));
-  harness.controller.endSequence("test-cleanup", false);
+  harness.controller.endSequence(false);
 });
 
 function pointerHarness() {
@@ -195,7 +195,7 @@ function pointerHarness() {
     isFreezeActive: () => freezeActive,
     isNavigationOverrideActive: () => navigationOverrideActive,
     getCursorScreenPoint: () => ({ x: 340, y: 300 }),
-    endWheelSequence: (reason) => navigationEvents.push({ reason }),
+    endWheelSequence: () => navigationEvents.push({ sequenceEnded: true }),
     sendNavigationPointer: (payload) => navigationEvents.push(payload)
   });
   return {

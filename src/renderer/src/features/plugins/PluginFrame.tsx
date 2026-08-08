@@ -157,11 +157,7 @@ export function PluginFrame({
   }, [context]);
 
   useEffect(() => {
-    postToFrame(frame.current, {
-      source: "canvastty-host",
-      type: "canvas-input-policy",
-      captureWheel: captureCanvasWheelOverWidgets
-    });
+    postCanvasInputPolicy(frame.current, captureCanvasWheelOverWidgets);
   }, [captureCanvasWheelOverWidgets]);
 
   return (
@@ -174,11 +170,7 @@ export function PluginFrame({
       referrerPolicy="no-referrer"
       onLoad={() => {
         postToFrame(frame.current, { source: "canvastty-host", type: "context", value: context });
-        postToFrame(frame.current, {
-          source: "canvastty-host",
-          type: "canvas-input-policy",
-          captureWheel: captureCanvasWheelOverWidgets
-        });
+        postCanvasInputPolicy(frame.current, captureCanvasWheelOverWidgets);
       }}
     />
   );
@@ -297,6 +289,10 @@ function requirePermission(plugin: InstalledPlugin, permission: PluginPermission
 
 function postToFrame(frame: HTMLIFrameElement | null, message: object): void {
   frame?.contentWindow?.postMessage(message, "*");
+}
+
+function postCanvasInputPolicy(frame: HTMLIFrameElement | null, captureWheel: boolean): void {
+  postToFrame(frame, { source: "canvastty-host", type: "canvas-input-policy", captureWheel });
 }
 
 function stringParam(value: unknown, label: string): string {

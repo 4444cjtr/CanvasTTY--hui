@@ -4,6 +4,7 @@ import type {
   Point,
   Size
 } from "../../../shared/contracts.ts";
+import { shouldCanvasOwnWheel } from "../../../shared/canvasNavigation.ts";
 import { BROWSER_CANVAS_WHEEL_IDLE_MS } from "./BrowserCanvasFreeze.ts";
 
 const MAX_WHEEL_DELTA = 1_200;
@@ -40,12 +41,13 @@ export interface BrowserPageWheelPointContext {
 export type BrowserCanvasNavigationPointerType = "down" | "move" | "up" | "cancel";
 
 export function browserWheelOwner(input: BrowserWheelOwnershipInput): BrowserWheelOwner {
-  if (input.surface !== "native") return "canvas";
-  if (input.ctrlKey || input.metaKey) return "canvas";
-  if (input.canvasOverrideActive) return "canvas";
-  if (input.captureMode === "always") return "canvas";
-  if (input.captureMode === "key" && input.wheelOverrideActive) return "canvas";
-  return input.focused ? "page" : "canvas";
+  return shouldCanvasOwnWheel({
+    overFocusedWidget: input.focused,
+    captureMode: input.captureMode,
+    wheelOverrideActive: input.wheelOverrideActive,
+    navigationOverrideActive: input.canvasOverrideActive,
+    forceCanvas: input.surface !== "native" || input.ctrlKey || input.metaKey
+  }) ? "canvas" : "page";
 }
 
 export class BrowserPageWheelSequence {

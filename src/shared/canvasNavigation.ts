@@ -10,6 +10,14 @@ export interface CanvasNavigationKeyState {
   pressedKeys?: ReadonlySet<string>;
 }
 
+export interface CanvasWheelOwnershipInput {
+  overFocusedWidget: boolean;
+  captureMode: CanvasWheelCaptureMode;
+  wheelOverrideActive: boolean;
+  navigationOverrideActive: boolean;
+  forceCanvas?: boolean;
+}
+
 export interface ParsedCanvasNavigationBinding {
   modifiers: readonly CanvasNavigationModifier[];
   key: string | null;
@@ -63,16 +71,6 @@ export function activeCanvasWheelBinding(
   return mode === "key" ? binding : null;
 }
 
-export function shouldCaptureWidgetWheel(
-  mode: CanvasWheelCaptureMode,
-  wheelOverrideActive: boolean,
-  navigationOverrideActive: boolean
-): boolean {
-  return mode === "always"
-    || (mode === "key" && wheelOverrideActive)
-    || navigationOverrideActive;
-}
-
 export function parseCanvasNavigationBinding(value: unknown): ParsedCanvasNavigationBinding | null {
   if (typeof value !== "string" || value.length === 0 || value.length > 40) return null;
   const parts = value.split("+");
@@ -121,7 +119,7 @@ export function isCanvasNavigationBindingActive(
   if (binding === null) return false;
   const parsed = parseCanvasNavigationBinding(binding);
   if (!parsed) return false;
-  if (parsed.modifiers.some((modifier) => !modifierIsActive(state, modifier))) return false;
+  if (parsed.modifiers.some((modifier) => !isCanvasNavigationModifierActive(state, modifier))) return false;
   return parsed.key === null || state.pressedKeys?.has(parsed.key) === true;
 }
 
@@ -203,16 +201,12 @@ export function canvasWheelIntent(
   };
 }
 
-export function shouldCanvasOwnWheel(input: {
-  overFocusedWidget: boolean;
-  wheelOverrideActive: boolean;
-  canvasOverrideActive: boolean;
-  captureCanvasWheelOverWidgets: boolean;
-}): boolean {
-  return !input.overFocusedWidget
-    || input.wheelOverrideActive
-    || input.canvasOverrideActive
-    || input.captureCanvasWheelOverWidgets;
+export function shouldCanvasOwnWheel(input: CanvasWheelOwnershipInput): boolean {
+  return input.forceCanvas === true
+    || !input.overFocusedWidget
+    || input.navigationOverrideActive
+    || input.captureMode === "always"
+    || (input.captureMode === "key" && input.wheelOverrideActive);
 }
 
 export function wheelZoomFactor(deltaY: number, sensitivity: ZoomSensitivity): number {
@@ -227,18 +221,27 @@ export function canvasNavigationModifierFromKey(key: string): CanvasNavigationMo
   return null;
 }
 
+export function activeCanvasNavigationModifiers(
+  state: Pick<CanvasNavigationKeyState, "altKey" | "ctrlKey" | "metaKey" | "shiftKey">
+): CanvasNavigationModifier[] {
+  return MODIFIER_ORDER.filter((modifier) => isCanvasNavigationModifierActive(state, modifier));
+}
+
+export function isCanvasNavigationModifierActive(
+  state: Pick<CanvasNavigationKeyState, "altKey" | "ctrlKey" | "metaKey" | "shiftKey">,
+  modifier: CanvasNavigationModifier
+): boolean {
+  if (modifier === "Ctrl") return state.ctrlKey;
+  if (modifier === "Alt") return state.altKey;
+  if (modifier === "Shift") return state.shiftKey;
+  return state.metaKey;
+}
+
 export function normalizeCanvasNavigationKey(key: string): string | null {
   if (key === " ") return "Space";
   if (key.length === 1 && /[A-Za-z0-9]/.test(key)) return key.toUpperCase();
   if (/^F(?:[1-9]|1\d|2[0-4])$/.test(key)) return key;
   return NAMED_KEYS.has(key) ? key : null;
-}
-
-function modifierIsActive(state: CanvasNavigationKeyState, modifier: CanvasNavigationModifier): boolean {
-  if (modifier === "Ctrl") return state.ctrlKey;
-  if (modifier === "Alt") return state.altKey;
-  if (modifier === "Shift") return state.shiftKey;
-  return state.metaKey;
 }
 
 function parseShortcut(shortcut: string): { modifiers: readonly CanvasNavigationModifier[]; key: string } | null {

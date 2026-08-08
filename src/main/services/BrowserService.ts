@@ -189,7 +189,7 @@ export class BrowserService {
       isFreezeActive: () => this.canvasGestures.isFreezeActive,
       isNavigationOverrideActive: () => this.canvasNavigationInput?.active ?? false,
       getCursorScreenPoint: () => screen.getCursorScreenPoint(),
-      endWheelSequence: (reason) => this.canvasGestures.endSequence(reason),
+      endWheelSequence: () => this.canvasGestures.endSequence(),
       sendNavigationPointer: (payload) => {
         const owner = this.getOwner();
         if (owner && !owner.isDestroyed()) owner.webContents.send(IPC.browserCanvasNavigationPointer, payload);
@@ -263,8 +263,7 @@ export class BrowserService {
     if (this.disposed) return;
     await this.persistRuntime();
     this.canvasPointers.cancelNavigationGesture();
-    this.canvasGestures.endSequence("browser-closed", false);
-    this.canvasGestures.invalidateCapture();
+    this.invalidateCanvasSequence(false);
     this.canvasGestures.setInputFocused(false);
     this.visible = false;
     this.hideClipView();
@@ -317,7 +316,7 @@ export class BrowserService {
     await this.persistRuntime().catch(() => undefined);
     this.visible = false;
     this.canvasGestures.setInputFocused(false);
-    this.canvasGestures.endSequence("service-disposed", false);
+    this.canvasGestures.endSequence(false);
     this.canvasGestures.clear();
     clearInterval(this.presenceTimer);
     this.destroyRuntimeTabs();
@@ -503,8 +502,7 @@ export class BrowserService {
     }
     const normalized = this.policy.assertNavigationUrl(url);
     const tab = this.createRuntimeTab(randomUUID(), normalized);
-    this.canvasGestures.endSequence("new-active-tab", false);
-    this.canvasGestures.invalidateCapture();
+    this.invalidateCanvasSequence(false);
     this.activeTabId = tab.id;
     await this.persistRuntime();
     this.syncViews();
@@ -517,8 +515,7 @@ export class BrowserService {
     await this.ensureRuntime();
     const tab = this.requireTab(tabId);
     this.canvasPointers.cancelNavigationGesture();
-    this.canvasGestures.endSequence("active-tab-changed", false);
-    this.canvasGestures.invalidateCapture();
+    this.invalidateCanvasSequence(false);
     this.activeTabId = tab.id;
     await this.persistRuntime();
     this.syncViews();
@@ -532,8 +529,7 @@ export class BrowserService {
     await this.ensureRuntime();
     const tab = this.requireTab(tabId);
     if (this.activeTabId === tabId) {
-      this.canvasGestures.endSequence("active-tab-closed", false);
-      this.canvasGestures.invalidateCapture();
+      this.invalidateCanvasSequence(false);
     }
     this.tabs.delete(tabId);
     this.destroyTab(tab);
@@ -725,8 +721,7 @@ export class BrowserService {
     contents.on("did-start-navigation", (_details, _url, isInPlace, isMainFrame) => {
       if (!isMainFrame) return;
       if (!isInPlace && this.activeTabId === tab.id) {
-        this.canvasGestures.endSequence("active-tab-navigation");
-        this.canvasGestures.invalidateCapture();
+        this.invalidateCanvasSequence();
       }
       tab.loading = true;
       tab.status = "loading";
@@ -786,8 +781,7 @@ export class BrowserService {
     contents.on("render-process-gone", (_event, details) => {
       this.canvasPointers.cancelTab(tab.id);
       if (this.activeTabId === tab.id) {
-        this.canvasGestures.endSequence("active-tab-crashed", false);
-        this.canvasGestures.invalidateCapture();
+        this.invalidateCanvasSequence(false);
       }
       tab.loading = false;
       tab.status = "crashed";
@@ -799,8 +793,7 @@ export class BrowserService {
       tab.canvasSinkViewport.dispose();
       this.canvasPointers.cancelTab(tab.id);
       if (this.activeTabId === tab.id) {
-        this.canvasGestures.endSequence("active-tab-destroyed", false);
-        this.canvasGestures.invalidateCapture();
+        this.invalidateCanvasSequence(false);
       }
       if (!this.tabs.has(tab.id)) return;
       tab.loading = false;
@@ -993,8 +986,7 @@ export class BrowserService {
   private destroyTab(tab: BrowserTab): void {
     this.canvasPointers.cancelTab(tab.id);
     if (this.activeTabId === tab.id) {
-      this.canvasGestures.endSequence("active-tab-destroyed", false);
-      this.canvasGestures.invalidateCapture();
+      this.invalidateCanvasSequence(false);
     }
     tab.canvasCursor.dispose();
     tab.canvasSinkViewport.dispose();
@@ -1062,6 +1054,11 @@ export class BrowserService {
     this.syncPresenceOverlay({ owner, tabId: active.id, left, top, right, bottom });
   }
 
+  private invalidateCanvasSequence(sync = true): void {
+    this.canvasGestures.endSequence(sync);
+    this.canvasGestures.invalidateCapture();
+  }
+
   private mountClipTab(owner: BrowserWindow, active: BrowserTab): void {
     for (const tab of this.tabs.values()) {
       if (tab.id !== active.id) tab.view.setVisible(false);
@@ -1105,18 +1102,18 @@ export class BrowserService {
     owner.on("unmaximize", sync);
     owner.on("show", sync);
     owner.on("hide", () => {
-      this.canvasGestures.endSequence("owner-hidden", false);
+      this.canvasGestures.endSequence(false);
       sync();
     });
-    owner.on("blur", () => this.canvasGestures.endSequence("owner-blurred"));
+    owner.on("blur", () => this.canvasGestures.endSequence());
     owner.webContents.on("before-mouse-event", (event, mouse) => {
       if (mouse.type === "mouseWheel") {
-        this.canvasGestures.beginOwnerSequence({ x: mouse.x, y: mouse.y }, "native-before-mouse");
+        this.canvasGestures.beginOwnerSequence({ x: mouse.x, y: mouse.y });
       }
       this.canvasPointers.handleOwnerMouse(event, mouse, owner);
     });
     owner.once("closed", () => {
-      this.canvasGestures.endSequence("owner-closed", false);
+      this.canvasGestures.endSequence(false);
       this.destroyPresenceWindow();
     });
   }

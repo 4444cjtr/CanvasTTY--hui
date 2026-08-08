@@ -54,12 +54,6 @@ export type BrowserCanvasSurfaceDecision =
   | { kind: "frozen" }
   | { kind: "sink"; layout: BrowserCanvasNativeWheelSinkLayout };
 
-type OwnerWheelSource =
-  | "native-before-mouse"
-  | "renderer-sync-ipc"
-  | "browser-frame-sync-ipc"
-  | "browser-frame-async-ipc";
-
 export class BrowserCanvasGestureController {
   private readonly host: BrowserCanvasGestureHost;
   private readonly now: () => number;
@@ -127,7 +121,7 @@ export class BrowserCanvasGestureController {
       metaKey: wheel.metaKey
     }), this.now());
     if (decision.owner === "canvas") {
-      this.beginOwnerSequence(this.wheelClientPoint(tab.id, owner, input), "browser-frame-sync-ipc");
+      this.beginOwnerSequence(this.wheelClientPoint(tab.id, owner, input), true);
     }
     return decision;
   }
@@ -145,7 +139,7 @@ export class BrowserCanvasGestureController {
     const ownerWindow = this.host.getOwner();
     if (!ownerWindow || ownerWindow.isDestroyed()) return;
     const clientPoint = this.wheelClientPoint(tab.id, ownerWindow, input);
-    this.beginOwnerSequence(clientPoint, "browser-frame-async-ipc");
+    this.beginOwnerSequence(clientPoint);
     this.host.sendWheel({
       tabId: tab.id,
       clientX: clientPoint.x,
@@ -164,7 +158,7 @@ export class BrowserCanvasGestureController {
     const clientX = values.clientX as number;
     const clientY = values.clientY as number;
     if (clientX < 0 || clientY < 0 || clientX >= content.width || clientY >= content.height) return;
-    this.beginOwnerSequence({ x: clientX, y: clientY }, "renderer-sync-ipc");
+    this.beginOwnerSequence({ x: clientX, y: clientY });
   }
 
   observeBrowserWheel(tabId: string, mouse: Electron.MouseInputEvent): void {
@@ -178,7 +172,7 @@ export class BrowserCanvasGestureController {
     };
   }
 
-  beginOwnerSequence(point: Point, source: OwnerWheelSource): void {
+  beginOwnerSequence(point: Point, preserveNativeTarget = false): void {
     const viewport = this.host.getViewport();
     const tab = this.host.getActiveTab();
     if (!this.host.isVisible() || viewport.surface === "hidden" || !tab) return;
@@ -186,7 +180,7 @@ export class BrowserCanvasGestureController {
     const transition = this.ownerSequence.begin(point, this.now());
     this.scheduleEnd();
     if (transition.started) {
-      const proposedSink = source === "browser-frame-sync-ipc"
+      const proposedSink = preserveNativeTarget
         ? createBrowserCanvasNativeWheelSink(tab.id, viewport, point)
         : null;
       const sinkTab = proposedSink ? this.host.getTab(proposedSink.tabId) : undefined;
@@ -198,11 +192,7 @@ export class BrowserCanvasGestureController {
     this.host.requestSurfaceSync();
   }
 
-  endSequence(reason: string, sync = true): void {
-    if (reason === "wheel-idle" && this.host.shouldDeferIdleEnd()) {
-      this.scheduleEnd();
-      return;
-    }
+  endSequence(sync = true): void {
     if (this.sequenceTimer) {
       clearTimeout(this.sequenceTimer);
       this.sequenceTimer = null;
@@ -238,7 +228,7 @@ export class BrowserCanvasGestureController {
   viewportChanged(previous: BrowserViewportBounds, next: BrowserViewportBounds): void {
     if (next.surface === "hidden") {
       this.inputFocused = false;
-      this.endSequence("viewport-removed", false);
+      this.endSequence(false);
       this.invalidateCapture();
       return;
     }
@@ -307,8 +297,16 @@ export class BrowserCanvasGestureController {
         this.scheduleEnd();
         return;
       }
-      this.endSequence("wheel-idle");
+      this.endIdleSequence();
     }, BROWSER_CANVAS_WHEEL_IDLE_MS);
+  }
+
+  private endIdleSequence(): void {
+    if (this.host.shouldDeferIdleEnd()) {
+      this.scheduleEnd();
+      return;
+    }
+    this.endSequence();
   }
 
   private activateFreezeFrame(tabId: string): void {

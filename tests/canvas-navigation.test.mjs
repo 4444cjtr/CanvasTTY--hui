@@ -75,9 +75,9 @@ test("ctrl or meta wheel uses clamped pinch mapping independently of wheel prefe
 test("a wheel override can route modifier scroll to focal zoom over a widget", () => {
   assert.equal(shouldCanvasOwnWheel({
     overFocusedWidget: true,
+    captureMode: "key",
     wheelOverrideActive: true,
-    canvasOverrideActive: false,
-    captureCanvasWheelOverWidgets: false
+    navigationOverrideActive: false
   }), true);
   assert.deepEqual(
     canvasWheelIntent(
@@ -92,32 +92,32 @@ test("a wheel override can route modifier scroll to focal zoom over a widget", (
 test("only the focused input widget interrupts canvas wheel navigation", () => {
   assert.equal(shouldCanvasOwnWheel({
     overFocusedWidget: false,
+    captureMode: "off",
     wheelOverrideActive: false,
-    canvasOverrideActive: false,
-    captureCanvasWheelOverWidgets: false
+    navigationOverrideActive: false
   }), true);
   assert.equal(shouldCanvasOwnWheel({
     overFocusedWidget: true,
+    captureMode: "off",
     wheelOverrideActive: false,
-    canvasOverrideActive: false,
-    captureCanvasWheelOverWidgets: false
+    navigationOverrideActive: false
   }), false);
   assert.equal(shouldCanvasOwnWheel({
     overFocusedWidget: true,
+    captureMode: "off",
     wheelOverrideActive: false,
-    canvasOverrideActive: true,
-    captureCanvasWheelOverWidgets: false
+    navigationOverrideActive: true
   }), true);
   assert.equal(shouldCanvasOwnWheel({
     overFocusedWidget: true,
+    captureMode: "always",
     wheelOverrideActive: false,
-    canvasOverrideActive: false,
-    captureCanvasWheelOverWidgets: true
+    navigationOverrideActive: false
   }), true);
   assert.equal(shouldCanvasOwnWheel({
     overFocusedWidget: true,
+    captureMode: "key",
     wheelOverrideActive: true,
-    canvasOverrideActive: false,
-    captureCanvasWheelOverWidgets: false
+    navigationOverrideActive: false
   }), true);
 });

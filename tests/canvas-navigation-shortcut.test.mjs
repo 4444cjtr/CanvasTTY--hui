@@ -7,7 +7,7 @@ import {
   normalizeCanvasOverrideBinding,
   normalizeCanvasNavigationInputKey,
   parseCanvasNavigationBinding,
-  shouldCaptureWidgetWheel
+  shouldCanvasOwnWheel
 } from "../src/shared/canvasNavigation.ts";
 
 test("accepts modifier-only and modifier-based chords but rejects bare keys", () => {
@@ -23,11 +23,17 @@ test("wheel capture modes keep Off, On, Key, and full navigation ownership disti
   assert.equal(activeCanvasWheelBinding("off", "Meta"), null);
   assert.equal(activeCanvasWheelBinding("always", "Meta"), null);
   assert.equal(activeCanvasWheelBinding("key", "Meta"), "Meta");
-  assert.equal(shouldCaptureWidgetWheel("off", true, false), false);
-  assert.equal(shouldCaptureWidgetWheel("always", false, false), true);
-  assert.equal(shouldCaptureWidgetWheel("key", false, false), false);
-  assert.equal(shouldCaptureWidgetWheel("key", true, false), true);
-  assert.equal(shouldCaptureWidgetWheel("off", false, true), true);
+  const ownership = (captureMode, wheelOverrideActive, navigationOverrideActive) => shouldCanvasOwnWheel({
+    overFocusedWidget: true,
+    captureMode,
+    wheelOverrideActive,
+    navigationOverrideActive
+  });
+  assert.equal(ownership("off", true, false), false);
+  assert.equal(ownership("always", false, false), true);
+  assert.equal(ownership("key", false, false), false);
+  assert.equal(ownership("key", true, false), true);
+  assert.equal(ownership("off", false, true), true);
 });
 
 test("normalizes order and accepts the platform zoom modifier by itself", () => {

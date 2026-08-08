@@ -5,7 +5,6 @@ import {
   canvasWheelIntent,
   normalizeCanvasWheelDeltas,
   shouldCanvasOwnWheel,
-  shouldCaptureWidgetWheel,
   type CanvasWheelDeltas
 } from "../../../../shared/canvasNavigation";
 import { isFocusedCanvasWidgetTarget } from "./canvasWidgetFocus";
@@ -47,8 +46,6 @@ export function useCanvasWheelNavigation({
   const canvasOverrideActiveRef = useRef(false);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
-  const captureOverWidgetsRef = useRef(settings.canvasWheelCaptureMode === "always");
-  captureOverWidgetsRef.current = settings.canvasWheelCaptureMode === "always";
   const panFrame = useRef<number | null>(null);
   const pendingPan = useRef<Point>({ x: 0, y: 0 });
 
@@ -115,9 +112,9 @@ export function useCanvasWheelNavigation({
         && event.target.closest('[data-browser-canvas-wheel-owner="canvas"]') !== null;
       const ownedByCanvas = browserFreezeOwned || shouldCanvasOwnWheel({
         overFocusedWidget: isFocusedCanvasWidgetTarget(event.target, widgetFocusRef.current.id),
+        captureMode: settingsRef.current.canvasWheelCaptureMode,
         wheelOverrideActive: wheelOverrideActiveRef.current,
-        canvasOverrideActive: canvasOverrideActiveRef.current,
-        captureCanvasWheelOverWidgets: captureOverWidgetsRef.current
+        navigationOverrideActive: canvasOverrideActiveRef.current
       });
       if (!ownedByCanvas) return;
       event.preventDefault();
@@ -150,11 +147,12 @@ export function useCanvasWheelNavigation({
   return {
     canvasOverrideActive,
     canvasOverrideActiveRef,
-    routeWidgetWheelToCanvas: shouldCaptureWidgetWheel(
-      settings.canvasWheelCaptureMode,
+    routeWidgetWheelToCanvas: shouldCanvasOwnWheel({
+      overFocusedWidget: true,
+      captureMode: settings.canvasWheelCaptureMode,
       wheelOverrideActive,
-      canvasOverrideActive
-    ),
+      navigationOverrideActive: canvasOverrideActive
+    }),
     applyCanvasWheel,
     zoomBy
   };

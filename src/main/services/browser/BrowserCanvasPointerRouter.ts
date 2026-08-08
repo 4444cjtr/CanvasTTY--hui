@@ -27,7 +27,7 @@ export interface BrowserCanvasPointerRouterHost {
   isFreezeActive(): boolean;
   isNavigationOverrideActive(): boolean;
   getCursorScreenPoint(): Point;
-  endWheelSequence(reason: string): void;
+  endWheelSequence(): void;
   sendNavigationPointer(payload: BrowserCanvasNavigationPointerEvent): void;
 }
 
@@ -137,7 +137,7 @@ export class BrowserCanvasPointerRouter {
   ): boolean {
     if (this.relayNativeSinkFromOwner(event, mouse, owner)) return true;
     if (this.relayFreezeFromOwner(event, mouse)) return true;
-    return this.relayCanvasDragFromOwner(owner, event, mouse);
+    return this.relayCanvasDragFromOwner(event, mouse);
   }
 
   private cancelCanvasDrag(tabId: string): void {
@@ -169,13 +169,13 @@ export class BrowserCanvasPointerRouter {
       relay.lastClient = { x: mouse.x, y: mouse.y };
       if (mouse.type === "mouseLeave") {
         this.cancelFreezePointerRelay();
-        this.host.endWheelSequence("freeze-pointer-left");
+        this.host.endWheelSequence();
         return true;
       }
       this.sendFreezePointerInput(relay.tabId, mouse, relay.button, relay.clickCount);
       if (mouse.type === "mouseUp" && mouse.button === relay.button) {
         this.freezePointerRelay = null;
-        this.host.endWheelSequence("freeze-pointer-ended");
+        this.host.endWheelSequence();
       }
       return true;
     }
@@ -217,14 +217,12 @@ export class BrowserCanvasPointerRouter {
     const tab = this.host.getTab(tabId);
     if (!tab || tab.view.webContents.isDestroyed()) return;
     const viewport = this.host.getViewport();
-    tab.view.webContents.sendInputEvent({
-      type: mouse.type,
-      x: Math.round(mouse.x - viewport.x),
-      y: Math.round(mouse.y - viewport.y),
-      button,
-      clickCount,
-      modifiers: mouse.modifiers
-    });
+    sendPointerInput(
+      tab.view.webContents,
+      mouse,
+      { button, clickCount },
+      { x: mouse.x - viewport.x, y: mouse.y - viewport.y }
+    );
   }
 
   private cancelFreezePointerRelay(): void {
@@ -234,13 +232,12 @@ export class BrowserCanvasPointerRouter {
     const tab = this.host.getTab(relay.tabId);
     if (!tab || tab.view.webContents.isDestroyed()) return;
     const viewport = this.host.getViewport();
-    tab.view.webContents.sendInputEvent({
-      type: "mouseUp",
-      x: Math.round(relay.lastClient.x - viewport.x),
-      y: Math.round(relay.lastClient.y - viewport.y),
-      button: relay.button,
-      clickCount: relay.clickCount
-    });
+    sendPointerInput(
+      tab.view.webContents,
+      { type: "mouseUp", modifiers: [] },
+      relay,
+      { x: relay.lastClient.x - viewport.x, y: relay.lastClient.y - viewport.y }
+    );
   }
 
   private relayNativeSinkFromBrowser(
@@ -274,7 +271,7 @@ export class BrowserCanvasPointerRouter {
 
     event.preventDefault();
     const point = this.ownerPointerClientPoint(owner, sink.pointer, mouse);
-    this.host.endWheelSequence("native-wheel-sink-pointer");
+    this.host.endWheelSequence();
     const target = this.host.getViewport().surface === "native" && this.pointInsideViewport(point)
       ? "browser"
       : "owner";
@@ -318,14 +315,12 @@ export class BrowserCanvasPointerRouter {
     point: Point
   ): void {
     const viewport = this.host.getViewport();
-    tab.view.webContents.sendInputEvent({
-      type: mouse.type,
-      x: Math.round(point.x - viewport.x),
-      y: Math.round(point.y - viewport.y),
-      button: relay.button,
-      clickCount: relay.clickCount,
-      modifiers: mouse.modifiers
-    });
+    sendPointerInput(
+      tab.view.webContents,
+      mouse,
+      relay,
+      { x: point.x - viewport.x, y: point.y - viewport.y }
+    );
   }
 
   private sendPointerToOwner(
@@ -334,14 +329,7 @@ export class BrowserCanvasPointerRouter {
     relay: NativeSinkPointerRelay,
     point: Point
   ): void {
-    owner.webContents.sendInputEvent({
-      type: mouse.type,
-      x: Math.round(point.x),
-      y: Math.round(point.y),
-      button: relay.button,
-      clickCount: relay.clickCount,
-      modifiers: mouse.modifiers
-    });
+    sendPointerInput(owner.webContents, mouse, relay, point);
   }
 
   private cancelNativeSinkPointerRelay(): void {
@@ -393,7 +381,6 @@ export class BrowserCanvasPointerRouter {
   }
 
   private relayCanvasDragFromOwner(
-    owner: BrowserWindow,
     event: Electron.Event,
     mouse: Electron.MouseInputEvent
   ): boolean {
@@ -436,4 +423,20 @@ function nativeWheelSinkPointerEvent(mouse: Electron.MouseInputEvent): boolean {
     || mouse.type === "mouseEnter"
     || mouse.type === "mouseLeave"
     || mouse.type === "contextMenu";
+}
+
+function sendPointerInput(
+  contents: { sendInputEvent(event: Electron.MouseInputEvent): void },
+  mouse: Pick<Electron.MouseInputEvent, "type" | "modifiers">,
+  relay: Pick<PointerRelay, "button" | "clickCount">,
+  point: Point
+): void {
+  contents.sendInputEvent({
+    type: mouse.type,
+    x: Math.round(point.x),
+    y: Math.round(point.y),
+    button: relay.button,
+    clickCount: relay.clickCount,
+    modifiers: mouse.modifiers
+  });
 }

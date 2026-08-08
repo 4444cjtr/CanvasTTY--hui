@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LocaleId } from "../../../../shared/contracts";
 import {
+  activeCanvasNavigationModifiers,
   canvasOverrideBindingConflicts,
   canvasNavigationModifierFromKey,
   formatCanvasNavigationBinding,
@@ -119,7 +120,9 @@ export function CanvasNavigationShortcutEditor({
       return;
     }
 
-    addEventModifiers(modifiersRef.current, event);
+    for (const eventModifier of activeCanvasNavigationModifiers(event)) {
+      modifiersRef.current.add(eventModifier);
+    }
     const key = normalizeCanvasNavigationInputKey(event.key, event.code);
     if (!key || modifiersRef.current.size === 0) {
       setError(t(locale, "canvasOverrideShortcutInvalid"));
@@ -182,14 +185,4 @@ export function CanvasNavigationShortcutEditor({
       {error && <p className="shortcut-editor__error" role="alert">{error}</p>}
     </>
   );
-}
-
-function addEventModifiers(
-  modifiers: Set<CanvasNavigationModifier>,
-  event: Pick<React.KeyboardEvent, "altKey" | "ctrlKey" | "metaKey" | "shiftKey">
-): void {
-  if (event.ctrlKey) modifiers.add("Ctrl");
-  if (event.altKey) modifiers.add("Alt");
-  if (event.shiftKey) modifiers.add("Shift");
-  if (event.metaKey) modifiers.add("Meta");
 }

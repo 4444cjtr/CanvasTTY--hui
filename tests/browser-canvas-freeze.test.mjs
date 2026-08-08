@@ -19,11 +19,11 @@ test("wheel sequence freezes before the logged Browser boundary crosses the poin
   assert.equal(BROWSER_CANVAS_FREEZE_GUARD_DIP, 4);
   assert.equal(BROWSER_CANVAS_WHEEL_IDLE_MS, 250);
   assert.equal(sequence.shouldFreeze({ x: 324, y: 283, width: 830, height: 434 }), true);
-  assert.equal(sequence.snapshot().collisionLatched, true);
+  assert.equal(sequence.shouldFreeze({ x: 0, y: 0, width: 10, height: 10 }), true);
 
-  sequence.end();
-  assert.equal(sequence.snapshot().active, false);
-  assert.equal(sequence.snapshot().collisionLatched, false);
+  assert.equal(sequence.end(), true);
+  assert.equal(sequence.shouldFreeze({ x: 324, y: 283, width: 830, height: 434 }), false);
+  assert.equal(sequence.end(), false);
 });
 
 test("wheel collision uses the visible window-clipped rectangle and latches across direction changes", () => {
@@ -68,7 +68,7 @@ test("wheel sequence refreshes its pointer and reports expiration from the last 
 
   assert.equal(first.started, true);
   assert.equal(second.started, false);
-  assert.deepEqual(sequence.snapshot().pointer, { x: 30, y: 40 });
+  assert.equal(sequence.shouldFreeze({ x: 28, y: 38, width: 4, height: 4 }), true);
   assert.equal(sequence.expired(1_369), false);
   assert.equal(sequence.expired(1_370), true);
 });

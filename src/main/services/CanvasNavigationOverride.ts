@@ -1,11 +1,11 @@
 import type { Event, Input, WebContents } from "electron";
 import {
   canvasNavigationModifierFromKey,
+  isCanvasNavigationModifierActive,
   isCanvasNavigationBindingActive,
   isCanvasNavigationBindingKey,
   normalizeCanvasNavigationInputKey,
-  parseCanvasNavigationBinding,
-  type CanvasNavigationModifier
+  parseCanvasNavigationBinding
 } from "../../shared/canvasNavigation.ts";
 
 export interface CanvasNavigationKeyboardInput {
@@ -58,7 +58,9 @@ export class CanvasNavigationOverrideTracker {
 
   get shouldCaptureMenuShortcuts(): boolean {
     const parsed = parseCanvasNavigationBinding(this.binding);
-    if (!parsed || !parsed.modifiers.every((modifier) => this.modifierIsPressed(modifier))) return false;
+    if (!parsed || !parsed.modifiers.every((modifier) => isCanvasNavigationModifierActive(this.modifiers, modifier))) {
+      return false;
+    }
     return parsed.key !== null || parsed.modifiers.includes("Alt");
   }
 
@@ -129,12 +131,6 @@ export class CanvasNavigationOverrideTracker {
     return { active: false, changed, reserved: false };
   }
 
-  private modifierIsPressed(modifier: CanvasNavigationModifier): boolean {
-    if (modifier === "Alt") return this.modifiers.altKey;
-    if (modifier === "Ctrl") return this.modifiers.ctrlKey;
-    if (modifier === "Meta") return this.modifiers.metaKey;
-    return this.modifiers.shiftKey;
-  }
 }
 
 export class CanvasNavigationInputController {

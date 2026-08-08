@@ -22,19 +22,6 @@ test("injects one trusted input bridge before plugin scripts", () => {
   assert.equal(injectPluginInputBridge(injected), injected);
 });
 
-test("trusted input bridge relays focus and hover without cancelling plugin clicks", async () => {
-  const source = await readFile(new URL("../src/main/services/PluginManager.ts", import.meta.url), "utf8");
-  const bridgeStart = source.indexOf("const PLUGIN_INPUT_BRIDGE_SOURCE");
-  const bridge = source.slice(bridgeStart);
-
-  assert.match(bridge, /addEventListener\("pointerdown"/);
-  assert.match(bridge, /type: "canvas-focus"/);
-  assert.match(bridge, /type: "canvas-hover", active: true/);
-  assert.match(bridge, /type: "canvas-hover", active: false/);
-  const pointerStart = bridge.indexOf('addEventListener("pointerdown"');
-  assert.doesNotMatch(bridge.slice(pointerStart), /event\.preventDefault\(\)/);
-});
-
 const manifest = {
   apiVersion: 1,
   id: "com.example.studio-clock",
@@ -143,7 +130,14 @@ test("previews, installs, serves, stores, disables, and uninstalls a static pack
 
     const inputBridge = await manager.protocolResponse("canvastty-plugin://host/input-bridge.js");
     assert.equal(inputBridge.status, 200);
-    assert.match(await inputBridge.text(), /addEventListener\("wheel"/);
+    const inputBridgeSource = await inputBridge.text();
+    assert.match(inputBridgeSource, /addEventListener\("wheel"/);
+    assert.match(inputBridgeSource, /addEventListener\("pointerdown"/);
+    assert.match(inputBridgeSource, /type: "canvas-focus"/);
+    assert.match(inputBridgeSource, /type: "canvas-hover", active: true/);
+    assert.match(inputBridgeSource, /type: "canvas-hover", active: false/);
+    const pointerStart = inputBridgeSource.indexOf('addEventListener("pointerdown"');
+    assert.doesNotMatch(inputBridgeSource.slice(pointerStart), /event\.preventDefault\(\)/);
 
     await manager.storageSet(installed.manifest.id, "draft", { text: "real storage" });
     assert.deepEqual(await manager.storageGet(installed.manifest.id, "draft"), { text: "real storage" });
