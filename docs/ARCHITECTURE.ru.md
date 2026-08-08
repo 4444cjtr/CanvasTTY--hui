@@ -18,6 +18,7 @@ Electron main process
     ├── TerminalManager → lifecycle node-pty, ограниченный scrollback и batching вывода
     ├── LimitsService  → очищенные adapters лимитов и кэш
     ├── PluginManager  → установка из GitHub, manifest, assets, permissions, storage
+    ├── PluginSecretsService → защищённое системное шифрование credentials плагинов с fail-closed поведением
     ├── PluginMediaService → разрешённые медиапапки, ranged audio streams, плейлисты
     ├── BrowserService → встроенные вкладки и lifecycle изолированных WebContentsView
     ├── canvastty-plugin:// → статические plugin resources под CSP
@@ -32,6 +33,7 @@ Electron main process
 - `src/main/services/LimitsService.ts` читает Codex через app-server protocol установленного CLI, а Claude/Kimi — через provider usage endpoints. Credentials читаются только в доверенном main-процессе, отправляются только соответствующему провайдеру по HTTPS, не логируются и не выходят через IPC. Сервис отвечает за timeout, structural normalization, cache, stale fallback и cleanup подпроцессов; сырые ответы провайдеров через IPC не проходят.
 - `src/main/services/SettingsStore.ts` нормализует каждое изменение и сохраняет его сериализованной атомарной записью.
 - `src/main/services/PluginManager.ts` устанавливает готовые статические репозитории без выполнения package scripts, отклоняет symlinks и слишком большие пакеты, хранит реестр включения, отдаёт только файлы внутри пакета и применяет permissions/storage quotas для каждого плагина.
+- `src/main/services/PluginSecretsService.ts` сериализует запись секретов каждого плагина, шифрует весь ограниченный payload через Electron `safeStorage`, отклоняет plaintext-only backend и удаляет зашифрованный файл при uninstall.
 - `src/main/services/PluginMediaService.ts` сохраняет разрешения только после нативного выбора папки, скрывает абсолютные пути, пропускает symlinks и отдаёт аудио с HTTP Range. Чтение плейлистов остаётся внутри разрешённых библиотек; ограниченная атомарная запись разрешена только в `Playlists/`.
 - `src/main/services/BrowserService.ts` владеет вкладками встроенного браузера в `WebContentsView`. Удалённые страницы используют отдельный persistent partition с выключенным Node, включёнными context isolation/sandbox и отклонением website permissions по умолчанию. Это core service, а не возможность runtime-плагина.
 - `src/main/services/cliEnvironment.ts` дополняет `PATH` графической сессии существующими пользовательскими каталогами CLI до запуска любого процесса провайдера. Shell startup scripts не читаются.

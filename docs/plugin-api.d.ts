@@ -12,6 +12,7 @@ export interface CanvasTTYPluginHost {
   request(method: "sessions.list"): Promise<CanvasTTYPluginSession[]>;
   request(method: "limits.get"): Promise<CanvasTTYPluginLimitsResult>;
   request(method: "launcher.open", params: { provider: "terminal" | "codex" | "claude" | "kimi" }): Promise<null>;
+  request(method: "canvas.open", params: { contributionId: string }): Promise<null>;
   request(method: "external.open", params: { url: string }): Promise<null>;
   request(method: "window.open", params: { contributionId: string }): Promise<null>;
   request(method: "media.pickLibrary"): Promise<CanvasTTYPluginMediaLibrary | null>;
@@ -21,10 +22,21 @@ export interface CanvasTTYPluginHost {
   request(method: "playlists.list", params: { libraryId: string }): Promise<CanvasTTYPluginPlaylistFile[]>;
   request(method: "playlists.read", params: { libraryId: string; playlistId: string }): Promise<string>;
   request(method: "playlists.write", params: { libraryId: string; name: string; content: string }): Promise<CanvasTTYPluginPlaylistFile>;
+  request(method: "secrets.get", params: { key: string }): Promise<string | null>;
+  request(method: "secrets.set", params: { key: string; value: string }): Promise<null>;
+  request(method: "secrets.delete", params: { key: string }): Promise<null>;
   request(method: string, params?: Record<string, unknown>): Promise<unknown>;
   storage: {
     get(key: string): Promise<unknown>;
     set(key: string, value: unknown): Promise<void>;
+  };
+  secrets: {
+    get(key: string): Promise<string | null>;
+    set(key: string, value: string): Promise<void>;
+    delete(key: string): Promise<void>;
+  };
+  canvas: {
+    open(contributionId: string): Promise<void>;
   };
   media: {
     pickLibrary(): Promise<CanvasTTYPluginMediaLibrary | null>;
@@ -38,6 +50,7 @@ export interface CanvasTTYPluginHost {
     write(libraryId: string, name: string, content: string): Promise<CanvasTTYPluginPlaylistFile>;
   };
   onContext(listener: (context: CanvasTTYPluginContext) => void): () => void;
+  onStorageChange(listener: (key: string, value: unknown) => void): () => void;
 }
 
 export interface CanvasTTYPluginContext {
@@ -46,7 +59,8 @@ export interface CanvasTTYPluginContext {
     id: string;
     name: string;
     version: string;
-    permissions: Array<"storage" | "sessions:read" | "limits:read" | "launcher:open" | "external:open" | "media:library" | "playlists:read" | "playlists:write" | "network">;
+    permissions: Array<"storage" | "secrets" | "sessions:read" | "limits:read" | "launcher:open" | "external:open" | "media:library" | "playlists:read" | "playlists:write" | "network">;
+    modules: string[];
   };
   contribution: {
     id: string;

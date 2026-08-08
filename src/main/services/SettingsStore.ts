@@ -367,8 +367,8 @@ function normalizePluginCanvas(candidate: unknown, fallback: readonly PluginCanv
       title: source.title.trim().slice(0, 80),
       position: { x: source.position.x, y: source.position.y },
       size: {
-        width: clamp(source.size.width, 320, 1_600),
-        height: clamp(source.size.height, 220, 1_100)
+        width: clamp(source.size.width, 240, 1_600),
+        height: clamp(source.size.height, 140, 1_100)
       }
     });
     ids.add(source.id);

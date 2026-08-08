@@ -1,7 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import {
   lstat,
+  copyFile,
   mkdir,
   mkdtemp,
   readFile,
@@ -18,6 +19,8 @@ import type {
   PluginContribution,
   PluginInstallPreview,
   PluginManifest,
+  PluginModule,
+  PluginModuleAsset,
   PluginPermission,
   Size
 } from "../../shared/contracts";
@@ -51,6 +54,7 @@ export function injectPluginInputBridge(html: string): string {
 
 const PLUGIN_PERMISSIONS = new Set<PluginPermission>([
   "storage",
+  "secrets",
   "sessions:read",
   "limits:read",
   "launcher:open",
@@ -65,6 +69,7 @@ interface StoredPluginRecord {
   sourceUrl: string;
   enabled: boolean;
   installedAt: number;
+  selectedModules?: string[];
 }
 
 interface PendingInstall {
@@ -74,6 +79,11 @@ interface PendingInstall {
 }
 
 type DownloadRepository = (url: string, destination: string) => Promise<void>;
+type DownloadModuleFiles = (
+  url: string,
+  destination: string,
+  files: readonly PluginModuleAsset[]
+) => Promise<void>;
 
 export class PluginManager {
   private readonly pluginRoot: string;
@@ -84,14 +94,22 @@ export class PluginManager {
   private readonly pending = new Map<string, PendingInstall>();
   private readonly storageWrites = new Map<string, Promise<void>>();
   private readonly downloadRepository: DownloadRepository;
+  private readonly downloadFullRepository: DownloadRepository;
+  private readonly downloadModuleFiles: DownloadModuleFiles;
   private registryWrite = Promise.resolve();
 
-  constructor(userDataPath: string, downloadRepository: DownloadRepository = downloadGithubRepository) {
+  constructor(
+    userDataPath: string,
+    downloadRepository?: DownloadRepository,
+    downloadModuleFiles: DownloadModuleFiles = downloadGithubModuleFiles
+  ) {
     this.pluginRoot = join(userDataPath, "plugins");
     this.stagingRoot = join(userDataPath, "plugin-staging");
     this.storageRoot = join(userDataPath, "plugin-storage");
     this.registryPath = join(userDataPath, REGISTRY_FILE);
-    this.downloadRepository = downloadRepository;
+    this.downloadRepository = downloadRepository ?? downloadGithubManifest;
+    this.downloadFullRepository = downloadRepository ?? downloadGithubRepository;
+    this.downloadModuleFiles = downloadModuleFiles;
   }
 
   async load(): Promise<InstalledPlugin[]> {
@@ -121,7 +139,8 @@ export class PluginManager {
           manifest,
           sourceUrl: normalizeGithubUrl(record.sourceUrl),
           enabled: record.enabled,
-          installedAt: record.installedAt
+          installedAt: record.installedAt,
+          selectedModules: normalizeSelectedModules(manifest, record.selectedModules)
         });
       } catch (error) {
         console.warn(`CanvasTTY plugin ${pluginId} could not be loaded.`, error);
@@ -135,7 +154,7 @@ export class PluginManager {
   list(): InstalledPlugin[] {
     return [...this.plugins.values()]
       .sort((left, right) => left.manifest.name.localeCompare(right.manifest.name))
-      .map((plugin) => structuredClone(plugin));
+      .map((plugin) => structuredClone(activePlugin(plugin)));
   }
 
   async previewInstall(sourceUrl: string): Promise<PluginInstallPreview> {
@@ -147,11 +166,27 @@ export class PluginManager {
     try {
       await this.downloadRepository(canonicalUrl, packageRoot);
       await inspectPackage(packageRoot);
-      const manifest = await readManifest(packageRoot);
+      let manifest = await readManifest(packageRoot);
       if (this.plugins.has(manifest.id)) {
         throw new Error(`Plugin ${manifest.id} is already installed.`);
       }
-      await assertContributionAssets(packageRoot, manifest.contributions);
+      if (manifest.modules?.length) {
+        assertModularContributionFiles(manifest);
+      } else {
+        try {
+          await assertContributionAssets(packageRoot, manifest.contributions);
+        } catch {
+          await rm(packageRoot, { recursive: true, force: true });
+          await this.downloadFullRepository(canonicalUrl, packageRoot);
+          await inspectPackage(packageRoot);
+          const downloadedManifest = await readManifest(packageRoot);
+          if (JSON.stringify(downloadedManifest) !== JSON.stringify(manifest)) {
+            throw new Error("Plugin manifest changed while its package was downloaded.");
+          }
+          manifest = downloadedManifest;
+          await assertContributionAssets(packageRoot, manifest.contributions);
+        }
+      }
 
       const token = randomUUID();
       const preview: PluginInstallPreview = {
@@ -168,13 +203,17 @@ export class PluginManager {
     }
   }
 
-  async install(token: string): Promise<InstalledPlugin> {
+  async install(token: string, selectedModules?: string[]): Promise<InstalledPlugin> {
     this.cleanupExpiredPreviews();
     const pending = this.pending.get(token);
     if (!pending) throw new Error("Plugin installation preview expired. Inspect the GitHub link again.");
     this.pending.delete(token);
 
     const { preview, packageRoot, directory } = pending;
+    const modules = normalizeSelectedModules(
+      preview.manifest,
+      selectedModules ?? preview.manifest.modules?.filter((module) => module.defaultSelected).map((module) => module.id)
+    );
     const destination = join(this.pluginRoot, preview.manifest.id);
     if (this.plugins.has(preview.manifest.id)) {
       await rm(directory, { recursive: true, force: true });
@@ -182,16 +221,28 @@ export class PluginManager {
     }
 
     try {
-      await rename(packageRoot, destination);
+      if (preview.manifest.modules?.length) {
+        await materializeModularPackage(
+          preview.sourceUrl,
+          packageRoot,
+          destination,
+          preview.manifest,
+          modules,
+          this.downloadModuleFiles
+        );
+      } else {
+        await rename(packageRoot, destination);
+      }
       const installed: InstalledPlugin = {
         manifest: preview.manifest,
         sourceUrl: preview.sourceUrl,
         enabled: true,
-        installedAt: Date.now()
+        installedAt: Date.now(),
+        selectedModules: modules
       };
       this.plugins.set(installed.manifest.id, installed);
       await this.persistRegistry();
-      return structuredClone(installed);
+      return structuredClone(activePlugin(installed));
     } catch (error) {
       this.plugins.delete(preview.manifest.id);
       await rm(destination, { recursive: true, force: true });
@@ -205,7 +256,51 @@ export class PluginManager {
     const plugin = this.requirePlugin(pluginId);
     plugin.enabled = Boolean(enabled);
     await this.persistRegistry();
-    return structuredClone(plugin);
+    return structuredClone(activePlugin(plugin));
+  }
+
+  async setModules(pluginId: string, selectedModules: string[]): Promise<InstalledPlugin> {
+    const plugin = this.requirePlugin(pluginId);
+    if (!plugin.manifest.modules?.length) throw new Error("Plugin does not declare optional modules.");
+    const selected = normalizeSelectedModules(plugin.manifest, selectedModules);
+    if (selected.length !== new Set(selectedModules).size) throw new Error("Plugin module selection is invalid.");
+    const directory = await mkdtemp(join(this.stagingRoot, "modules-"));
+    const nextRoot = join(directory, "next");
+    const currentRoot = join(this.pluginRoot, pluginId);
+    const backupRoot = join(directory, "previous");
+    const previousSelection = [...plugin.selectedModules];
+    let swapped = false;
+    try {
+      await materializeModularPackage(
+        plugin.sourceUrl,
+        currentRoot,
+        nextRoot,
+        plugin.manifest,
+        selected,
+        this.downloadModuleFiles
+      );
+      await rename(currentRoot, backupRoot);
+      try {
+        await rename(nextRoot, currentRoot);
+        swapped = true;
+      } catch (error) {
+        await rename(backupRoot, currentRoot);
+        throw error;
+      }
+      plugin.selectedModules = selected;
+      await this.persistRegistry();
+      return structuredClone(activePlugin(plugin));
+    } catch (error) {
+      if (swapped) {
+        plugin.selectedModules = previousSelection;
+        await rm(currentRoot, { recursive: true, force: true });
+        await rename(backupRoot, currentRoot);
+        await this.persistRegistry().catch(() => undefined);
+      }
+      throw error;
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   }
 
   async uninstall(pluginId: string): Promise<void> {
@@ -217,14 +312,14 @@ export class PluginManager {
   }
 
   contribution(pluginId: string, contributionId: string): PluginContribution {
-    const plugin = this.requireEnabledPlugin(pluginId);
+    const plugin = activePlugin(this.requireEnabledPlugin(pluginId));
     const contribution = plugin.manifest.contributions.find((candidate) => candidate.id === contributionId);
     if (!contribution) throw new Error("Plugin contribution does not exist.");
     return structuredClone(contribution);
   }
 
   hasPermission(pluginId: string, permission: PluginPermission): boolean {
-    const plugin = this.requireEnabledPlugin(pluginId);
+    const plugin = activePlugin(this.requireEnabledPlugin(pluginId));
     return plugin.manifest.permissions.includes(permission);
   }
 
@@ -287,7 +382,7 @@ export class PluginManager {
         });
       }
 
-      const plugin = this.requireEnabledPlugin(url.hostname);
+      const plugin = activePlugin(this.requireEnabledPlugin(url.hostname));
       const relativePath = decodeAssetPath(url.pathname);
       const root = join(this.pluginRoot, plugin.manifest.id);
       const path = await containedFile(root, relativePath);
@@ -355,7 +450,8 @@ export class PluginManager {
     const registry = Object.fromEntries([...this.plugins].map(([id, plugin]) => [id, {
       sourceUrl: plugin.sourceUrl,
       enabled: plugin.enabled,
-      installedAt: plugin.installedAt
+      installedAt: plugin.installedAt,
+      selectedModules: plugin.selectedModules
     }] satisfies [string, StoredPluginRecord]));
     const snapshot = JSON.stringify(registry, null, 2);
     const temporaryPath = `${this.registryPath}.tmp`;
@@ -410,16 +506,40 @@ export function validatePluginManifest(candidate: unknown): PluginManifest {
     if (!permissions.includes(permission as PluginPermission)) permissions.push(permission as PluginPermission);
   }
 
+  const modules = validateModules(candidate.modules);
+  const moduleIds = new Set(modules.map((module) => module.id));
+  const coreFiles = candidate.coreFiles === undefined ? [] : validateModuleFiles(candidate.coreFiles, "coreFiles");
+  if (modules.length > 0 && coreFiles.length === 0) {
+    throw new Error("Modular plugins must declare at least one coreFiles asset.");
+  }
+  const ownedFiles = new Set(coreFiles.map((file) => file.path));
+  for (const module of modules) {
+    for (const file of module.files) {
+      if (ownedFiles.has(file.path)) throw new Error(`Plugin module asset is declared more than once: ${file.path}.`);
+      ownedFiles.add(file.path);
+    }
+  }
+
   if (!Array.isArray(candidate.contributions) || candidate.contributions.length === 0 || candidate.contributions.length > 32) {
     throw new Error("Plugin must declare between 1 and 32 contributions.");
   }
   const contributionIds = new Set<string>();
   const contributions = candidate.contributions.map((value) => {
     const contribution = validateContribution(value);
+    if (contribution.module && !moduleIds.has(contribution.module)) {
+      throw new Error(`Plugin contribution references an unknown module: ${contribution.module}.`);
+    }
     if (contributionIds.has(contribution.id)) throw new Error(`Duplicate contribution id: ${contribution.id}.`);
     contributionIds.add(contribution.id);
     return contribution;
   });
+  const settingsContribution = optionalString(candidate.settingsContribution, "settingsContribution", 64);
+  if (settingsContribution) {
+    const target = contributions.find((contribution) => contribution.id === settingsContribution);
+    if (!target || target.kind !== "canvas-app") {
+      throw new Error("Plugin settingsContribution must reference a canvas-app contribution.");
+    }
+  }
 
   return {
     apiVersion: PLUGIN_API_VERSION,
@@ -430,7 +550,10 @@ export function validatePluginManifest(candidate: unknown): PluginManifest {
     ...(author ? { author } : {}),
     ...(homepage ? { homepage } : {}),
     permissions,
-    contributions
+    contributions,
+    ...(settingsContribution ? { settingsContribution } : {}),
+    ...(coreFiles.length ? { coreFiles } : {}),
+    ...(modules.length ? { modules } : {})
   };
 }
 
@@ -444,13 +567,29 @@ function validateContribution(value: unknown): PluginContribution {
   if (extname(entry).toLowerCase() !== ".html") throw new Error("Contribution entry must be an HTML file.");
   const iconValue = optionalString(value.icon, "contribution icon", 180);
   const icon = iconValue ? assetPath(iconValue) : null;
-  const base = { id, title, ...(description ? { description } : {}), entry, ...(icon ? { icon } : {}) };
+  const module = optionalString(value.module, "contribution module", 64);
+  if (module && !isContributionId(module)) throw new Error("Contribution module id contains unsupported characters.");
+  const base = {
+    id,
+    title,
+    ...(description ? { description } : {}),
+    entry,
+    ...(icon ? { icon } : {}),
+    ...(module ? { module } : {})
+  };
 
   if (value.kind === "home-widget") {
     return { ...base, kind: "home-widget", defaultSize: validateGridSize(value.defaultSize) };
   }
   if (value.kind === "canvas-app" || value.kind === "window") {
-    return { ...base, kind: value.kind, defaultSize: validateWindowSize(value.defaultSize) };
+    const defaultSize = validateWindowSize(value.defaultSize, "defaultSize", 320, 220);
+    const minSize = value.minSize === undefined
+      ? null
+      : validateWindowSize(value.minSize, "minSize", 240, 140);
+    if (minSize && (minSize.width > defaultSize.width || minSize.height > defaultSize.height)) {
+      throw new Error("Plugin contribution minSize must not exceed defaultSize.");
+    }
+    return { ...base, kind: value.kind, defaultSize, ...(minSize ? { minSize } : {}) };
   }
   throw new Error(`Unknown plugin contribution kind: ${String(value.kind)}.`);
 }
@@ -512,11 +651,14 @@ async function containedFile(root: string, relativePath: string): Promise<string
 }
 
 export async function downloadGithubRepository(sourceUrl: string, destination: string): Promise<void> {
+  await retryGithubDownload(() => downloadGithubRepositoryOnce(sourceUrl, destination));
+}
+
+async function retryGithubDownload<T>(operation: () => Promise<T>): Promise<T> {
   let lastError: unknown = new Error("GitHub plugin download failed.");
   for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt += 1) {
     try {
-      await downloadGithubRepositoryOnce(sourceUrl, destination);
-      return;
+      return await operation();
     } catch (error) {
       lastError = error;
       if (attempt >= DOWNLOAD_ATTEMPTS || !(error instanceof TransientGithubDownloadError)) break;
@@ -678,14 +820,290 @@ function validateGridSize(value: unknown): { columns: number; rows: number } {
   return { columns, rows };
 }
 
-function validateWindowSize(value: unknown): Size {
+async function downloadGithubManifest(sourceUrl: string, destination: string): Promise<void> {
+  const repository = await githubRepositoryMetadata(sourceUrl);
+  const url = githubRawUrl(repository.owner, repository.name, repository.branch, MANIFEST_FILE);
+  const content = await fetchBoundedGithubFile(url, MAX_MANIFEST_BYTES);
+  await mkdir(destination, { recursive: true });
+  await writeFile(join(destination, MANIFEST_FILE), content);
+}
+
+async function downloadGithubModuleFiles(
+  sourceUrl: string,
+  destination: string,
+  files: readonly PluginModuleAsset[]
+): Promise<void> {
+  const repository = await githubRepositoryMetadata(sourceUrl);
+  for (const file of files) {
+    const content = await fetchBoundedGithubFile(
+      githubRawUrl(repository.owner, repository.name, repository.branch, file.path),
+      file.bytes
+    );
+    if (content.length !== file.bytes || createHash("sha256").update(content).digest("hex") !== file.sha256) {
+      throw new Error(`Plugin module asset failed integrity verification: ${file.path}.`);
+    }
+    const path = join(destination, ...file.path.split("/"));
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, content);
+  }
+}
+
+async function githubRepositoryMetadata(sourceUrl: string): Promise<{ owner: string; name: string; branch: string }> {
+  return retryGithubDownload(() => githubRepositoryMetadataOnce(sourceUrl));
+}
+
+async function githubRepositoryMetadataOnce(sourceUrl: string): Promise<{ owner: string; name: string; branch: string }> {
+  const source = new URL(sourceUrl);
+  const [owner, repositoryWithGit] = source.pathname.split("/").filter(Boolean);
+  const name = repositoryWithGit.replace(/\.git$/i, "");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+  timer.unref();
+  try {
+    let response: Response;
+    try {
+      response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+        redirect: "follow",
+        headers: { accept: "application/vnd.github+json", "user-agent": "CanvasTTY plugin installer" },
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (controller.signal.aborted) throw new TransientGithubDownloadError("GitHub metadata request timed out.");
+      throw new TransientGithubDownloadError("GitHub metadata request could not establish a connection.", { cause: error });
+    }
+    const finalUrl = new URL(response.url || `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`);
+    if (finalUrl.protocol !== "https:" || finalUrl.hostname !== "api.github.com") {
+      throw new Error("GitHub metadata request redirected outside api.github.com.");
+    }
+    if (response.status === 404) throw new Error("GitHub repository was not found or is not public.");
+    if (!response.ok) {
+      const message = `GitHub metadata request failed with HTTP ${response.status}.`;
+      if (response.status === 408 || response.status === 429 || response.status >= 500) {
+        throw new TransientGithubDownloadError(message);
+      }
+      throw new Error(message);
+    }
+    const value: unknown = await response.json();
+    if (!isRecord(value) || typeof value.default_branch !== "string" || value.default_branch.length > 200) {
+      throw new Error("GitHub repository metadata is invalid.");
+    }
+    return { owner, name, branch: value.default_branch };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function githubRawUrl(owner: string, repository: string, branch: string, path: string): string {
+  return [
+    "https://raw.githubusercontent.com",
+    encodeURIComponent(owner),
+    encodeURIComponent(repository),
+    encodeURIComponent(branch),
+    ...assetPath(path).split("/").map(encodeURIComponent)
+  ].join("/");
+}
+
+async function fetchBoundedGithubFile(url: string, maximumBytes: number): Promise<Buffer> {
+  return retryGithubDownload(() => fetchBoundedGithubFileOnce(url, maximumBytes));
+}
+
+async function fetchBoundedGithubFileOnce(url: string, maximumBytes: number): Promise<Buffer> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+  timer.unref();
+  try {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        redirect: "follow",
+        headers: { "user-agent": "CanvasTTY plugin installer" },
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (controller.signal.aborted) throw new TransientGithubDownloadError("GitHub plugin file download timed out.");
+      throw new TransientGithubDownloadError("GitHub plugin file download could not establish a connection.", { cause: error });
+    }
+    const finalUrl = new URL(response.url || url);
+    if (finalUrl.protocol !== "https:" || finalUrl.hostname !== "raw.githubusercontent.com") {
+      throw new Error("GitHub plugin file redirected outside raw.githubusercontent.com.");
+    }
+    if (!response.ok || !response.body) {
+      const message = `GitHub file download failed with HTTP ${response.status}.`;
+      if (response.status === 408 || response.status === 429 || response.status >= 500) {
+        throw new TransientGithubDownloadError(message);
+      }
+      throw new Error(message);
+    }
+    const declared = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > maximumBytes) throw new Error("Plugin file exceeds its declared size.");
+    const reader = response.body.getReader();
+    const chunks: Buffer[] = [];
+    let total = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = Buffer.from(value);
+        total += chunk.length;
+        if (total > maximumBytes) throw new Error("Plugin file exceeds its declared size.");
+        chunks.push(chunk);
+      }
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new TransientGithubDownloadError("GitHub plugin file download timed out.", { cause: error });
+      }
+      if (error instanceof TypeError) {
+        throw new TransientGithubDownloadError("GitHub plugin file download was interrupted.", { cause: error });
+      }
+      throw error;
+    } finally {
+      reader.releaseLock();
+    }
+    return Buffer.concat(chunks, total);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function assertModularContributionFiles(manifest: PluginManifest): void {
+  const coreFiles = new Set((manifest.coreFiles ?? []).map((file) => file.path));
+  const moduleFiles = new Map((manifest.modules ?? []).map((module) => [
+    module.id,
+    new Set(module.files.map((file) => file.path))
+  ]));
+  for (const contribution of manifest.contributions) {
+    const available = contribution.module ? moduleFiles.get(contribution.module) : coreFiles;
+    if (!available?.has(contribution.entry) || (contribution.icon && !available.has(contribution.icon))) {
+      throw new Error(`Contribution assets must belong to its declared module: ${contribution.id}.`);
+    }
+  }
+}
+
+async function materializeModularPackage(
+  sourceUrl: string,
+  previewRoot: string,
+  destination: string,
+  manifest: PluginManifest,
+  selectedModules: readonly string[],
+  downloadFiles: DownloadModuleFiles
+): Promise<void> {
+  const selected = new Set(selectedModules);
+  const files = [
+    ...(manifest.coreFiles ?? []),
+    ...(manifest.modules ?? []).filter((module) => selected.has(module.id)).flatMap((module) => module.files)
+  ];
+  if (files.length > MAX_PACKAGE_ENTRIES || files.reduce((total, file) => total + file.bytes, 0) > MAX_PACKAGE_BYTES) {
+    throw new Error("Selected plugin modules exceed the package limits.");
+  }
+  await mkdir(destination, { recursive: true });
+  await copyFile(join(previewRoot, MANIFEST_FILE), join(destination, MANIFEST_FILE));
+  await downloadFiles(sourceUrl, destination, files);
+  await inspectPackage(destination);
+  await assertContributionAssets(destination, activeManifest(manifest, selectedModules).contributions);
+}
+
+function activeManifest(manifest: PluginManifest, selectedModules: readonly string[]): PluginManifest {
+  const selected = new Set(selectedModules);
+  const contributions = manifest.contributions.filter((contribution) => !contribution.module || selected.has(contribution.module));
+  const permissions = [
+    ...manifest.permissions,
+    ...(manifest.modules ?? []).filter((module) => selected.has(module.id)).flatMap((module) => module.permissions)
+  ];
+  const { settingsContribution, ...rest } = manifest;
+  return {
+    ...rest,
+    permissions: [...new Set(permissions)],
+    contributions,
+    ...(settingsContribution && contributions.some((item) => item.id === settingsContribution)
+      ? { settingsContribution }
+      : {})
+  };
+}
+
+function validateModules(value: unknown): PluginModule[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 16) throw new Error("Plugin modules must be an array of at most 16 items.");
+  const ids = new Set<string>();
+  return value.map((candidate) => {
+    if (!isRecord(candidate)) throw new Error("Every plugin module must be an object.");
+    const id = requiredString(candidate.id, "module id", 64);
+    if (!isContributionId(id) || ids.has(id)) throw new Error(`Plugin module id is invalid or duplicated: ${id}.`);
+    ids.add(id);
+    const title = requiredString(candidate.title, "module title", 80);
+    const description = optionalString(candidate.description, "module description", 240);
+    if (!Array.isArray(candidate.permissions)) throw new Error(`Plugin module ${id} permissions must be an array.`);
+    const permissions: PluginPermission[] = [];
+    for (const permission of candidate.permissions) {
+      if (!PLUGIN_PERMISSIONS.has(permission as PluginPermission)) {
+        throw new Error(`Unknown plugin module permission: ${String(permission)}.`);
+      }
+      if (!permissions.includes(permission as PluginPermission)) permissions.push(permission as PluginPermission);
+    }
+    return {
+      id,
+      title,
+      ...(description ? { description } : {}),
+      defaultSelected: candidate.defaultSelected !== false,
+      permissions,
+      files: validateModuleFiles(candidate.files, `module ${id} files`)
+    };
+  });
+}
+
+function normalizeSelectedModules(manifest: PluginManifest, value: unknown): string[] {
+  const available = new Set((manifest.modules ?? []).map((module) => module.id));
+  if (!Array.isArray(value)) return [];
+  const selected: string[] = [];
+  for (const id of value) {
+    if (typeof id !== "string" || !available.has(id) || selected.includes(id)) continue;
+    selected.push(id);
+  }
+  return selected;
+}
+
+function activePlugin(plugin: InstalledPlugin): InstalledPlugin {
+  return {
+    ...plugin,
+    manifest: activeManifest(plugin.manifest, plugin.selectedModules)
+  };
+}
+
+function validateModuleFiles(value: unknown, label: string): PluginModuleAsset[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_PACKAGE_ENTRIES) {
+    throw new Error(`Plugin ${label} must contain between 1 and ${MAX_PACKAGE_ENTRIES} files.`);
+  }
+  const seen = new Set<string>();
+  let totalBytes = 0;
+  return value.map((candidate) => {
+    if (!isRecord(candidate)) throw new Error(`Every plugin ${label} entry must be an object.`);
+    const path = assetPath(requiredString(candidate.path, `${label} path`, 180));
+    if (path === MANIFEST_FILE || seen.has(path)) throw new Error(`Plugin module asset is invalid or duplicated: ${path}.`);
+    seen.add(path);
+    if (!Number.isInteger(candidate.bytes) || (candidate.bytes as number) < 0 || (candidate.bytes as number) > MAX_ASSET_BYTES) {
+      throw new Error(`Plugin module asset size is invalid: ${path}.`);
+    }
+    const bytes = candidate.bytes as number;
+    totalBytes += bytes;
+    if (totalBytes > MAX_PACKAGE_BYTES) throw new Error("Plugin module assets exceed the 25 MB package limit.");
+    const sha256 = requiredString(candidate.sha256, `${label} sha256`, 64).toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(sha256)) throw new Error(`Plugin module asset hash is invalid: ${path}.`);
+    return { path, bytes, sha256 };
+  });
+}
+
+function validateWindowSize(
+  value: unknown,
+  label: "defaultSize" | "minSize",
+  minimumWidth: number,
+  minimumHeight: number
+): Size {
   if (!isRecord(value) || !Number.isFinite(value.width) || !Number.isFinite(value.height)) {
-    throw new Error("Plugin window defaultSize must contain a finite width and height.");
+    throw new Error(`Plugin window ${label} must contain a finite width and height.`);
   }
   const width = Math.round(value.width as number);
   const height = Math.round(value.height as number);
-  if (width < 320 || width > 1_600 || height < 220 || height > 1_100) {
-    throw new Error("Plugin window defaultSize is outside the supported bounds.");
+  if (width < minimumWidth || width > 1_600 || height < minimumHeight || height > 1_100) {
+    throw new Error(`Plugin window ${label} is outside the supported bounds.`);
   }
   return { width, height };
 }
@@ -814,6 +1232,9 @@ function isStoredRecord(value: unknown): value is StoredPluginRecord {
     && typeof value.enabled === "boolean"
     && typeof value.installedAt === "number"
     && Number.isFinite(value.installedAt)
+    && (value.selectedModules === undefined || (
+      Array.isArray(value.selectedModules) && value.selectedModules.every((item) => typeof item === "string")
+    ))
   );
 }
 
@@ -876,6 +1297,7 @@ function safeArchiveParts(value: string): string[] {
 const PLUGIN_SDK_SOURCE = `(() => {
   const pending = new Map();
   const listeners = new Set();
+  const storageListeners = new Set();
   let nextId = 1;
   const post = (message) => parent.postMessage({ source: "canvastty-plugin", ...message }, "*");
   const request = (method, params = {}) => new Promise((resolve, reject) => {
@@ -894,6 +1316,9 @@ const PLUGIN_SDK_SOURCE = `(() => {
       return;
     }
     if (message.type === "context") listeners.forEach((listener) => listener(message.value));
+    if (message.type === "storage-change") {
+      storageListeners.forEach((listener) => listener(message.key, message.value));
+    }
   });
   window.CanvasTTYPlugin = Object.freeze({
     ready: () => post({ type: "ready" }),
@@ -901,6 +1326,14 @@ const PLUGIN_SDK_SOURCE = `(() => {
     storage: Object.freeze({
       get: (key) => request("storage.get", { key }),
       set: (key, value) => request("storage.set", { key, value })
+    }),
+    secrets: Object.freeze({
+      get: (key) => request("secrets.get", { key }),
+      set: (key, value) => request("secrets.set", { key, value }),
+      delete: (key) => request("secrets.delete", { key })
+    }),
+    canvas: Object.freeze({
+      open: (contributionId) => request("canvas.open", { contributionId })
     }),
     media: Object.freeze({
       pickLibrary: () => request("media.pickLibrary"),
@@ -916,6 +1349,10 @@ const PLUGIN_SDK_SOURCE = `(() => {
     onContext: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    onStorageChange: (listener) => {
+      storageListeners.add(listener);
+      return () => storageListeners.delete(listener);
     }
   });
   addEventListener("DOMContentLoaded", () => post({ type: "ready" }), { once: true });

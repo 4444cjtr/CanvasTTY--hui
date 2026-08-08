@@ -45,7 +45,8 @@ Editor tooling can use the [manifest JSON Schema](canvastty-plugin.schema.json) 
   "name": "Studio Kit",
   "version": "1.0.0",
   "description": "Small CanvasTTY surfaces backed by real host state.",
-  "permissions": ["storage", "sessions:read", "launcher:open"],
+  "permissions": ["storage", "secrets", "sessions:read", "launcher:open"],
+  "settingsContribution": "notes",
   "contributions": [
     {
       "id": "session-status",
@@ -59,7 +60,8 @@ Editor tooling can use the [manifest JSON Schema](canvastty-plugin.schema.json) 
       "kind": "canvas-app",
       "title": "Notes",
       "entry": "apps/notes.html",
-      "defaultSize": { "width": 680, "height": 440 }
+      "defaultSize": { "width": 680, "height": 440 },
+      "minSize": { "width": 320, "height": 180 }
     },
     {
       "id": "focus",
@@ -72,13 +74,22 @@ Editor tooling can use the [manifest JSON Schema](canvastty-plugin.schema.json) 
 }
 ```
 
-Plugin and contribution IDs are stable persistence keys. Do not rename them after publishing. Plugin versions use semantic version text. HOME starts with a spacious 16 × 12 logical grid while preserving the original 12 × 8 composition. The editor can resize its visible boundary up to 48 × 36 without shrinking cell dimensions, and adding a widget grows the boundary automatically when needed. Canvas apps use world-space pixels and participate in the same snapping system as terminal cards.
+Plugin and contribution IDs are stable persistence keys. Do not rename them after publishing. Plugin versions use semantic version text. `settingsContribution` optionally references one `canvas-app`; CanvasTTY shows a dedicated **Settings** action for it in the Extensions menu. Every installed `home-widget` also appears beside the built-in widgets in **Settings → Appearance → HOME composition**, where it is added or removed. `minSize` is optional for `canvas-app` and `window` contributions, must not exceed `defaultSize`, and may be as small as 240 × 140 pixels. Older manifests keep the 320 × 220 host minimum. HOME starts with a spacious 16 × 12 logical grid while preserving the original 12 × 8 composition. The editor can resize its visible boundary up to 48 × 36 without shrinking cell dimensions, and adding a widget grows the boundary automatically when needed. Canvas apps use world-space pixels and participate in the same snapping system as terminal cards.
+
+### Optional modules
+
+A modular manifest declares integrity-checked coreFiles plus up to 16 optional modules. Every file entry contains path, exact bytes, and a SHA-256 digest. CanvasTTY downloads only the manifest for inspection, shows checkboxes, per-module size and permissions, then downloads only the core and selected module files. Changing the selection later replaces the installed package atomically and removes deselected files. A contribution may set module to disappear when that module is not installed.
+
+Module file integrity (exact byte counts and SHA-256 digests) is verified against the hashes declared in the plugin manifest, and the manifest itself is fetched from GitHub over TLS without a separate signature. The trust anchor is therefore the plugin's GitHub repository: a compromised repository can ship a new manifest with matching hashes.
+
+host.onStorageChange(listener) notifies every live contribution of the same plugin — canvases, HOME widgets, and separate windows — of writes made through host.storage.set, avoiding polling when a plugin coordinates several surfaces.
 
 ## Permissions
 
 | Permission | SDK capability | Data boundary |
 |:--|:--|:--|
 | `storage` | `storage.get`, `storage.set` | Isolated JSON storage, 64 KB per plugin |
+| `secrets` | `secrets.get`, `secrets.set`, `secrets.delete` | String secrets encrypted with Electron `safeStorage`; fails closed when protected OS storage is unavailable |
 | `sessions:read` | `sessions.list` | ID, provider, title, status, start time, exit code only |
 | `limits:read` | `limits.get` | The same sanitized `LimitsSnapshot` used by HOME |
 | `launcher:open` | `launcher.open` | Opens the built-in provider Focus Card or terminal action; it does not bypass user launch choices |
@@ -112,7 +123,10 @@ host.onContext(({ appearance, contribution }) => {
 const sessions = await host.request("sessions.list");
 await host.storage.set("draft", { text: "Local to this plugin" });
 const draft = await host.storage.get("draft");
+await host.secrets.set("oauth-token", token);
+const restoredToken = await host.secrets.get("oauth-token");
 await host.request("launcher.open", { provider: "codex" });
+await host.canvas.open("notes");
 await host.request("window.open", { contributionId: "focus" });
 
 const library = await host.media.pickLibrary();
@@ -126,7 +140,9 @@ if (library) {
 }
 ```
 
-Supported methods are `host.getContext`, `storage.*`, `sessions.list`, `limits.get`, `launcher.open`, `external.open`, `window.open`, `media.*`, and `playlists.*`. `window.open` may target only a `window` contribution declared by the same plugin.
+Supported methods are `host.getContext`, `storage.*`, `secrets.*`, `sessions.list`, `limits.get`, `launcher.open`, `canvas.open`, `external.open`, `window.open`, `media.*`, and `playlists.*`. `canvas.open` opens or focuses a `canvas-app` contribution from the same plugin, placing it beside the requesting canvas card when possible. `window.open` may target only a `window` contribution declared by the same plugin.
+
+Use `storage` for non-sensitive JSON preferences and `secrets` only for credentials such as OAuth tokens or API keys. Secrets are string-only, limited to 32 keys / 16 KB per value / 64 KB per plugin, removed on uninstall, and never fall back to plaintext storage. A secret call fails explicitly when the operating system cannot provide protected encryption.
 
 Music-library grants persist across restarts and can be listed or revoked by the owning plugin. Scans skip symlinks and return relative paths, metadata, and opaque stream URLs rather than the absolute library root. Uninstalling the plugin revokes all of its grants. Playlist contents are returned as authored and are intentionally format-neutral, so a player may use standard M3U/PLS or its own JSON schema; an imported playlist may itself contain absolute paths.
 
@@ -162,7 +178,7 @@ Context updates include the active CanvasTTY locale and palette. Plugins own the
 2. Open **Settings → Plugins**.
 3. Paste `https://github.com/owner/repository` and choose **Inspect**.
 4. Review the manifest and requested permissions, then confirm **Install**.
-5. Enable/disable or uninstall the package from the same section. HOME widgets can be added or removed there.
+5. Enable/disable or uninstall the package from the same section. HOME widgets are added or removed beside the built-in widgets under **Appearance → HOME composition**. If the manifest declares `settingsContribution`, the plugin card also shows a dedicated **Settings** action.
 6. Open **Settings → Appearance → HOME composition**, then choose **Edit HOME** to drag tiles, resize them, or pull the bottom-right HOME boundary. The Settings tile is retained as the recovery entry point; all other core and plugin tiles are optional.
 
 The current installer intentionally rejects private repositories, GitHub `/tree/branch/subdirectory` links, and repositories that require a build step. Publish a ready-to-run static package at the repository root.

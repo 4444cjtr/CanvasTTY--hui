@@ -171,6 +171,7 @@ export const PLUGIN_API_VERSION = 1;
 
 export type PluginPermission =
   | "storage"
+  | "secrets"
   | "sessions:read"
   | "limits:read"
   | "launcher:open"
@@ -188,6 +189,22 @@ export interface PluginContributionBase {
   description?: string;
   entry: string;
   icon?: string;
+  module?: string;
+}
+
+export interface PluginModuleAsset {
+  path: string;
+  bytes: number;
+  sha256: string;
+}
+
+export interface PluginModule {
+  id: string;
+  title: string;
+  description?: string;
+  defaultSelected: boolean;
+  permissions: PluginPermission[];
+  files: PluginModuleAsset[];
 }
 
 export interface PluginHomeWidgetContribution extends PluginContributionBase {
@@ -198,11 +215,13 @@ export interface PluginHomeWidgetContribution extends PluginContributionBase {
 export interface PluginCanvasAppContribution extends PluginContributionBase {
   kind: "canvas-app";
   defaultSize: Size;
+  minSize?: Size;
 }
 
 export interface PluginWindowContribution extends PluginContributionBase {
   kind: "window";
   defaultSize: Size;
+  minSize?: Size;
 }
 
 export type PluginContribution =
@@ -220,6 +239,9 @@ export interface PluginManifest {
   homepage?: string;
   permissions: PluginPermission[];
   contributions: PluginContribution[];
+  settingsContribution?: string;
+  coreFiles?: PluginModuleAsset[];
+  modules?: PluginModule[];
 }
 
 export interface InstalledPlugin {
@@ -227,6 +249,7 @@ export interface InstalledPlugin {
   sourceUrl: string;
   enabled: boolean;
   installedAt: number;
+  selectedModules: string[];
 }
 
 export interface PluginInstallPreview {
@@ -256,6 +279,18 @@ export interface PluginSessionInfo {
 
 export interface PluginLauncherRequest {
   provider: ProviderId;
+}
+
+export interface PluginCanvasRequest {
+  pluginId: string;
+  contributionId: string;
+  sourceCanvasInstanceId?: string;
+}
+
+export interface PluginStorageChangeEvent {
+  pluginId: string;
+  key: string;
+  value: unknown;
 }
 
 export interface PluginMediaLibrary {
@@ -639,13 +674,18 @@ export interface CanvasTTYApi {
   plugins: {
     list(): Promise<InstalledPlugin[]>;
     previewInstall(sourceUrl: string): Promise<PluginInstallPreview>;
-    install(token: string): Promise<InstalledPlugin>;
+    install(token: string, selectedModules?: string[]): Promise<InstalledPlugin>;
+    setModules(pluginId: string, selectedModules: string[]): Promise<InstalledPlugin>;
     setEnabled(pluginId: string, enabled: boolean): Promise<InstalledPlugin>;
     uninstall(pluginId: string): Promise<void>;
+    openCanvas(pluginId: string, contributionId: string, sourceCanvasInstanceId?: string): Promise<void>;
     openWindow(pluginId: string, contributionId: string): Promise<void>;
     openExternal(pluginId: string, url: string): Promise<void>;
     storageGet(pluginId: string, key: string): Promise<unknown>;
     storageSet(pluginId: string, key: string, value: unknown): Promise<void>;
+    secretsGet(pluginId: string, key: string): Promise<string | null>;
+    secretsSet(pluginId: string, key: string, value: string): Promise<void>;
+    secretsDelete(pluginId: string, key: string): Promise<void>;
     mediaPickLibrary(pluginId: string): Promise<PluginMediaLibrary | null>;
     mediaListLibraries(pluginId: string): Promise<PluginMediaLibrary[]>;
     mediaScanLibrary(pluginId: string, libraryId: string): Promise<PluginMediaTrack[]>;
@@ -654,6 +694,8 @@ export interface CanvasTTYApi {
     playlistsRead(pluginId: string, libraryId: string, playlistId: string): Promise<string>;
     playlistsWrite(pluginId: string, libraryId: string, name: string, content: string): Promise<PluginPlaylistFile>;
     onOpenLauncher(listener: (event: PluginLauncherRequest) => void): () => void;
+    onOpenCanvas(listener: (event: PluginCanvasRequest) => void): () => void;
+    onStorageChanged(listener: (event: PluginStorageChangeEvent) => void): () => void;
   };
   browser: {
     getState(): Promise<BrowserSnapshot>;
@@ -721,12 +763,17 @@ export const IPC = {
   pluginsList: "plugins:list",
   pluginsPreviewInstall: "plugins:preview-install",
   pluginsInstall: "plugins:install",
+  pluginsSetModules: "plugins:set-modules",
   pluginsSetEnabled: "plugins:set-enabled",
   pluginsUninstall: "plugins:uninstall",
+  pluginsOpenCanvas: "plugins:open-canvas",
   pluginsOpenWindow: "plugins:open-window",
   pluginsOpenExternal: "plugins:open-external",
   pluginsStorageGet: "plugins:storage-get",
   pluginsStorageSet: "plugins:storage-set",
+  pluginsSecretsGet: "plugins:secrets-get",
+  pluginsSecretsSet: "plugins:secrets-set",
+  pluginsSecretsDelete: "plugins:secrets-delete",
   pluginsMediaPickLibrary: "plugins:media-pick-library",
   pluginsMediaListLibraries: "plugins:media-list-libraries",
   pluginsMediaScanLibrary: "plugins:media-scan-library",
@@ -736,6 +783,8 @@ export const IPC = {
   pluginsPlaylistsWrite: "plugins:playlists-write",
   pluginsHostInvoke: "plugins:host-invoke",
   pluginsLauncherRequested: "plugins:launcher-requested",
+  pluginsCanvasRequested: "plugins:canvas-requested",
+  pluginsStorageChanged: "plugins:storage-changed",
   browserGetState: "browser:get-state",
   browserOpen: "browser:open",
   browserClose: "browser:close",

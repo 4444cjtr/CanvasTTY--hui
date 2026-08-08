@@ -354,6 +354,7 @@ export function HomeZone({
       return (
         <section className="tile plugin-widget">
           <PluginFrame
+            key={plugin.selectedModules.join(",")}
             plugin={plugin}
             contribution={contribution}
             locale={locale}

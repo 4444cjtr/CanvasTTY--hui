@@ -40,7 +40,8 @@ interface SettingsPanelProps {
   onClose(): void;
   onChange(patch: Partial<AppSettings>): Promise<void>;
   onPreviewPlugin(sourceUrl: string): Promise<PluginInstallPreview>;
-  onInstallPlugin(token: string): Promise<void>;
+  onInstallPlugin(token: string, selectedModules: string[]): Promise<void>;
+  onSetPluginModules(pluginId: string, selectedModules: string[]): Promise<void>;
   onSetPluginEnabled(pluginId: string, enabled: boolean): Promise<void>;
   onUninstallPlugin(pluginId: string): Promise<void>;
   onOpenPluginContribution(plugin: InstalledPlugin, contribution: PluginContribution): Promise<void>;
@@ -57,6 +58,7 @@ export function SettingsPanel({
   onChange,
   onPreviewPlugin,
   onInstallPlugin,
+  onSetPluginModules,
   onSetPluginEnabled,
   onUninstallPlugin,
   onOpenPluginContribution,
@@ -237,6 +239,7 @@ export function SettingsPanel({
               </SettingGroup>
               <HomeAppearanceSettings
                 settings={settings}
+                plugins={plugins}
                 onToggleHomeWidget={onToggleHomeWidget}
                 onEditHome={onEditHome}
               />
@@ -466,6 +469,7 @@ export function SettingsPanel({
               plugins={plugins}
               onPreviewPlugin={onPreviewPlugin}
               onInstallPlugin={onInstallPlugin}
+              onSetPluginModules={onSetPluginModules}
               onSetPluginEnabled={onSetPluginEnabled}
               onUninstallPlugin={onUninstallPlugin}
               onOpenPluginContribution={onOpenPluginContribution}

@@ -2,6 +2,24 @@
 
 [English](CHANGELOG.md) · [Русский](CHANGELOG.ru.md) · [简体中文](CHANGELOG.zh-CN.md)
 
+## 1.2.1
+
+- Plugin canvas apps now open and refocus at native `1.0` scale, avoiding fractional-scale blur; their transparent iframe backdrop also removes the bright seam around rounded plugin windows.
+- Terminal and Browser semantic summaries now reserve width before counter-scaling and keep their content centered, preventing icons and text from being clipped at distant canvas zoom levels.
+
+## 1.2.0
+
+- Added native macOS window chrome: a hidden title bar with traffic-light buttons, a compact brand bar, and correct native-fullscreen behavior; Linux and Windows keep the existing custom frame.
+- Added OS-encrypted plugin secrets via Electron safeStorage (fail-closed when no system keyring is available) with per-call permission checks, quotas, change events, and uninstall cleanup.
+- Plugins can now contribute a settings entry opened in a sandboxed frame, declare minimum canvas sizes, and open another canvas of the same plugin beside the current one.
+- Plugin HOME widgets are listed beside built-in widgets in Appearance → HOME composition and can be added or removed like built-in ones, closing the 1.1.0 known gap; Settings → Plugins is scoped back to install/uninstall only.
+- Added optional plugin modules: install-time selection, per-file SHA-256 and byte-count verification, atomic reconfiguration with rollback, and module-derived permissions applied consistently to SDK authorization and the plugin resource CSP.
+- Plugin storage change events are now broadcast from the main process, so canvases, HOME widgets, and separate windows of the same plugin observe each other's writes.
+- Hardened plugin downloads: redirects are pinned to `api.github.com` and `raw.githubusercontent.com`, and module downloads reuse the 1.1.0 retry/backoff.
+- Documented the optional-module trust model: file integrity is anchored to the plugin manifest fetched from GitHub over TLS without a separate signature.
+
+Known issue: installed plugins cannot be updated in place yet — uninstall and reinstall to pick up a newer version. An update action is planned.
+
 ## 1.1.0
 
 - Scaled native browser pages to the canvas zoom via Chromium zoom factor (clamped 0.5–3), so browser content follows the canvas scale at any zoom.

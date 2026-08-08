@@ -11,6 +11,58 @@ import {
   resizeHomePlacement,
   updateHomePlacement
 } from "../src/renderer/src/features/home/homeLayout.ts";
+import { pluginHomeWidgetOptions } from "../src/renderer/src/features/home/pluginHomeWidgets.ts";
+
+test("lists enabled and disabled plugin Home widgets beside core options", () => {
+  const plugins = [{
+    enabled: true,
+    manifest: {
+      id: "com.example.music",
+      name: "Music plugin",
+      contributions: [{
+        id: "player",
+        kind: "home-widget",
+        title: "Music",
+        description: "Compact player",
+        entry: "index.html",
+        defaultSize: { columns: 6, rows: 3 }
+      }, {
+        id: "library",
+        kind: "canvas-app",
+        title: "Library",
+        entry: "library.html",
+        defaultSize: { width: 800, height: 600 }
+      }]
+    }
+  }, {
+    enabled: false,
+    manifest: {
+      id: "com.example.weather",
+      name: "Weather plugin",
+      contributions: [{
+        id: "forecast",
+        kind: "home-widget",
+        title: "Forecast",
+        entry: "forecast.html",
+        defaultSize: { columns: 4, rows: 2 }
+      }]
+    }
+  }];
+
+  assert.deepEqual(pluginHomeWidgetOptions(plugins), [{
+    widgetId: "plugin:com.example.music:player",
+    label: "Music",
+    description: "Music plugin · Compact player",
+    size: { columns: 6, rows: 3 },
+    pluginEnabled: true
+  }, {
+    widgetId: "plugin:com.example.weather:forecast",
+    label: "Forecast",
+    description: "Weather plugin",
+    size: { columns: 4, rows: 2 },
+    pluginEnabled: false
+  }]);
+});
 
 test("builds stable plugin widget ids", () => {
   assert.equal(pluginWidgetId("com.example.clock", "weekly"), "plugin:com.example.clock:weekly");
