@@ -8,9 +8,32 @@ import {
   PluginManager,
   downloadGithubRepository,
   extractGithubTarball,
+  injectPluginInputBridge,
   normalizeGithubUrl,
   validatePluginManifest
 } from "../src/main/services/PluginManager.ts";
+
+test("injects one trusted input bridge before plugin scripts", () => {
+  const html = "<!doctype html><html><head><script src='plugin.js'></script></head><body></body></html>";
+  const injected = injectPluginInputBridge(html);
+  const bridge = "canvastty-plugin://host/input-bridge.js";
+  assert.equal(injected.split(bridge).length - 1, 1);
+  assert.ok(injected.indexOf(bridge) < injected.indexOf("plugin.js"));
+  assert.equal(injectPluginInputBridge(injected), injected);
+});
+
+test("trusted input bridge relays focus and hover without cancelling plugin clicks", async () => {
+  const source = await readFile(new URL("../src/main/services/PluginManager.ts", import.meta.url), "utf8");
+  const bridgeStart = source.indexOf("const PLUGIN_INPUT_BRIDGE_SOURCE");
+  const bridge = source.slice(bridgeStart);
+
+  assert.match(bridge, /addEventListener\("pointerdown"/);
+  assert.match(bridge, /type: "canvas-focus"/);
+  assert.match(bridge, /type: "canvas-hover", active: true/);
+  assert.match(bridge, /type: "canvas-hover", active: false/);
+  const pointerStart = bridge.indexOf('addEventListener("pointerdown"');
+  assert.doesNotMatch(bridge.slice(pointerStart), /event\.preventDefault\(\)/);
+});
 
 const manifest = {
   apiVersion: 1,
@@ -118,6 +141,10 @@ test("previews, installs, serves, stores, disables, and uninstalls a static pack
     assert.equal(installed.enabled, true);
     assert.equal(manager.list().length, 1);
 
+    const inputBridge = await manager.protocolResponse("canvastty-plugin://host/input-bridge.js");
+    assert.equal(inputBridge.status, 200);
+    assert.match(await inputBridge.text(), /addEventListener\("wheel"/);
+
     await manager.storageSet(installed.manifest.id, "draft", { text: "real storage" });
     assert.deepEqual(await manager.storageGet(installed.manifest.id, "draft"), { text: "real storage" });
 
@@ -125,7 +152,9 @@ test("previews, installs, serves, stores, disables, and uninstalls a static pack
       "canvastty-plugin://com.example.studio-kit/widgets/status.html"
     );
     assert.equal(asset.status, 200);
-    assert.match(await asset.text(), /Session status/);
+    const assetHtml = await asset.text();
+    assert.match(assetHtml, /Session status/);
+    assert.match(assetHtml, /canvastty-plugin:\/\/host\/input-bridge\.js/);
     assert.match(asset.headers.get("content-security-policy"), /connect-src 'none'/);
 
     await manager.setEnabled(installed.manifest.id, false);

@@ -34,6 +34,15 @@ export function isRenameInputTarget(target: EventTarget | null): boolean {
   return target instanceof Element && Boolean(target.closest('[data-terminal-rename="true"]'));
 }
 
+export function displayCanvasNavigationBinding(binding: string, isMacOS: boolean): string {
+  if (!isMacOS) return binding;
+  return binding.split("+").map((part) => {
+    if (part === "Alt") return "Option";
+    if (part === "Meta") return "Command";
+    return part;
+  }).join("+");
+}
+
 function normalizeKey(key: string): string | null {
   if (key === " ") return "Space";
   if (key.length === 1) return key.toUpperCase();

@@ -8,6 +8,8 @@ export type LocaleId = "ru" | "en";
 export type MediaFit = "cover" | "contain";
 export type EdgePanSpeed = "slow" | "normal" | "fast";
 export type ZoomSensitivity = "slow" | "normal" | "fast";
+export type CanvasWheelCaptureMode = "off" | "always" | "key";
+export type BrowserViewportSurface = "native" | "placeholder" | "hidden";
 export type FocusActivation = "off" | "single" | "double";
 export type ShortcutAction = "home" | "renameWindow";
 
@@ -93,7 +95,10 @@ export interface AppSettings {
   edgePan: boolean;
   edgePanSpeed: EdgePanSpeed;
   zoomSensitivity: ZoomSensitivity;
-  zoomOverApplications: boolean;
+  useScrollWheelToZoom: boolean;
+  canvasWheelCaptureMode: CanvasWheelCaptureMode;
+  canvasWheelOverride: string | null;
+  canvasNavigationOverride: string | null;
   focusActivation: FocusActivation;
   hoverFocus: boolean;
   hoverFocusSpeed: EdgePanSpeed;
@@ -279,9 +284,8 @@ export interface BrowserCanvasState extends SessionBounds {}
 export interface BrowserViewportBounds extends Size {
   x: number;
   y: number;
-  visible: boolean;
+  surface: BrowserViewportSurface;
   canvasScale?: number;
-  captureCanvasWheel?: boolean;
   showAgentPresence?: boolean;
 }
 
@@ -369,7 +373,33 @@ export interface BrowserCanvasWheelEvent {
   tabId: string;
   clientX: number;
   clientY: number;
+  deltaX: number;
   deltaY: number;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  wheelOverrideActive: boolean;
+  canvasOverrideActive: boolean;
+}
+
+export interface BrowserCanvasFreezeFrameEvent {
+  tabId: string;
+  generation: number;
+  active: boolean;
+  dataUrl: string | null;
+}
+
+export interface BrowserCanvasNavigationPointerEvent {
+  tabId: string;
+  type: "down" | "move" | "up" | "cancel";
+  clientX: number;
+  clientY: number;
+}
+
+export interface CanvasNavigationOverrideStateEvent {
+  wheelActive: boolean;
+  navigationActive: boolean;
 }
 
 export interface BrowserCanvasPointerEvent {
@@ -645,11 +675,20 @@ export interface CanvasTTYApi {
     getActivity(sinceSequence?: number): Promise<BrowserActivityEvent[]>;
     clearData(): Promise<BrowserSnapshot>;
     focus(): void;
+    setInputFocused(focused: boolean): void;
     setViewport(bounds: BrowserViewportBounds): void;
     onState(listener: (event: BrowserStateEvent) => void): () => void;
     onActivity(listener: (event: BrowserActivityStateEvent) => void): () => void;
     onCanvasWheel(listener: (event: BrowserCanvasWheelEvent) => void): () => void;
+    onCanvasFreezeFrame(listener: (event: BrowserCanvasFreezeFrameEvent) => void): () => void;
     onCanvasPointer(listener: (event: BrowserCanvasPointerEvent) => void): () => void;
+    onCanvasNavigationPointer(listener: (event: BrowserCanvasNavigationPointerEvent) => void): () => void;
+  };
+  canvasNavigation: {
+    armOwnerWheelSequence(clientX: number, clientY: number): void;
+    setShortcutCaptureActive(active: boolean): void;
+    setPointerGestureActive(active: boolean): void;
+    onOverrideState(listener: (event: CanvasNavigationOverrideStateEvent) => void): () => void;
   };
   terminal: {
     list(): Promise<SessionSnapshot[]>;
@@ -716,11 +755,20 @@ export const IPC = {
   browserGetActivity: "browser:get-activity",
   browserClearData: "browser:clear-data",
   browserFocus: "browser:focus",
+  browserSetInputFocused: "browser:set-input-focused",
   browserSetViewport: "browser:set-viewport",
   browserState: "browser:state",
   browserActivity: "browser:activity",
+  browserPageWheelDecision: "browser:page-wheel-decision",
+  browserPageWheel: "browser:page-wheel",
   browserCanvasWheel: "browser:canvas-wheel",
+  browserCanvasFreezeFrame: "browser:canvas-freeze-frame",
   browserCanvasPointer: "browser:canvas-pointer",
+  browserCanvasNavigationPointer: "browser:canvas-navigation-pointer",
+  canvasNavigationShortcutCapture: "canvas-navigation:shortcut-capture",
+  canvasNavigationOwnerWheel: "canvas-navigation:owner-wheel",
+  canvasNavigationPointerGesture: "canvas-navigation:pointer-gesture",
+  canvasNavigationOverrideState: "canvas-navigation:override-state",
   terminalList: "terminal:list",
   terminalCreate: "terminal:create",
   terminalRestart: "terminal:restart",

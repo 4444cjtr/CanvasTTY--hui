@@ -8,7 +8,7 @@ export const ZOOM_SENSITIVITY_FACTORS: Record<ZoomSensitivity, number> = {
   fast: 2
 };
 
-/** Wheel/pinch zoom step scaled by the user's sensitivity preference. */
+/** Historical unmodified-wheel zoom step scaled by the user's sensitivity preference. */
 export function wheelZoomFactor(deltaY: number, sensitivity: ZoomSensitivity): number {
   return Math.exp(-deltaY * WHEEL_ZOOM_BASE * ZOOM_SENSITIVITY_FACTORS[sensitivity]);
 }
