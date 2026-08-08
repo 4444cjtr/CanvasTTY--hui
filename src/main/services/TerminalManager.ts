@@ -21,6 +21,7 @@ import type {
 } from "./agent-browser/AgentBrowserBridge.ts";
 import { AGENT_BROWSER_ENV } from "./agent-browser/AgentBrowserBridge.ts";
 import { tryPtyOperation } from "./ptySafety.ts";
+import { resolveTerminalLaunch } from "./terminalLaunch.ts";
 
 const MAX_SCROLLBACK_CHARS = 240_000;
 const OUTPUT_BATCH_MS = 16;
@@ -208,8 +209,8 @@ export class TerminalManager {
     const agentBrowser = provider === "terminal"
       ? null
       : this.agentBrowser?.prepareLaunch({ terminalSessionId: id, provider, cwd }) ?? null;
-    const launch = resolveLaunch(provider, profile, agentBrowser?.args ?? []);
     try {
+      const launch = resolveTerminalLaunch(provider, profile, agentBrowser?.args ?? []);
       return {
         process: pty.spawn(launch.command, launch.args, {
           name: "xterm-256color",
@@ -266,35 +267,6 @@ export class TerminalManager {
     session.pendingOutput.length = 0;
     this.emit(IPC.terminalData, { id, data });
   }
-}
-
-function resolveLaunch(
-  provider: ProviderId,
-  profile: CreateSessionRequest["profile"],
-  agentBrowserArgs: string[]
-): {
-  command: string;
-  args: string[];
-} {
-  if (provider === "terminal") {
-    return { command: process.env.SHELL || "/bin/bash", args: ["-l"] };
-  }
-
-  const command: Record<Exclude<ProviderId, "terminal">, string> = {
-    codex: "codex",
-    claude: "claude",
-    kimi: "kimi"
-  };
-  const dangerousArgs: Record<Exclude<ProviderId, "terminal">, string[]> = {
-    codex: ["--dangerously-bypass-approvals-and-sandbox"],
-    claude: ["--dangerously-skip-permissions"],
-    kimi: ["--yolo"]
-  };
-
-  return {
-    command: command[provider],
-    args: [...(profile === "yolo" ? dangerousArgs[provider] : []), ...agentBrowserArgs]
-  };
 }
 
 export function terminalEnvironment(

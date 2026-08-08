@@ -29,6 +29,12 @@
 
 在项目目录中启动 shell 或智能体，随意移动并调整实时终端的大小；缩小视图，以语义化的方式纵览全局；回到 Home，查看会话、限额、媒体与启动入口。CanvasTTY 在可信的主进程中维护 PTY 状态，只向渲染进程暴露类型化且经白名单放行的能力。
 
+## Windows 终端与服务商 CLI
+
+在 Windows 上，Terminal 启动器会以干净的 `-NoLogo -NoProfile` 会话打开系统自带的 Windows PowerShell；如果不可用，则回退到 `pwsh` 或 `cmd.exe`。在交给 `node-pty`/ConPTY 之前，CanvasTTY 会先从用户 `PATH`、再从标准的用户级 CLI 目录中，为 Codex、Claude 与 Kimi 解析出具体的 `.exe`、`.com`、`.cmd` 或 `.bat` 启动文件。
+
+CanvasTTY 不会安装服务商 CLI。若某个 CLI 缺失，启动对话框会明确说明未找到的服务商以及已检查的目录。安装所需 CLI 后，请重启 CanvasTTY，让桌面进程读取更新后的环境。
+
 ## 安装
 
 从 [GitHub Releases](https://github.com/howdeploy/CanvasTTY/releases) 下载 `1.0.2` 版本：Linux x86_64 提供 AppImage/deb，Windows x64 提供安装程序/便携版，Apple Silicon macOS 提供 dmg/zip。软件包尚未进行代码签名或公证，目前也不包含 Intel Mac 构建；请先阅读[安装与本地数据安全](docs/installing-and-security.zh-CN.md)。
