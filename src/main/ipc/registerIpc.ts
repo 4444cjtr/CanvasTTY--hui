@@ -306,6 +306,11 @@ export function registerIpc({
       await shell.openExternal(safeExternalUrl(values.url));
       return null;
     }
+    if (method === "browser.open") {
+      // Open a URL in CanvasTTY's own embedded browser (canvas card).
+      plugins.assertPermission(pluginId, "external:open");
+      return browser.open(stringValue(values.url, "url"));
+    }
     if (method === "media.pickLibrary") {
       return pickPluginMediaLibrary(event, pluginId, plugins, pluginMedia);
     }
