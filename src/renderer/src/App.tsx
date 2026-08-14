@@ -329,7 +329,7 @@ export function App(): React.JSX.Element {
     setCamera(focusCamera(instance.position, instance.size, PLUGIN_CANVAS_FOCUS_ZOOM));
   }, [settings.pluginCanvas]);
 
-  const openBrowser = useCallback(async (): Promise<void> => {
+  const openBrowser = useCallback(async (url?: string): Promise<void> => {
     try {
       const browserApi = window.canvasTTY.browser;
       if (!browserApi) {
@@ -344,7 +344,7 @@ export function App(): React.JSX.Element {
         },
         size: { width: 920, height: 620 }
       };
-      const snapshot = await browserApi.open();
+      const snapshot = await browserApi.open(url);
       setBrowser(snapshot);
       if (!settings.browserCanvas) await saveSettings({ browserCanvas });
       setSettingsOpen(false);
@@ -356,6 +356,17 @@ export function App(): React.JSX.Element {
       showToast(error instanceof Error ? error.message : t(settings.locale, "browserActionFailed"));
     }
   }, [saveSettings, sessions.length, settings.browserCanvas, settings.homeGridSize, settings.locale, settings.pluginCanvas.length, showToast]);
+
+  // Плагины могут открыть встроенный браузер (SDK browser.open) — обрабатываем
+  // полный флоу показа карточки на канвасе, как при клике на кнопку браузера.
+  useEffect(() => {
+    const onPluginBrowserOpen = (event: Event): void => {
+      const detail = (event as CustomEvent<{ url?: string }>).detail;
+      void openBrowser(detail?.url);
+    };
+    window.addEventListener("canvastty:browser-open", onPluginBrowserOpen);
+    return () => window.removeEventListener("canvastty:browser-open", onPluginBrowserOpen);
+  }, [openBrowser]);
 
   const closeBrowser = useCallback(async (): Promise<void> => {
     try {
