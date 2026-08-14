@@ -35,7 +35,7 @@ const EDGE_PAN_SPEEDS = new Set<EdgePanSpeed>(["slow", "normal", "fast"]);
 const ZOOM_SENSITIVITIES = new Set<ZoomSensitivity>(["slow", "normal", "fast"]);
 const FOCUS_ACTIVATIONS = new Set<FocusActivation>(["off", "single", "double"]);
 const SHORTCUT_MODIFIERS = new Set(["Ctrl", "Alt", "Shift", "Meta"]);
-const DEFAULT_SHORTCUTS: ShortcutBindings = { home: "Home", renameWindow: "F2" };
+const DEFAULT_SHORTCUTS: ShortcutBindings = { home: "Home", renameWindow: "F2", browserNewWindow: "Ctrl+Click" };
 
 export class SettingsStore {
   private readonly filePath: string;
@@ -302,13 +302,19 @@ function normalizeShortcuts(candidate: unknown, fallback: ShortcutBindings): Sho
     : {};
   const shortcuts = {
     home: isValidShortcut(source.home) ? source.home : fallback.home,
-    renameWindow: isValidShortcut(source.renameWindow) ? source.renameWindow : fallback.renameWindow
+    renameWindow: isValidShortcut(source.renameWindow) ? source.renameWindow : fallback.renameWindow,
+    // Мышиный жест (Ctrl+Click) — не клавиатурная комбинация, валидируем мягко.
+    browserNewWindow: isValidMouseShortcut(source.browserNewWindow) ? source.browserNewWindow : fallback.browserNewWindow
   };
 
   if (shortcuts.home.toLowerCase() === shortcuts.renameWindow.toLowerCase()) {
     return { ...fallback };
   }
   return shortcuts;
+}
+
+function isValidMouseShortcut(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 40;
 }
 
 function isValidShortcut(value: unknown): value is string {

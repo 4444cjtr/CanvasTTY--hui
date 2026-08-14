@@ -357,6 +357,35 @@ export function App(): React.JSX.Element {
     }
   }, [saveSettings, sessions.length, settings.browserCanvas, settings.homeGridSize, settings.locale, settings.pluginCanvas.length, showToast]);
 
+  const openBrowserNewWindow = useCallback(async (): Promise<void> => {
+    try {
+      const browserApi = window.canvasTTY.browser;
+      if (!browserApi) {
+        showToast(t(settings.locale, "browserRestartRequired"));
+        return;
+      }
+      const homeSize = homeGridPixelSize(settings.homeGridSize);
+      const browserCanvas = settings.browserCanvas ?? {
+        position: {
+          x: homeSize.width + 160 + ((sessions.length + settings.pluginCanvas.length) % 2) * 760,
+          y: Math.floor((sessions.length + settings.pluginCanvas.length) / 2) * 500 + 20
+        },
+        size: { width: 920, height: 620 }
+      };
+      // Создаём новую вкладку (не трогая активную), затем показываем карточку.
+      const snapshot = await browserApi.newTab();
+      setBrowser(snapshot);
+      if (!settings.browserCanvas) await saveSettings({ browserCanvas });
+      setSettingsOpen(false);
+      setActiveSessionId(null);
+      setBrowserSelected(true);
+      isHomeCamera.current = false;
+      setCamera(focusCamera(browserCanvas.position, browserCanvas.size));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t(settings.locale, "browserActionFailed"));
+    }
+  }, [saveSettings, sessions.length, settings.browserCanvas, settings.homeGridSize, settings.locale, settings.pluginCanvas.length, showToast]);
+
   // Плагины могут открыть встроенный браузер (SDK browser.open) — обрабатываем
   // полный флоу показа карточки на канвасе, как при клике на кнопку браузера.
   useEffect(() => {
@@ -669,6 +698,7 @@ export function App(): React.JSX.Element {
           onOpenAgent={setLaunchProvider}
           onOpenTerminal={() => void openTerminal()}
           onOpenBrowser={() => void openBrowser()}
+          onOpenBrowserNewWindow={() => void openBrowserNewWindow()}
           onRequestMedia={requestMedia}
           onRemoveMedia={removeMedia}
           onHomeLayoutChange={changeHomeLayout}

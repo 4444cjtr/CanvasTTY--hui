@@ -41,6 +41,7 @@ interface WorkspaceCanvasProps {
   onOpenAgent(provider: AgentProviderId): void;
   onOpenTerminal(): void;
   onOpenBrowser(): void;
+  onOpenBrowserNewWindow(): void;
   onFocusSession(session: SessionSnapshot): void;
   activeSessionId: string | null;
   browserSelected: boolean;
@@ -93,6 +94,7 @@ export function WorkspaceCanvas({
   onOpenAgent,
   onOpenTerminal,
   onOpenBrowser,
+  onOpenBrowserNewWindow,
   onFocusSession,
   activeSessionId,
   browserSelected,
@@ -284,6 +286,7 @@ export function WorkspaceCanvas({
           onOpenAgent={onOpenAgent}
           onOpenTerminal={onOpenTerminal}
           onOpenBrowser={onOpenBrowser}
+          onOpenBrowserNewWindow={onOpenBrowserNewWindow}
           onFocusSession={onFocusSession}
           onRequestMedia={onRequestMedia}
           onRemoveMedia={onRemoveMedia}

@@ -57,11 +57,13 @@ export const DEFAULT_HOME_LAYOUT: HomeWidgetPlacement[] = [
 export interface ShortcutBindings {
   home: string;
   renameWindow: string;
+  browserNewWindow: string;
 }
 
 export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   home: "Home",
-  renameWindow: "F2"
+  renameWindow: "F2",
+  browserNewWindow: "Ctrl+Click"
 };
 
 export interface Point {

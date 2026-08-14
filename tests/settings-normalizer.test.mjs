@@ -25,7 +25,7 @@ const fallback = {
   hoverFocus: false,
   hoverFocusSpeed: "normal",
   showShortcutHints: true,
-  shortcuts: { home: "Home", renameWindow: "F2" },
+  shortcuts: { home: "Home", renameWindow: "F2", browserNewWindow: "Ctrl+Click" },
   mediaPath: null,
   mediaFit: "cover",
   lastDirectory: "/",
@@ -123,7 +123,7 @@ test("fresh installs keep edge automation off but allow escaping applications wi
     assert.equal(store.get().browserAgentAccess, true);
     assert.equal(store.get().browserShowAgentPresence, true);
     assert.equal(store.get().browserRestoreTabs, true);
-    assert.deepEqual(store.get().shortcuts, { home: "Home", renameWindow: "F2" });
+    assert.deepEqual(store.get().shortcuts, { home: "Home", renameWindow: "F2", browserNewWindow: "Ctrl+Click" });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -184,11 +184,11 @@ test("valid custom shortcuts survive normalization", () => {
   const normalized = normalizeSettings({
     focusActivation: "double",
     showShortcutHints: false,
-    shortcuts: { home: "Ctrl+H", renameWindow: "Ctrl+Shift+R" }
+    shortcuts: { home: "Ctrl+H", renameWindow: "Ctrl+Shift+R", browserNewWindow: "Ctrl+Click" }
   }, fallback);
   assert.equal(normalized.focusActivation, "double");
   assert.equal(normalized.showShortcutHints, false);
-  assert.deepEqual(normalized.shortcuts, { home: "Ctrl+H", renameWindow: "Ctrl+Shift+R" });
+  assert.deepEqual(normalized.shortcuts, { home: "Ctrl+H", renameWindow: "Ctrl+Shift+R", browserNewWindow: "Ctrl+Click" });
 });
 
 test("conflicting or malformed shortcuts fall back together", () => {
