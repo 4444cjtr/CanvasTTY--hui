@@ -401,14 +401,14 @@ export function WorkspaceCanvas({
             />
           ))}
         </div>
-        <AgentLinkGraph
-          sessions={sessions}
-          browserNodes={settings.browserCanvases}
-          camera={camera}
-          onCreateLink={onCreateBrowserLink}
-          onRemoveLink={onRemoveBrowserLink}
-        />
       </div>
+      <AgentLinkGraph
+        sessions={sessions}
+        browserNodes={settings.browserCanvases}
+        camera={camera}
+        onCreateLink={onCreateBrowserLink}
+        onRemoveLink={onRemoveBrowserLink}
+      />
 
       {homeEditing && (
         <div className="home-editor-toolbar" data-interactive="true">

@@ -20,6 +20,7 @@ import type {
   PreparedAgentBrowserPtyLaunch
 } from "./agent-browser/AgentBrowserBridge.ts";
 import { AGENT_BROWSER_ENV } from "./agent-browser/AgentBrowserBridge.ts";
+import { writeAgentBrowserContext } from "./agent-browser/ProviderLaunch.ts";
 import { tryPtyOperation } from "./ptySafety.ts";
 import { resolveTerminalLaunch } from "./terminalLaunch.ts";
 
@@ -77,6 +78,13 @@ export class TerminalManager {
       request.cwd,
       request.browserWindowId
     );
+    // Хук для любого харнесса: AGENTS.md в cwd сессии сообщает агенту, что
+    // доступен видимый браузер CanvasTTY (инструменты mcp__canvastty_browser__*).
+    try {
+      writeAgentBrowserContext(request.cwd);
+    } catch (error) {
+      console.warn("CanvasTTY could not write AGENTS.md browser context.", error);
+    }
     const metadata: SessionMetadata = {
       id,
       provider: request.provider,

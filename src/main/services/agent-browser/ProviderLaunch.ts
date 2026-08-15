@@ -1044,3 +1044,56 @@ function upsertTomlSection(existing: string, marker: string, block: string): str
   const end = nextSection === -1 ? existing.length : start + marker.length + nextSection;
   return `${existing.slice(0, start)}${block}${existing.slice(end)}`;
 }
+
+const AGENTS_MARKER_START = "<!-- canvas-tty-browser-context-start -->";
+const AGENTS_MARKER_END = "<!-- canvas-tty-browser-context-end -->";
+
+/**
+ * «Хук» для ЛЮБОГО харнесса: пишет/обновляет секцию про браузер CanvasTTY в
+ * AGENTS.md рабочей директории терминальной сессии. AGENTS.md читают все
+ * основные харнессы (Claude Code, Codex, opencode, Hermes, Cursor и др.),
+ * поэтому агент, запущенный в терминале, автоматически узнаёт, что он может
+ * управлять видимым браузером CanvasTTY — без локальных костылей.
+ *
+ * Существующий AGENTS.md не затирается: секция ограничена маркерами, всё
+ * остальное содержимое сохраняется как было.
+ */
+export function writeAgentBrowserContext(cwd: string): void {
+  const configPath = join(cwd, "AGENTS.md");
+  const existing = readOptional(configPath) ?? "";
+  const section = [
+    AGENTS_MARKER_START,
+    "",
+    "## CanvasTTY browser (MCP)",
+    "",
+    "You are running inside CanvasTTY, which has a visible browser on the canvas.",
+    "Browser tools are exposed through the `canvastty_browser` MCP server as",
+    "`mcp__canvastty_browser__browser_*` (browser_list_tabs, browser_navigate,",
+    "browser_observe, browser_click, browser_type, browser_scroll, ...).",
+    "",
+    "For web tasks, PREFER these CanvasTTY browser tools over built-in or",
+    "other browser/computer-use tools: they drive the real visible browser on",
+    "the user's canvas, and the user can watch every action live.",
+    "",
+    "Workflow: browser_list_tabs → browser_navigate(url) → browser_observe →",
+    "one bounded action → browser_observe again.",
+    "",
+    AGENTS_MARKER_END
+  ].join("\n");
+
+  const start = existing.indexOf(AGENTS_MARKER_START);
+  if (start === -1) {
+    // Нет секции — добавляем в конец (или создаём файл).
+    const trimmed = existing.trimEnd();
+    atomicWrite(configPath, `${trimmed.length === 0 ? "" : `${trimmed}\n\n`}${section}\n`);
+    return;
+  }
+  const end = existing.indexOf(AGENTS_MARKER_END, start);
+  if (end === -1) {
+    // Битый маркер: заменяем от старта до конца файла.
+    atomicWrite(configPath, `${existing.slice(0, start)}${section}\n`);
+    return;
+  }
+  const afterEnd = existing.slice(end + AGENTS_MARKER_END.length);
+  atomicWrite(configPath, `${existing.slice(0, start)}${section}${afterEnd}`);
+}

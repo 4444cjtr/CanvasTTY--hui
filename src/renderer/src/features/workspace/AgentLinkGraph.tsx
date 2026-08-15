@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { BrowserCanvasNode, CameraState, SessionSnapshot } from "../../../../shared/contracts";
 
 interface AgentLinkGraphProps {
@@ -15,7 +15,10 @@ interface DragState {
   y: number;
 }
 
-/** Точка подключения агента (выход): справа по центру карточки терминала. */
+/**
+ * Точка подключения агента (выход): справа по центру карточки терминала,
+ * в канвас-координатах.
+ */
 function agentPort(session: SessionSnapshot): { x: number; y: number } {
   return {
     x: session.position.x + session.size.width,
@@ -23,7 +26,7 @@ function agentPort(session: SessionSnapshot): { x: number; y: number } {
   };
 }
 
-/** Точка подключения браузера (вход): слева по центру карточки. */
+/** Точка подключения браузера (вход): слева по центру карточки, канвас-координаты. */
 function browserPort(node: BrowserCanvasNode): { x: number; y: number } {
   return {
     x: node.bounds.position.x,
@@ -44,9 +47,9 @@ function bezierPath(from: { x: number; y: number }, to: { x: number; y: number }
  * карточках, bezier-линии между ними. Drag с порта агента на порт браузера
  * создаёт связь; клик по линии — разрывает.
  *
- * SVG лежит внутри workspace__scene (канвас-пространство), поэтому все
- * координаты — канвасные: карточки позиционируются translate(position),
- * а камеру (translate+scale) scene применяет ко всему сразу.
+ * SVG покрывает workspace (после TitleBar, offset 44px). Преобразование
+ * client → SVG-координаты через getBoundingClientRect (точный offset),
+ * канвас → SVG через camera (scene transform translate+scale).
  */
 export function AgentLinkGraph({ sessions, browserNodes, camera, onCreateLink, onRemoveLink }: AgentLinkGraphProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -54,39 +57,61 @@ export function AgentLinkGraph({ sessions, browserNodes, camera, onCreateLink, o
 
   const boundAgents = sessions.filter((session) => session.browserWindowId);
 
-  const clientToCanvas = (clientX: number, clientY: number): { x: number; y: number } => {
+  // Канвас → SVG-координаты (обратная матрица transform сцены).
+  const canvasToSvg = (point: { x: number; y: number }): { x: number; y: number } => ({
+    x: point.x * camera.zoom + camera.x,
+    y: point.y * camera.zoom + camera.y
+  });
+
+  // client (viewport) → SVG-координаты: вычитаем offset SVG (titlebar и т.п.).
+  const clientToSvg = (clientX: number, clientY: number): { x: number; y: number } => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const rect = svg.getBoundingClientRect();
-    return {
-      x: (clientX - rect.left) / camera.zoom,
-      y: (clientY - rect.top) / camera.zoom
-    };
+    return { x: clientX - rect.left, y: clientY - rect.top };
   };
+
+  // SVG-координаты → канвас.
+  const svgToCanvas = (x: number, y: number): { x: number; y: number } => ({
+    x: (x - camera.x) / camera.zoom,
+    y: (y - camera.y) / camera.zoom
+  });
 
   const startDrag = (event: React.PointerEvent, sessionId: string): void => {
     event.stopPropagation();
-    const point = clientToCanvas(event.clientX, event.clientY);
+    event.preventDefault();
+    const point = clientToSvg(event.clientX, event.clientY);
     setDrag({ fromSessionId: sessionId, x: point.x, y: point.y });
-    event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const moveDrag = (event: React.PointerEvent): void => {
-    if (!drag) return;
-    const point = clientToCanvas(event.clientX, event.clientY);
-    setDrag((current) => (current ? { ...current, x: point.x, y: point.y } : current));
-  };
-
-  const endDrag = (): void => {
-    setDrag(null);
-  };
-
-  const dropOnNode = (event: React.PointerEvent, windowId: string): void => {
-    if (!drag) return;
-    event.stopPropagation();
-    onCreateLink(drag.fromSessionId, windowId);
-    setDrag(null);
-  };
+  // Drag продолжается за пределами порта: слушаем window, пока перетаскиваем.
+  const dragActive = drag !== null;
+  const dragStateRef = useRef(drag);
+  dragStateRef.current = drag;
+  useEffect(() => {
+    if (!dragActive) return;
+    const onMove = (event: PointerEvent): void => {
+      const point = clientToSvg(event.clientX, event.clientY);
+      setDrag((current) => (current ? { ...current, x: point.x, y: point.y } : current));
+    };
+    const onUp = (event: PointerEvent): void => {
+      // Drop: если над портом браузера — создаём связь.
+      const target = event.target instanceof Element ? event.target.closest("[data-browser-port]") : null;
+      const windowId = target?.getAttribute("data-browser-port") ?? null;
+      if (windowId && dragStateRef.current) {
+        onCreateLink(dragStateRef.current.fromSessionId, windowId);
+      }
+      setDrag(null);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", () => setDrag(null));
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", () => setDrag(null));
+    };
+  }, [dragActive, onCreateLink]);
 
   const draggingSession = drag ? sessions.find((session) => session.id === drag.fromSessionId) ?? null : null;
 
@@ -96,10 +121,9 @@ export function AgentLinkGraph({ sessions, browserNodes, camera, onCreateLink, o
       className="agent-link-graph"
       style={{
         position: "absolute",
-        left: 0,
-        top: 0,
-        width: 1,
-        height: 1,
+        inset: 0,
+        width: "100%",
+        height: "100%",
         overflow: "visible",
         pointerEvents: "none",
         zIndex: 40
@@ -110,8 +134,8 @@ export function AgentLinkGraph({ sessions, browserNodes, camera, onCreateLink, o
       {boundAgents.map((session) => {
         const node = browserNodes.find((candidate) => candidate.id === session.browserWindowId);
         if (!node) return null;
-        const from = agentPort(session);
-        const to = browserPort(node);
+        const from = canvasToSvg(agentPort(session));
+        const to = canvasToSvg(browserPort(node));
         return (
           <g
             key={session.id}
@@ -130,7 +154,7 @@ export function AgentLinkGraph({ sessions, browserNodes, camera, onCreateLink, o
 
       {/* Порты агентов (выход): у всех сессий — агент может запуститься внутри */}
       {sessions.map((session) => {
-        const port = agentPort(session);
+        const port = canvasToSvg(agentPort(session));
         const bound = Boolean(session.browserWindowId);
         return (
           <circle
@@ -141,36 +165,31 @@ export function AgentLinkGraph({ sessions, browserNodes, camera, onCreateLink, o
             r={7}
             style={{ pointerEvents: "all", cursor: "crosshair" }}
             onPointerDown={(event) => startDrag(event, session.id)}
-            onPointerMove={moveDrag}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
           />
         );
       })}
 
-      {/* Порты браузеров (вход) */}
+      {/* Порты браузеров (вход): data-browser-port для drop через window listener */}
       {browserNodes.map((node) => {
-        const port = browserPort(node);
+        const port = canvasToSvg(browserPort(node));
         const hasIncoming = boundAgents.some((session) => session.browserWindowId === node.id);
         return (
           <circle
             key={node.id}
+            data-browser-port={node.id}
             className={`agent-link-port agent-link-port--in ${hasIncoming ? "agent-link-port--bound" : ""}`}
             cx={port.x}
             cy={port.y}
             r={7}
             style={{ pointerEvents: "all", cursor: "crosshair" }}
-            onPointerDown={(event) => dropOnNode(event, node.id)}
-            onPointerMove={moveDrag}
-            onPointerUp={endDrag}
           />
         );
       })}
 
-      {/* Черновая линия при перетаскивании */}
+      {/* Черновая линия при перетаскивании: координаты уже в SVG-пространстве */}
       {drag && draggingSession && (
         <path
-          d={bezierPath(agentPort(draggingSession), { x: drag.x, y: drag.y })}
+          d={bezierPath(canvasToSvg(agentPort(draggingSession)), { x: drag.x, y: drag.y })}
           className="agent-link--draft"
         />
       )}
