@@ -159,20 +159,15 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
         }
 
         // Линии связей (умные стороны) + hit/stroke.
-        // При активном relink-драге этой связи — скрываем её (draft заменяет).
-        const relinkNodeId = dragRef.current?.kind === "break" ? dragRef.current.fromId : null;
+        // Скрытие relink-линии управляется React-классом (атомарно с коммитом),
+        // здесь — только геометрия. Это исключает вспышку opacity при обрыве/
+        // переносе: rAF никогда не показывает линию, которую React уже решил
+        // удалить или перенаправить.
         for (const session of boundAgents) {
           const node = browserNodes.find((candidate) => candidate.id === session.browserWindowId);
           const pathHit = linkPaths.current.get(session.id);
           const pathStroke = linkPaths.current.get(`stroke-${session.id}`);
           if (!node || !pathHit || !pathStroke) continue;
-          if (relinkNodeId === node.id) {
-            pathHit.style.opacity = "0";
-            pathStroke.style.opacity = "0";
-            continue;
-          }
-          pathHit.style.opacity = "";
-          pathStroke.style.opacity = "";
           const sides = linkSides(session.id, node.id);
           const from = readPort(session.id, SIDE_OFFSETS[sides.from]);
           const to = readPort(node.id, SIDE_OFFSETS[sides.to]);
@@ -319,10 +314,13 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
       {boundAgents.map((session) => {
         const node = browserNodes.find((candidate) => candidate.id === session.browserWindowId);
         if (!node) return null;
+        // Линию, которую сейчас перетаскивают (relink), скрываем через
+        // React-класс — атомарно с коммитом, без вспышки opacity.
+        const relinking = drag?.kind === "break" && drag.fromId === node.id;
         return (
           <g
             key={session.id}
-            className="agent-link"
+            className={`agent-link ${relinking ? "agent-link--hidden" : ""}`}
             style={{ pointerEvents: "stroke", cursor: "pointer" }}
             onClick={(event) => {
               event.stopPropagation();
