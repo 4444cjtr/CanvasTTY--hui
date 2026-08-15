@@ -97,6 +97,7 @@ export type BridgeErrorCode =
   | "AUTH_INVALID"
   | "AUTH_REPLAYED"
   | "BRIDGE_BUSY"
+  | "BROWSER_UNAVAILABLE"
   | "CANCELED"
   | "INVALID_REQUEST"
   | "PAYLOAD_TOO_LARGE"

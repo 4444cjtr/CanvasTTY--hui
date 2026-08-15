@@ -104,6 +104,13 @@ export class BrowserManager {
     return this.nodes.values().next().value?.service ?? null;
   }
 
+  /** Core ноды по windowId (null = default); null, если ноды нет. */
+  resolveCore(windowId: string | null): import("./browser/BrowserCore.ts").BrowserCore | null {
+    if (windowId) return this.get(windowId)?.core ?? null;
+    const service = this.get("default") ?? this.first();
+    return service?.core ?? null;
+  }
+
   async open(windowId: string | null, url?: string): Promise<BrowserSnapshot> {
     let service = this.resolve(windowId);
     if (!service && windowId) {

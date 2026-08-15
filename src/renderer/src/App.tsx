@@ -231,10 +231,11 @@ export function App(): React.JSX.Element {
   const createSession = useCallback(async (
     provider: ProviderId,
     profile: LaunchProfileId,
-    cwd: string
+    cwd: string,
+    browserWindowId?: string | null
   ): Promise<SessionSnapshot> => {
     const position = nextSessionPosition(sessions.length, settings.homeGridSize);
-    const session = await window.canvasTTY.terminal.create({ provider, profile, cwd, position });
+    const session = await window.canvasTTY.terminal.create({ provider, profile, cwd, position, browserWindowId });
     setSessions((current) => upsertSnapshot(current, session));
     setActiveSessionId(session.id);
     await saveSettings({ lastDirectory: cwd });
@@ -262,9 +263,12 @@ export function App(): React.JSX.Element {
     profile: LaunchProfileId,
     cwd: string
   ): Promise<void> => {
-    await createSession(provider, profile, cwd);
+    // Агент привязывается к выбранной карточке браузера (если она выделена),
+    // иначе — к default-ноде (единый браузер).
+    const browserWindowId = browserSelectedId;
+    await createSession(provider, profile, cwd, browserWindowId);
     showToast(`${t(settings.locale, "sessionStarted")}: ${provider}`);
-  }, [createSession, settings.locale, showToast]);
+  }, [browserSelectedId, createSession, settings.locale, showToast]);
 
   const restartSession = useCallback(async (id: string): Promise<void> => {
     try {

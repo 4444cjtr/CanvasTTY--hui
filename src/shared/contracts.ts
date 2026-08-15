@@ -120,6 +120,8 @@ export interface CreateSessionRequest {
   profile: LaunchProfileId;
   position: Point;
   title?: string;
+  /** Нода браузера для привязки агента (provider !== terminal); null = default. */
+  browserWindowId?: string | null;
 }
 
 export interface SessionMetadata {
@@ -461,6 +463,8 @@ export type BrowserActor =
     terminalSessionId: string;
     connectionId: string;
     cwd: string;
+    /** Нода браузера, к которой привязан агент; null = default (единый браузер). */
+    browserWindowId: string | null;
   };
 
 export interface BrowserElementRef {

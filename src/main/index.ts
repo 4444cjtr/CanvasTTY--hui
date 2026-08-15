@@ -157,7 +157,10 @@ async function initializeServices(): Promise<void> {
         ? join(process.resourcesPath, "agent-browser", WINDOWS_PIPE_HOST_FILENAME)
         : join(app.getAppPath(), "build", "windows-agent-pipe-host", WINDOWS_PIPE_HOST_FILENAME)
       : undefined;
-    agentGateway = new AgentGateway(browserService.core, { runtimeDirectory, windowsHostPath });
+    agentGateway = new AgentGateway((windowId) => browserManager?.resolveCore(windowId) ?? null, {
+      runtimeDirectory,
+      windowsHostPath
+    });
     agentGateway.setEnabled(settings.get().browserAgentAccess);
     await agentGateway.start();
     const helperPath = app.isPackaged

@@ -56,6 +56,7 @@ interface ConnectionState {
   socket: AgentGatewaySocket;
   decoder: NdjsonDecoder;
   actor: Extract<BrowserActor, { kind: "agent" }> | null;
+  browser: BrowserCoreLike | null;
   authenticated: boolean;
   lastHeartbeatAt: number;
   connectedAt: number;
@@ -78,10 +79,15 @@ export interface RegisterAgentInput {
   terminalSessionId: string;
   provider: AgentProvider;
   cwd: string;
+  /** Нода браузера для привязки; null/undefined = default (единый браузер). */
+  browserWindowId?: string | null;
 }
 
+/** Разрешает ноду браузера по windowId; null = default. */
+export type BrowserNodeResolver = (windowId: string | null) => BrowserCoreLike | null;
+
 export class AgentGateway {
-  private readonly browser: BrowserCoreLike;
+  private readonly resolveBrowser: BrowserNodeResolver;
   private readonly platform: NodeJS.Platform;
   private readonly capabilityTtlMs: number;
   private readonly now: () => number;
@@ -100,8 +106,8 @@ export class AgentGateway {
   private expiryTimer: NodeJS.Timeout | null = null;
   private enabled = true;
 
-  constructor(browser: BrowserCoreLike, options: AgentGatewayOptions = {}) {
-    this.browser = browser;
+  constructor(resolveBrowser: BrowserNodeResolver, options: AgentGatewayOptions = {}) {
+    this.resolveBrowser = resolveBrowser;
     this.platform = options.platform ?? process.platform;
     this.requestedRuntimeDirectory = options.runtimeDirectory;
     this.windowsHostPath = options.windowsHostPath;
@@ -219,7 +225,8 @@ export class AgentGateway {
       provider: input.provider,
       terminalSessionId: input.terminalSessionId,
       connectionId,
-      cwd: input.cwd
+      cwd: input.cwd,
+      browserWindowId: input.browserWindowId ?? null
     };
     this.leases.set(connectionId, {
       actor,
@@ -287,6 +294,7 @@ export class AgentGateway {
       socket,
       decoder: new NdjsonDecoder(),
       actor: null,
+      browser: null,
       authenticated: false,
       lastHeartbeatAt: now,
       connectedAt: now,
@@ -346,7 +354,7 @@ export class AgentGateway {
     }
     if (message.type === "heartbeat") {
       state.lastHeartbeatAt = this.now();
-      this.browser.agentHeartbeat?.(actor, state.lastHeartbeatAt);
+      state.browser?.agentHeartbeat?.(actor, state.lastHeartbeatAt);
       this.write(state, {
         v: AGENT_BRIDGE_PROTOCOL_VERSION,
         type: "heartbeat_ack",
@@ -355,7 +363,7 @@ export class AgentGateway {
       return;
     }
     if (message.type === "cursor") {
-      this.browser.agentCursor?.(actor, { tabId: message.tabId, x: message.x, y: message.y });
+      state.browser?.agentCursor?.(actor, { tabId: message.tabId, x: message.x, y: message.y });
       return;
     }
     if (message.type === "cancel") {
@@ -414,12 +422,18 @@ export class AgentGateway {
     const reconnectToken = lease.reconnectToken;
     if (!reconnectToken) throw bridgeError("INTERNAL_ERROR", "Agent reconnect capability is unavailable.", true);
     state.actor = lease.actor;
+    // Привязываем агента к ноде браузера (browserWindowId из lease; null = default).
+    const nodeBrowser = this.resolveBrowser(lease.actor.browserWindowId);
+    if (!nodeBrowser) {
+      throw bridgeError("BROWSER_UNAVAILABLE", "The bound browser node is unavailable.", true);
+    }
+    state.browser = nodeBrowser;
     state.authenticated = true;
     state.lastHeartbeatAt = this.now();
     const states = activeConnections ?? new Set<ConnectionState>();
     const firstConnection = states.size === 0;
     try {
-      state.unsubscribe = this.browser.subscribe(lease.actor, 0, (event) => {
+      state.unsubscribe = nodeBrowser.subscribe(lease.actor, 0, (event) => {
         try {
           this.write(state, { v: AGENT_BRIDGE_PROTOCOL_VERSION, type: "event", event });
         } catch {
@@ -428,7 +442,7 @@ export class AgentGateway {
       });
       states.add(state);
       this.connections.set(lease.actor.connectionId, states);
-      if (firstConnection) this.browser.agentConnected?.(lease.actor);
+      if (firstConnection) nodeBrowser.agentConnected?.(lease.actor);
     } catch (error) {
       try {
         state.unsubscribe?.();
@@ -478,7 +492,7 @@ export class AgentGateway {
     );
     timeout.unref();
     try {
-      const result = await this.browser.execute(actor, command, controller.signal);
+      const result = await state.browser?.execute(actor, command, controller.signal);
       if (!result || result.requestId !== message.id) {
         throw bridgeError("INTERNAL_ERROR", "Browser core returned a mismatched response.", true);
       }
@@ -561,7 +575,7 @@ export class AgentGateway {
         if (removed && states?.size === 0) {
           this.connections.delete(state.actor.connectionId);
           try {
-            this.browser.agentDisconnected?.(state.actor, reason);
+            state.browser?.agentDisconnected?.(state.actor, reason);
           } catch {
             // A host callback cannot keep a revoked capability socket alive.
           }

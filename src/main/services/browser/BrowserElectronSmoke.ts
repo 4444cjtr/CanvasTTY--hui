@@ -26,7 +26,8 @@ export async function runBrowserElectronSmoke(
     provider: "codex",
     terminalSessionId: "electron-smoke-terminal",
     connectionId: "electron-smoke-connection",
-    cwd: userDataPath
+    cwd: userDataPath,
+    browserWindowId: null
   };
   service.core.agentConnected(actor);
   let request = 0;

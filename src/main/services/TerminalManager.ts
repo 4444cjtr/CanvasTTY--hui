@@ -70,7 +70,13 @@ export class TerminalManager {
     assertDirectory(request.cwd);
 
     const id = randomUUID();
-    const launched = this.spawnProcess(id, request.provider, request.profile, request.cwd);
+    const launched = this.spawnProcess(
+      id,
+      request.provider,
+      request.profile,
+      request.cwd,
+      request.browserWindowId
+    );
     const metadata: SessionMetadata = {
       id,
       provider: request.provider,
@@ -111,7 +117,8 @@ export class TerminalManager {
       id,
       session.metadata.provider,
       session.metadata.profile,
-      session.metadata.cwd
+      session.metadata.cwd,
+      null
     );
     session.process = launched.process;
     session.agentBrowser = launched.agentBrowser;
@@ -204,11 +211,12 @@ export class TerminalManager {
     id: string,
     provider: ProviderId,
     profile: CreateSessionRequest["profile"],
-    cwd: string
+    cwd: string,
+    browserWindowId: string | null | undefined
   ): { process: IPty; agentBrowser: PreparedAgentBrowserPtyLaunch | null } {
     const agentBrowser = provider === "terminal"
       ? null
-      : this.agentBrowser?.prepareLaunch({ terminalSessionId: id, provider, cwd }) ?? null;
+      : this.agentBrowser?.prepareLaunch({ terminalSessionId: id, provider, cwd, browserWindowId }) ?? null;
     try {
       const launch = resolveTerminalLaunch(provider, profile, agentBrowser?.args ?? []);
       return {
