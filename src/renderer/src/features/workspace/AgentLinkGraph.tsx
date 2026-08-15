@@ -159,11 +159,20 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
         }
 
         // Линии связей (умные стороны) + hit/stroke.
+        // При активном relink-драге этой связи — скрываем её (draft заменяет).
+        const relinkNodeId = dragRef.current?.kind === "break" ? dragRef.current.fromId : null;
         for (const session of boundAgents) {
           const node = browserNodes.find((candidate) => candidate.id === session.browserWindowId);
           const pathHit = linkPaths.current.get(session.id);
           const pathStroke = linkPaths.current.get(`stroke-${session.id}`);
           if (!node || !pathHit || !pathStroke) continue;
+          if (relinkNodeId === node.id) {
+            pathHit.style.opacity = "0";
+            pathStroke.style.opacity = "0";
+            continue;
+          }
+          pathHit.style.opacity = "";
+          pathStroke.style.opacity = "";
           const sides = linkSides(session.id, node.id);
           const from = readPort(session.id, SIDE_OFFSETS[sides.from]);
           const to = readPort(node.id, SIDE_OFFSETS[sides.to]);
@@ -223,7 +232,14 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
     event.preventDefault();
     dragFromSideRef.current = side;
     const point = clientToSvg(event.clientX, event.clientY);
-    setDrag({ kind: "link", fromId: sessionId, x: point.x, y: point.y });
+    const session = sessionsRef.current.find((s) => s.id === sessionId);
+    if (session?.browserWindowId) {
+      // У агента УЖЕ есть связь — переносим существующую линию
+      // (браузерный конец следует за курсором), а не создаём новую.
+      setDrag({ kind: "break", fromId: session.browserWindowId, x: point.x, y: point.y });
+    } else {
+      setDrag({ kind: "link", fromId: sessionId, x: point.x, y: point.y });
+    }
   };
 
   /** Отрыв линковки: потянули за порт браузера, у которого есть входящая связь. */
