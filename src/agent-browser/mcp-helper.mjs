@@ -419,7 +419,11 @@ export function readIdentity(environment = process.env, platform = process.platf
   const address = environment[ENV.address] ?? readEndpointFile();
   const agentId = environment[ENV.agentId] ?? `guest-${randomUUID()}`;
   const connectionId = environment[ENV.connectionId] ?? randomUUID();
-  const terminalSessionId = environment[ENV.terminalSessionId] ?? "";
+  // Харнессы (Hermes и др.) фильтруют env для MCP-субпроцессов — переменная
+  // сессии может быть вырезана. Тогда ищем её у предков (/proc/<pid>/environ):
+  // терминал CanvasTTY → bash → hermes → mcp-helper. Так привязка к ноде
+  // работает в ЛЮБОМ харнессе, без локальных костылей.
+  const terminalSessionId = environment[ENV.terminalSessionId] ?? findTerminalSessionId();
   const provider = environment[ENV.provider] ?? "unknown";
   const capabilityToken = environment[ENV.capabilityToken] ?? "";
   const identity = {
@@ -453,6 +457,32 @@ export function readEndpointFile(
   } catch {
     return null;
   }
+}
+
+/**
+ * Ищет CANVASTTY_TERMINAL_SESSION_ID в env ПРЕДКОВ процесса (Linux /proc).
+ * Харнесс фильтрует env для MCP-субпроцессов, но сам терминал CanvasTTY
+ * (pty) хранит переменную — до неё можно дойти по дереву процессов:
+ * mcp-helper → hermes → bash → pty(терминал CanvasTTY).
+ */
+export function findTerminalSessionId(maxDepth = 24) {
+  if (process.platform === "win32") return ""; // нет /proc — только env
+  let pid = process.ppid;
+  for (let depth = 0; depth < maxDepth && pid > 1; depth++) {
+    try {
+      const env = readFileSync(`/proc/${pid}/environ`, "utf8").split("\0");
+      const found = env.find((entry) => entry.startsWith("CANVASTTY_TERMINAL_SESSION_ID="));
+      if (found) return found.slice("CANVASTTY_TERMINAL_SESSION_ID=".length);
+    } catch {
+      return "";
+    }
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    // ppid — второе поле в скобках после comm: (comm) S ppid ...
+    const paren = stat.lastIndexOf(")");
+    const fields = paren === -1 ? [] : stat.slice(paren + 2).split(/\s+/);
+    pid = Number(fields[1]);
+  }
+  return "";
 }
 
 function defaultEndpointFile() {

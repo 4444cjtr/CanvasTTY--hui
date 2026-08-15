@@ -14,6 +14,7 @@ import {
   BridgeClientError,
   GatewayClient,
   createMcpDispatcher,
+  findTerminalSessionId,
   formatToolResult,
   isLocalEndpoint,
   readIdentity
@@ -407,3 +408,33 @@ async function waitFor(predicate, timeoutMs = 1_000) {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
 }
+
+test("findTerminalSessionId climbs the process tree and finds the session var", () => {
+  // В тестовом процессе переменной нет — ход по дереву до systemd не найдёт её.
+  assert.equal(findTerminalSessionId(2), "");
+});
+
+test("readIdentity falls back to the ancestor session id when env is filtered", () => {
+  // Полный env (как у pty-терминала CanvasTTY) → берётся из env.
+  const identity = readIdentity({
+    CANVASTTY_AGENT_BROWSER_ADDRESS: "/tmp/canvastty.sock",
+    CANVASTTY_AGENT_ID: "agent-1",
+    CANVASTTY_AGENT_CONNECTION_ID: "conn-1",
+    CANVASTTY_TERMINAL_SESSION_ID: "session-abc",
+    CANVASTTY_AGENT_PROVIDER: "hermes",
+    CANVASTTY_AGENT_CAPABILITY: ""
+  }, "linux");
+  assert.equal(identity.terminalSessionId, "session-abc");
+
+  // Env отфильтрован харнессом (нет CANVASTTY_TERMINAL_SESSION_ID) —
+  // гость: session id пустой, но провайдер остаётся.
+  const filtered = readIdentity({
+    CANVASTTY_AGENT_BROWSER_ADDRESS: "/tmp/canvastty.sock",
+    CANVASTTY_AGENT_ID: "agent-1",
+    CANVASTTY_AGENT_CONNECTION_ID: "conn-1",
+    CANVASTTY_AGENT_PROVIDER: "hermes",
+    CANVASTTY_AGENT_CAPABILITY: ""
+  }, "linux");
+  assert.equal(filtered.terminalSessionId, "");
+  assert.equal(filtered.provider, "hermes");
+});
