@@ -107,6 +107,7 @@ const api: CanvasTTYApi = {
     resize: (id: string, cols: number, rows: number) => ipcRenderer.send(IPC.terminalResize, id, cols, rows),
     setBounds: (id: string, bounds: SessionBounds) => ipcRenderer.send(IPC.terminalBounds, id, bounds),
     rename: (id: string, title: string) => ipcRenderer.invoke(IPC.terminalRename, id, title),
+    setBrowserBinding: (id: string, browserWindowId: string | null) => ipcRenderer.invoke(IPC.terminalSetBrowserBinding, id, browserWindowId),
     dispose: (id: string) => ipcRenderer.invoke(IPC.terminalDispose, id),
     onData: (listener: (event: TerminalDataEvent) => void) => subscribe(IPC.terminalData, listener),
     onSession: (listener: (event: SessionEvent) => void) => subscribe(IPC.terminalSession, listener),

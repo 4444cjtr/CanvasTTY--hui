@@ -457,6 +457,25 @@ export function App(): React.JSX.Element {
     setCamera(focusCamera(node.bounds.position, node.bounds.size));
   }, [settings.browserCanvases]);
 
+  // Граф связей: drag порт агента → порт браузера создаёт связь; клик — разрыв.
+  const createBrowserLink = useCallback(async (terminalId: string, windowId: string): Promise<void> => {
+    try {
+      const metadata = await window.canvasTTY.terminal.setBrowserBinding(terminalId, windowId);
+      setSessions((current) => upsertSession(current, metadata));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t(settings.locale, "browserActionFailed"));
+    }
+  }, [settings.locale, showToast]);
+
+  const removeBrowserLink = useCallback(async (terminalId: string): Promise<void> => {
+    try {
+      const metadata = await window.canvasTTY.terminal.setBrowserBinding(terminalId, null);
+      setSessions((current) => upsertSession(current, metadata));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t(settings.locale, "browserActionFailed"));
+    }
+  }, [settings.locale, showToast]);
+
   const disposeSession = useCallback((id: string): void => {
     void window.canvasTTY.terminal.dispose(id);
     setSessions((current) => current.filter((session) => session.id !== id));
@@ -775,6 +794,8 @@ export function App(): React.JSX.Element {
           onBrowserBoundsChange={changeBrowserBounds}
           onFocusBrowser={focusBrowser}
           onCloseBrowser={(windowId) => void closeBrowser(windowId)}
+          onCreateBrowserLink={(terminalId, windowId) => void createBrowserLink(terminalId, windowId)}
+          onRemoveBrowserLink={(terminalId) => void removeBrowserLink(terminalId)}
         />
       </main>
 

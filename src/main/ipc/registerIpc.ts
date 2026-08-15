@@ -429,6 +429,9 @@ export function registerIpc({
   ipcMain.on(IPC.terminalBounds, (_event, id: string, bounds: SessionBounds) => terminals.setBounds(id, bounds));
   ipcMain.handle(IPC.terminalRename, (_event, id: string, title: string) => terminals.rename(id, title));
   ipcMain.handle(IPC.terminalDispose, (_event, id: string) => terminals.dispose(id));
+  ipcMain.handle(IPC.terminalSetBrowserBinding, (_event, id: string, browserWindowId: string | null) => (
+    terminals.setBrowserBinding(id, browserWindowId)
+  ));
 
   const publishWindowState = (window: BrowserWindow): void => {
     if (!window.isDestroyed()) window.webContents.send(IPC.windowState, readWindowState(window));

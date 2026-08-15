@@ -136,6 +136,8 @@ export interface SessionMetadata {
   status: SessionStatus;
   startedAt: number;
   exitCode: number | null;
+  /** Нода браузера, к которой привязан агент; null = не привязан (default). */
+  browserWindowId: string | null;
 }
 
 export interface SessionSnapshot extends SessionMetadata {
@@ -717,6 +719,7 @@ export interface CanvasTTYApi {
     resize(id: string, cols: number, rows: number): void;
     setBounds(id: string, bounds: SessionBounds): void;
     rename(id: string, title: string): Promise<SessionMetadata>;
+    setBrowserBinding(id: string, browserWindowId: string | null): Promise<SessionMetadata>;
     dispose(id: string): Promise<void>;
     onData(listener: (event: TerminalDataEvent) => void): () => void;
     onSession(listener: (event: SessionEvent) => void): () => void;
@@ -797,6 +800,7 @@ export const IPC = {
   terminalBounds: "terminal:bounds",
   terminalRename: "terminal:rename",
   terminalDispose: "terminal:dispose",
+  terminalSetBrowserBinding: "terminal:set-browser-binding",
   terminalData: "terminal:data",
   terminalSession: "terminal:session",
   terminalRemoved: "terminal:removed",

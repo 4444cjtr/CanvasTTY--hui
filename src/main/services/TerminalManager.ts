@@ -88,7 +88,8 @@ export class TerminalManager {
       size: DEFAULT_TERMINAL_SIZE,
       status: "idle",
       startedAt: Date.now(),
-      exitCode: null
+      exitCode: null,
+      browserWindowId: request.browserWindowId ?? null
     };
 
     const session: ManagedSession = {
@@ -118,7 +119,7 @@ export class TerminalManager {
       session.metadata.provider,
       session.metadata.profile,
       session.metadata.cwd,
-      null
+      session.metadata.browserWindowId
     );
     session.process = launched.process;
     session.agentBrowser = launched.agentBrowser;
@@ -168,6 +169,17 @@ export class TerminalManager {
     if (nextTitle.length === 0) throw new Error("Window title cannot be empty.");
     session.metadata.title = nextTitle.slice(0, 80);
     session.metadata.titleCustomized = true;
+    this.emitSession(session.metadata);
+    return structuredClone(session.metadata);
+  }
+
+  setBrowserBinding(id: string, browserWindowId: string | null): SessionMetadata {
+    const session = this.sessions.get(id);
+    if (!session) throw new Error("Terminal session does not exist.");
+    if (session.metadata.provider === "terminal") {
+      throw new Error("Only agent sessions can be bound to a browser node.");
+    }
+    session.metadata.browserWindowId = browserWindowId;
     this.emitSession(session.metadata);
     return structuredClone(session.metadata);
   }

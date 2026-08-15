@@ -13,6 +13,7 @@ import type {
   SessionSnapshot
 } from "../../../../shared/contracts";
 import { HomeZone } from "../home/HomeZone";
+import { AgentLinkGraph } from "./AgentLinkGraph";
 import { EDGE_PAN_SPEEDS, edgePanVelocity } from "./edgePan";
 import { wheelZoomFactor } from "./zoom";
 import { TerminalCard } from "../terminal/TerminalCard";
@@ -68,6 +69,8 @@ interface WorkspaceCanvasProps {
   onBrowserBoundsChange(windowId: string, bounds: SessionBounds): void;
   onFocusBrowser(windowId: string): void;
   onCloseBrowser(windowId: string): void;
+  onCreateBrowserLink(terminalId: string, windowId: string): void;
+  onRemoveBrowserLink(terminalId: string): void;
 }
 
 interface PanState {
@@ -120,7 +123,9 @@ export function WorkspaceCanvas({
   onDisposeSession,
   onBrowserBoundsChange,
   onFocusBrowser,
-  onCloseBrowser
+  onCloseBrowser,
+  onCreateBrowserLink,
+  onRemoveBrowserLink
 }: WorkspaceCanvasProps): React.JSX.Element {
   const viewport = useRef<HTMLDivElement>(null);
   const panState = useRef<PanState | null>(null);
@@ -396,6 +401,13 @@ export function WorkspaceCanvas({
             />
           ))}
         </div>
+        <AgentLinkGraph
+          sessions={sessions}
+          browserNodes={settings.browserCanvases}
+          camera={camera}
+          onCreateLink={onCreateBrowserLink}
+          onRemoveLink={onRemoveBrowserLink}
+        />
       </div>
 
       {homeEditing && (
