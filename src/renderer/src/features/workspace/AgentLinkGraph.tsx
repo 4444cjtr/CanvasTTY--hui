@@ -183,14 +183,16 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
               if (draftPath.current.getAttribute("d") !== d) draftPath.current.setAttribute("d", d);
             }
           } else {
-            // break: тянем от порта браузера (ближайшая сторона к курсору),
-            // линия «отрывается» от входящего порта.
+            // break (перетаскивание связи): конец у АГЕНТА остаётся, а конец
+            // у браузера следует за курсором — линия тянется за курсором.
             const nodeId = dragState.fromId;
-            const sides = SIDE_OFFSETS;
-            // Используем сторону, с которой начали отрыв.
-            const from = readPort(nodeId, sides[dragFromSideRef.current]);
-            const d = bezierPath(from, dragState);
-            if (draftPath.current.getAttribute("d") !== d) draftPath.current.setAttribute("d", d);
+            const session = sessionsRef.current.find((s) => s.browserWindowId === nodeId);
+            if (session) {
+              const sides = linkSides(session.id, nodeId);
+              const from = readPort(session.id, SIDE_OFFSETS[sides.from]);
+              const d = bezierPath(from, dragState);
+              if (draftPath.current.getAttribute("d") !== d) draftPath.current.setAttribute("d", d);
+            }
           }
         }
       }
@@ -250,10 +252,19 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
           onCreateLink(current.fromId, windowId);
         }
       } else if (current?.kind === "break") {
-        // break: отрыв линковки от ноды браузера.
+        // Перетаскивание существующей связи: конец у агента остаётся.
         const session = sessionsRef.current.find((s) => s.browserWindowId === current.fromId);
         if (session) {
-          onRemoveLink(session.id);
+          // Над портом браузера → перенос (другая нода — перезаписываем
+          // browserWindowId; та же нода — просто возврат, ничего не делаем).
+          const target = event.target instanceof Element ? event.target.closest("[data-browser-port]") : null;
+          const windowId = target?.getAttribute("data-browser-port") ?? null;
+          if (windowId && windowId !== current.fromId) {
+            onCreateLink(session.id, windowId);
+          } else if (!windowId) {
+            // Пустое место → обрыв.
+            onRemoveLink(session.id);
+          }
         }
       }
       setDrag(null);
