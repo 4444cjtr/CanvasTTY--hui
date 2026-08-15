@@ -387,6 +387,7 @@ export function BrowserCard({
       className={`browser-card ${summaryMode ? "browser-card--summary" : ""} ${selected ? "browser-card--selected" : ""}`}
       data-interactive="true"
       data-canvas-zoom-surface="application"
+      data-canvas-node-id={windowId}
       data-wheel-owner={summaryMode ? undefined : "local"}
       tabIndex={-1}
       onPointerDownCapture={() => {

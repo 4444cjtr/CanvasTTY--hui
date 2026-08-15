@@ -405,7 +405,6 @@ export function WorkspaceCanvas({
       <AgentLinkGraph
         sessions={sessions}
         browserNodes={settings.browserCanvases}
-        camera={camera}
         onCreateLink={onCreateBrowserLink}
         onRemoveLink={onRemoveBrowserLink}
       />

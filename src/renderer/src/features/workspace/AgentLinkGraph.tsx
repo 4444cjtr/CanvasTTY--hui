@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import type { BrowserCanvasNode, CameraState, SessionSnapshot } from "../../../../shared/contracts";
+import type { BrowserCanvasNode, SessionSnapshot } from "../../../../shared/contracts";
 
 interface AgentLinkGraphProps {
   sessions: SessionSnapshot[];
   browserNodes: BrowserCanvasNode[];
-  camera: CameraState;
   onCreateLink(terminalId: string, windowId: string): void;
   onRemoveLink(terminalId: string): void;
 }
@@ -15,23 +14,15 @@ interface DragState {
   y: number;
 }
 
-/**
- * Точка подключения агента (выход): справа по центру карточки терминала,
- * в канвас-координатах.
- */
-function agentPort(session: SessionSnapshot): { x: number; y: number } {
-  return {
-    x: session.position.x + session.size.width,
-    y: session.position.y + Math.round(session.size.height / 2)
-  };
+/** Позиция порта на карточке (относительно карточки, в долях). */
+function agentPortOffset(): { x: number; y: number } {
+  // Выходной порт агента: справа по центру.
+  return { x: 1, y: 0.5 };
 }
 
-/** Точка подключения браузера (вход): слева по центру карточки, канвас-координаты. */
-function browserPort(node: BrowserCanvasNode): { x: number; y: number } {
-  return {
-    x: node.bounds.position.x,
-    y: node.bounds.position.y + Math.round(node.bounds.size.height / 2)
-  };
+function browserPortOffset(): { x: number; y: number } {
+  // Входной порт браузера: слева по центру.
+  return { x: 0, y: 0.5 };
 }
 
 function bezierPath(from: { x: number; y: number }, to: { x: number; y: number }): string {
@@ -42,28 +33,62 @@ function bezierPath(from: { x: number; y: number }, to: { x: number; y: number }
   ].join(" ");
 }
 
+interface NodeRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 /**
- * Граф связей «агент ↔ браузер» в стиле нодов DaVinci Resolve: порты на
- * карточках, bezier-линии между ними. Drag с порта агента на порт браузера
- * создаёт связь; клик по линии — разрывает.
- *
- * SVG покрывает workspace (после TitleBar, offset 44px). Преобразование
- * client → SVG-координаты через getBoundingClientRect (точный offset),
- * канвас → SVG через camera (scene transform translate+scale).
+ * Граф связей «агент ↔ браузер» (ноды DaVinci). Порты и линии привязаны к
+ * РЕАЛЬНОМУ DOM карточек: позиции читаются через getBoundingClientRect и
+ * конвертируются в SVG-координаты (SVG покрывает workspace, inset:0).
+ * Поэтому при перетаскивании/ресайзе окна (когда session.position в React
+ * ещё не обновился — liveBounds живёт в local state карточки) порты и линии
+ * следуют за окном: rAF-цикл читает актуальные rect'ы каждый кадр.
  */
-export function AgentLinkGraph({ sessions, browserNodes, camera, onCreateLink, onRemoveLink }: AgentLinkGraphProps) {
+export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveLink }: AgentLinkGraphProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
+  // Актуальные DOM-позиции карточек в SVG-координатах (пересчитываются в rAF).
+  const [, setTick] = useState(0);
 
   const boundAgents = sessions.filter((session) => session.browserWindowId);
 
-  // Канвас → SVG-координаты (обратная матрица transform сцены).
-  const canvasToSvg = (point: { x: number; y: number }): { x: number; y: number } => ({
-    x: point.x * camera.zoom + camera.x,
-    y: point.y * camera.zoom + camera.y
-  });
+  // Читает DOM-позиции всех карточек и принудительно ре-рендерит, если они
+  // изменились (drag/resize двигают DOM, но не React-пропсы до конца жеста).
+  useEffect(() => {
+    let raf = 0;
+    let last = "";
+    const sample = (): void => {
+      const parts: string[] = [];
+      for (const session of sessions) {
+        const el = document.querySelector<HTMLElement>(`[data-canvas-node-id="${CSS.escape(session.id)}"]`);
+        if (el) {
+          const r = el.getBoundingClientRect();
+          parts.push(`${session.id}:${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`);
+        }
+      }
+      for (const node of browserNodes) {
+        const el = document.querySelector<HTMLElement>(`[data-canvas-node-id="${CSS.escape(node.id)}"]`);
+        if (el) {
+          const r = el.getBoundingClientRect();
+          parts.push(`${node.id}:${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`);
+        }
+      }
+      const signature = parts.join("|");
+      if (signature !== last) {
+        last = signature;
+        setTick((value) => value + 1);
+      }
+      raf = requestAnimationFrame(sample);
+    };
+    raf = requestAnimationFrame(sample);
+    return () => cancelAnimationFrame(raf);
+  }, [sessions, browserNodes]);
 
-  // client (viewport) → SVG-координаты: вычитаем offset SVG (titlebar и т.п.).
+  // Экранная точка → SVG-координаты (SVG покрывает workspace, offset один).
   const clientToSvg = (clientX: number, clientY: number): { x: number; y: number } => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
@@ -71,11 +96,19 @@ export function AgentLinkGraph({ sessions, browserNodes, camera, onCreateLink, o
     return { x: clientX - rect.left, y: clientY - rect.top };
   };
 
-  // SVG-координаты → канвас.
-  const svgToCanvas = (x: number, y: number): { x: number; y: number } => ({
-    x: (x - camera.x) / camera.zoom,
-    y: (y - camera.y) / camera.zoom
-  });
+  /** DOM-позиция карточки → координаты порта в SVG-пространстве. */
+  const nodePort = (nodeId: string, offset: { x: number; y: number }): { x: number; y: number } => {
+    const el = document.querySelector<HTMLElement>(`[data-canvas-node-id="${CSS.escape(nodeId)}"]`);
+    if (!el) return { x: 0, y: 0 };
+    const r = el.getBoundingClientRect();
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const sr = svg.getBoundingClientRect();
+    return {
+      x: r.left - sr.left + r.width * offset.x,
+      y: r.top - sr.top + r.height * offset.y
+    };
+  };
 
   const startDrag = (event: React.PointerEvent, sessionId: string): void => {
     event.stopPropagation();
@@ -134,8 +167,8 @@ export function AgentLinkGraph({ sessions, browserNodes, camera, onCreateLink, o
       {boundAgents.map((session) => {
         const node = browserNodes.find((candidate) => candidate.id === session.browserWindowId);
         if (!node) return null;
-        const from = canvasToSvg(agentPort(session));
-        const to = canvasToSvg(browserPort(node));
+        const from = nodePort(session.id, agentPortOffset());
+        const to = nodePort(node.id, browserPortOffset());
         return (
           <g
             key={session.id}
@@ -154,7 +187,7 @@ export function AgentLinkGraph({ sessions, browserNodes, camera, onCreateLink, o
 
       {/* Порты агентов (выход): у всех сессий — агент может запуститься внутри */}
       {sessions.map((session) => {
-        const port = canvasToSvg(agentPort(session));
+        const port = nodePort(session.id, agentPortOffset());
         const bound = Boolean(session.browserWindowId);
         return (
           <circle
@@ -171,7 +204,7 @@ export function AgentLinkGraph({ sessions, browserNodes, camera, onCreateLink, o
 
       {/* Порты браузеров (вход): data-browser-port для drop через window listener */}
       {browserNodes.map((node) => {
-        const port = canvasToSvg(browserPort(node));
+        const port = nodePort(node.id, browserPortOffset());
         const hasIncoming = boundAgents.some((session) => session.browserWindowId === node.id);
         return (
           <circle
@@ -186,10 +219,10 @@ export function AgentLinkGraph({ sessions, browserNodes, camera, onCreateLink, o
         );
       })}
 
-      {/* Черновая линия при перетаскивании: координаты уже в SVG-пространстве */}
+      {/* Черновая линия при перетаскивании */}
       {drag && draggingSession && (
         <path
-          d={bezierPath(canvasToSvg(agentPort(draggingSession)), { x: drag.x, y: drag.y })}
+          d={bezierPath(nodePort(draggingSession.id, agentPortOffset()), { x: drag.x, y: drag.y })}
           className="agent-link--draft"
         />
       )}
