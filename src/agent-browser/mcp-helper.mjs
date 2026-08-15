@@ -420,7 +420,7 @@ export function readIdentity(environment = process.env, platform = process.platf
   const agentId = environment[ENV.agentId] ?? `guest-${randomUUID()}`;
   const connectionId = environment[ENV.connectionId] ?? randomUUID();
   const terminalSessionId = environment[ENV.terminalSessionId] ?? "";
-  const provider = environment[ENV.provider] ?? "codex";
+  const provider = environment[ENV.provider] ?? "unknown";
   const capabilityToken = environment[ENV.capabilityToken] ?? "";
   const identity = {
     address,
@@ -437,8 +437,8 @@ export function readIdentity(environment = process.env, platform = process.platf
       retryable: false
     });
   }
-  if (!["claude", "codex", "kimi"].includes(identity.provider)) {
-    throw new BridgeClientError({ code: "AUTH_INVALID", message: "Unknown CanvasTTY agent provider.", retryable: false });
+  if (!/^[a-z0-9_-]+$/.test(identity.provider)) {
+    throw new BridgeClientError({ code: "AUTH_INVALID", message: "Agent provider is invalid.", retryable: false });
   }
   return identity;
 }

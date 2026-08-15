@@ -517,9 +517,13 @@ export class AgentGateway {
       kind: "agent",
       agentId: message.agentId,
       provider: message.provider,
-      terminalSessionId: message.terminalSessionId,
+      // Гость без терминальной сессии: BrowserCore требует непустой
+      // terminalSessionId — используем agentId как псевдо-идентификатор.
+      terminalSessionId: message.terminalSessionId.length > 0
+        ? message.terminalSessionId
+        : message.agentId,
       connectionId: message.connectionId,
-      cwd: message.terminalSessionId,
+      cwd: message.terminalSessionId.length > 0 ? message.terminalSessionId : message.agentId,
       browserWindowId: windowId
     };
     state.actor = actor;

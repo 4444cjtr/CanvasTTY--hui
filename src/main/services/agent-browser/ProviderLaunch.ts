@@ -892,14 +892,19 @@ function safeId(value: string): string {
 
 /**
  * Глобальный MCP-конфиг (вариант A): прописывает mcp-helper в стандартные
- * конфиги CLI-агентов, чтобы ЛЮБОЙ запуск codex/claude (в терминале CanvasTTY,
- * во внешнем терминале, в IDE) автоматически получал браузер-инструменты.
+ * конфиги CLI-агентов, чтобы ЛЮБОЙ запуск codex/claude/opencode/hermes/pi
+ * (в терминале CanvasTTY, во внешнем терминале, в IDE) автоматически получал
+ * браузер-инструменты. Установленные харнессы обнаруживаются автоматически —
+ * новые провайдеры добавлять в код не нужно.
  * Адрес gateway mcp-helper находит сам через файл agent-browser-address.
  */
 export function writeGlobalMcpConfig(helper: StdioHelperLaunch, homeDirectory = homedir()): void {
   validateStdioHelperLaunch(helper);
   writeCodexMcpConfig(helper, homeDirectory);
   writeClaudeMcpConfig(helper, homeDirectory);
+  writeOpenCodeMcpConfig(helper, homeDirectory);
+  writeHermesMcpConfig(helper);
+  writePiMcpConfig(helper, homeDirectory);
 }
 
 function writeCodexMcpConfig(helper: StdioHelperLaunch, homeDirectory: string): void {
@@ -939,6 +944,89 @@ function writeClaudeMcpConfig(helper: StdioHelperLaunch, homeDirectory: string):
     command: helper.command,
     args: helper.args,
     ...(helper.env ? { env: { ...helper.env, CANVASTTY_AGENT_PROVIDER: "claude" } } : {})
+  };
+  config.mcpServers = servers;
+  atomicWrite(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+function writeOpenCodeMcpConfig(helper: StdioHelperLaunch, homeDirectory: string): void {
+  const configPath = join(homeDirectory, ".config", "opencode", "opencode.json");
+  const existing = readOptional(configPath);
+  let config: Record<string, unknown>;
+  try {
+    config = existing && existing.trim().length > 0 ? JSON.parse(existing) as Record<string, unknown> : {};
+  } catch {
+    console.warn("CanvasTTY left opencode config untouched: existing content is not valid JSON.");
+    return;
+  }
+  const servers = config.mcpServers && typeof config.mcpServers === "object" && !Array.isArray(config.mcpServers)
+    ? config.mcpServers as Record<string, unknown>
+    : {};
+  servers[MCP_SERVER_NAME] = {
+    type: "stdio",
+    command: helper.command,
+    args: helper.args,
+    ...(helper.env ? { env: { ...helper.env, CANVASTTY_AGENT_PROVIDER: "opencode" } } : {})
+  };
+  config.mcpServers = servers;
+  atomicWrite(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+/** Hermes: используем его собственный CLI `hermes mcp add` (если установлен). */
+function writeHermesMcpConfig(helper: StdioHelperLaunch): void {
+  const probe = spawnSync("hermes", ["mcp", "list"], {
+    encoding: "utf8",
+    timeout: 5_000,
+    maxBuffer: 256 * 1024,
+    windowsHide: true
+  });
+  if (probe.error || probe.status !== 0) return; // hermes не установлен
+  if (probe.stdout?.includes(MCP_SERVER_NAME)) return; // уже добавлен
+  const envValues = [
+    ...Object.entries(helper.env ?? {}).map(([key, value]) => `${key}=${value}`),
+    "CANVASTTY_AGENT_PROVIDER=hermes"
+  ];
+  const args = [
+    "mcp", "add", MCP_SERVER_NAME,
+    "--command", helper.command,
+    // ВАЖНО: --env обязан идти ДО --args (--args с nargs='+' съедает остальное).
+    "--env", ...envValues,
+    "--args", ...helper.args
+  ];
+  const result = spawnSync("hermes", args, {
+    encoding: "utf8",
+    timeout: 30_000,
+    maxBuffer: 256 * 1024,
+    windowsHide: true,
+    // `hermes mcp add` интерактивен: спрашивает «Save config anyway? [y/N]».
+    // Electron-helper на медленных машинах отвечает >10s, таймаут щедрый.
+    input: "y\n"
+  });
+  if (result.error || result.status !== 0) {
+    console.warn("CanvasTTY could not register the Hermes MCP server.", result.stderr?.trim() || result.error?.message);
+  }
+}
+
+function writePiMcpConfig(helper: StdioHelperLaunch, homeDirectory: string): void {
+  // Pi хранит конфиг MCP-серверов в ~/.config/pi/mcp.json (соглашение
+  // большинства харнессов). Если файла нет — Pi просто не установлен.
+  const configPath = join(homeDirectory, ".config", "pi", "mcp.json");
+  const existing = readOptional(configPath);
+  let config: Record<string, unknown>;
+  try {
+    config = existing && existing.trim().length > 0 ? JSON.parse(existing) as Record<string, unknown> : {};
+  } catch {
+    console.warn("CanvasTTY left Pi MCP config untouched: existing content is not valid JSON.");
+    return;
+  }
+  const servers = config.mcpServers && typeof config.mcpServers === "object" && !Array.isArray(config.mcpServers)
+    ? config.mcpServers as Record<string, unknown>
+    : {};
+  servers[MCP_SERVER_NAME] = {
+    type: "stdio",
+    command: helper.command,
+    args: helper.args,
+    ...(helper.env ? { env: { ...helper.env, CANVASTTY_AGENT_PROVIDER: "pi" } } : {})
   };
   config.mcpServers = servers;
   atomicWrite(configPath, `${JSON.stringify(config, null, 2)}\n`);

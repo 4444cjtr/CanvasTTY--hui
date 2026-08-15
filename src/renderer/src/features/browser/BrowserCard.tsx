@@ -715,7 +715,7 @@ function mergeAgents(...groups: AgentPresenceSnapshot[][]): AgentPresenceSnapsho
 }
 
 function agentColor(agent: AgentPresenceSnapshot): string {
-  return BROWSER_PROVIDER_COLORS[agent.provider];
+  return BROWSER_PROVIDER_COLORS[agent.provider] ?? BROWSER_PROVIDER_COLORS.unknown;
 }
 
 function isBrowserCardControl(target: EventTarget | null): boolean {

@@ -334,12 +334,15 @@ export interface BrowserViewportBounds extends Size {
 
 export type BrowserTabStatus = "loading" | "ready" | "error" | "crashed";
 export type BrowserConnectionState = "connected" | "stale";
-export type BrowserAgentProvider = AgentProviderId | "unknown";
+export type BrowserAgentProvider = AgentProviderId | "opencode" | "hermes" | "pi" | "unknown" | (string & {});
 
 export const BROWSER_PROVIDER_COLORS: Record<BrowserAgentProvider, string> = {
   claude: "#D97757",
   codex: "#10A37F",
   kimi: "#7C5CFC",
+  opencode: "#F97316",
+  hermes: "#38BDF8",
+  pi: "#F472B6",
   unknown: "#7A8291"
 };
 

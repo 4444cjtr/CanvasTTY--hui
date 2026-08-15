@@ -483,7 +483,7 @@ function BrowserActivityList({
           <div className={`browser-settings__activity ${event.ok ? "" : "browser-settings__activity--failed"}`} key={event.sequence}>
             <span
               className="browser-settings__agent-mark"
-              style={{ "--agent-color": BROWSER_PROVIDER_COLORS[provider] } as React.CSSProperties}
+              style={{ "--agent-color": BROWSER_PROVIDER_COLORS[provider] ?? BROWSER_PROVIDER_COLORS.unknown } as React.CSSProperties}
               aria-hidden="true"
             />
             <span className="browser-settings__row-copy">

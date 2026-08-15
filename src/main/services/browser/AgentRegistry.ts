@@ -36,7 +36,7 @@ export class AgentRegistry {
       connectionId: actor.connectionId,
       provider: actor.provider,
       label: current?.label ?? providerLabel(actor.provider),
-      brandColor: BROWSER_PROVIDER_COLORS[actor.provider],
+      brandColor: BROWSER_PROVIDER_COLORS[actor.provider] ?? BROWSER_PROVIDER_COLORS.unknown,
       terminalSessionId: actor.terminalSessionId,
       currentTabId: tabId ?? current?.currentTabId ?? null,
       cursor: nextCursor,
@@ -101,5 +101,11 @@ function providerLabel(provider: AgentPresenceSnapshot["provider"]): string {
   if (provider === "codex") return "Codex";
   if (provider === "claude") return "Claude";
   if (provider === "kimi") return "Kimi";
-  return "Agent";
+  if (provider === "opencode") return "OpenCode";
+  if (provider === "hermes") return "Hermes";
+  if (provider === "pi") return "Pi";
+  // Любой другой харнесс: показываем его имя как есть (unknown → "Agent").
+  return provider.length > 0 && provider !== "unknown"
+    ? provider.charAt(0).toUpperCase() + provider.slice(1)
+    : "Agent";
 }
