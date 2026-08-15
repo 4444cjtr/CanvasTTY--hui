@@ -14,14 +14,11 @@ interface DragState {
   y: number;
 }
 
-/** Позиция порта на карточке (относительно карточки, в долях). */
 function agentPortOffset(): { x: number; y: number } {
-  // Выходной порт агента: справа по центру.
   return { x: 1, y: 0.5 };
 }
 
 function browserPortOffset(): { x: number; y: number } {
-  // Входной порт браузера: слева по центру.
   return { x: 0, y: 0.5 };
 }
 
@@ -33,81 +30,101 @@ function bezierPath(from: { x: number; y: number }, to: { x: number; y: number }
   ].join(" ");
 }
 
-interface NodeRect {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
 /**
- * Граф связей «агент ↔ браузер» (ноды DaVinci). Порты и линии привязаны к
- * РЕАЛЬНОМУ DOM карточек: позиции читаются через getBoundingClientRect и
- * конвертируются в SVG-координаты (SVG покрывает workspace, inset:0).
- * Поэтому при перетаскивании/ресайзе окна (когда session.position в React
- * ещё не обновился — liveBounds живёт в local state карточки) порты и линии
- * следуют за окном: rAF-цикл читает актуальные rect'ы каждый кадр.
+ * Граф связей «агент ↔ браузер». Порты/линии привязаны к РЕАЛЬНОМУ DOM
+ * карточек (data-canvas-node-id): requestAnimationFrame-цикл читает
+ * getBoundingClientRect и обновляет SVG-атрибуты НАПРЯМУЮ (setAttribute),
+ * без React-состояния — поэтому линии следуют за окнами и камерой вживую,
+ * без лага на re-render. React рендерит только структуру (при изменении
+ * сессий/нод), геометрию ведёт rAF.
  */
 export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveLink }: AgentLinkGraphProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
-  // Актуальные DOM-позиции карточек в SVG-координатах (пересчитываются в rAF).
-  const [, setTick] = useState(0);
+
+  // Прямые ссылки на SVG-элементы для live-обновления в rAF.
+  const linkPaths = useRef(new Map<string, SVGPathElement>());
+  const agentPorts = useRef(new Map<string, SVGCircleElement>());
+  const browserPorts = useRef(new Map<string, SVGCircleElement>());
+  const draftPath = useRef<SVGPathElement | null>(null);
 
   const boundAgents = sessions.filter((session) => session.browserWindowId);
 
-  // Читает DOM-позиции всех карточек и принудительно ре-рендерит, если они
-  // изменились (drag/resize двигают DOM, но не React-пропсы до конца жеста).
-  useEffect(() => {
-    let raf = 0;
-    let last = "";
-    const sample = (): void => {
-      const parts: string[] = [];
-      for (const session of sessions) {
-        const el = document.querySelector<HTMLElement>(`[data-canvas-node-id="${CSS.escape(session.id)}"]`);
-        if (el) {
-          const r = el.getBoundingClientRect();
-          parts.push(`${session.id}:${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`);
-        }
-      }
-      for (const node of browserNodes) {
-        const el = document.querySelector<HTMLElement>(`[data-canvas-node-id="${CSS.escape(node.id)}"]`);
-        if (el) {
-          const r = el.getBoundingClientRect();
-          parts.push(`${node.id}:${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`);
-        }
-      }
-      const signature = parts.join("|");
-      if (signature !== last) {
-        last = signature;
-        setTick((value) => value + 1);
-      }
-      raf = requestAnimationFrame(sample);
-    };
-    raf = requestAnimationFrame(sample);
-    return () => cancelAnimationFrame(raf);
-  }, [sessions, browserNodes]);
-
-  // Экранная точка → SVG-координаты (SVG покрывает workspace, offset один).
-  const clientToSvg = (clientX: number, clientY: number): { x: number; y: number } => {
-    const svg = svgRef.current;
-    if (!svg) return { x: 0, y: 0 };
-    const rect = svg.getBoundingClientRect();
-    return { x: clientX - rect.left, y: clientY - rect.top };
-  };
-
-  /** DOM-позиция карточки → координаты порта в SVG-пространстве. */
-  const nodePort = (nodeId: string, offset: { x: number; y: number }): { x: number; y: number } => {
+  // Геометрия карточки → координата порта в SVG-пространстве (client coords).
+  const readPort = (nodeId: string, offset: { x: number; y: number }): { x: number; y: number } => {
     const el = document.querySelector<HTMLElement>(`[data-canvas-node-id="${CSS.escape(nodeId)}"]`);
-    if (!el) return { x: 0, y: 0 };
-    const r = el.getBoundingClientRect();
     const svg = svgRef.current;
-    if (!svg) return { x: 0, y: 0 };
+    if (!el || !svg) return { x: 0, y: 0 };
+    const r = el.getBoundingClientRect();
     const sr = svg.getBoundingClientRect();
     return {
       x: r.left - sr.left + r.width * offset.x,
       y: r.top - sr.top + r.height * offset.y
     };
+  };
+
+  // rAF: обновляет SVG-геометрию напрямую, минуя React (нет лага).
+  // Кэш последних координат: setAttribute выполняется только при изменении —
+  // неподвижные окна не вызывают перерисовку (layout-read дёшев, DOM-write нет).
+  useEffect(() => {
+    const lastPositions = new Map<string, { x: number; y: number }>();
+    let raf = 0;
+    const update = (): void => {
+      const svg = svgRef.current;
+      if (svg) {
+        const applyPort = (key: string, circle: SVGCircleElement | undefined, pos: { x: number; y: number }): void => {
+          if (!circle) return;
+          const prev = lastPositions.get(key);
+          if (prev && prev.x === pos.x && prev.y === pos.y) return;
+          lastPositions.set(key, pos);
+          circle.setAttribute("cx", String(Math.round(pos.x)));
+          circle.setAttribute("cy", String(Math.round(pos.y)));
+        };
+        // Линии связей.
+        for (const session of boundAgents) {
+          const node = browserNodes.find((candidate) => candidate.id === session.browserWindowId);
+          const path = linkPaths.current.get(session.id);
+          if (!node || !path) continue;
+          const from = readPort(session.id, agentPortOffset());
+          const to = readPort(node.id, browserPortOffset());
+          const d = bezierPath(from, to);
+          if (path.getAttribute("d") !== d) path.setAttribute("d", d);
+        }
+        // Порты агентов.
+        for (const session of sessions) {
+          applyPort(`a:${session.id}`, agentPorts.current.get(session.id), readPort(session.id, agentPortOffset()));
+        }
+        // Порты браузеров.
+        for (const node of browserNodes) {
+          applyPort(`b:${node.id}`, browserPorts.current.get(node.id), readPort(node.id, browserPortOffset()));
+        }
+        // Черновая линия при drag.
+        if (dragRef.current && draftPath.current) {
+          const session = sessionsRef.current.find((s) => s.id === dragRef.current!.fromSessionId);
+          if (session) {
+            const from = readPort(session.id, agentPortOffset());
+            const d = bezierPath(from, dragRef.current!);
+            if (draftPath.current.getAttribute("d") !== d) draftPath.current.setAttribute("d", d);
+          }
+        }
+      }
+      raf = requestAnimationFrame(update);
+    };
+    raf = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(raf);
+  }, [sessions, browserNodes, boundAgents]);
+
+  // Ref-зеркала для rAF (замыкания).
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const dragRef = useRef<DragState | null>(null);
+  dragRef.current = drag;
+
+  const clientToSvg = (clientX: number, clientY: number): { x: number; y: number } => {
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const rect = svg.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top };
   };
 
   const startDrag = (event: React.PointerEvent, sessionId: string): void => {
@@ -117,10 +134,7 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
     setDrag({ fromSessionId: sessionId, x: point.x, y: point.y });
   };
 
-  // Drag продолжается за пределами порта: слушаем window, пока перетаскиваем.
   const dragActive = drag !== null;
-  const dragStateRef = useRef(drag);
-  dragStateRef.current = drag;
   useEffect(() => {
     if (!dragActive) return;
     const onMove = (event: PointerEvent): void => {
@@ -128,11 +142,10 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
       setDrag((current) => (current ? { ...current, x: point.x, y: point.y } : current));
     };
     const onUp = (event: PointerEvent): void => {
-      // Drop: если над портом браузера — создаём связь.
       const target = event.target instanceof Element ? event.target.closest("[data-browser-port]") : null;
       const windowId = target?.getAttribute("data-browser-port") ?? null;
-      if (windowId && dragStateRef.current) {
-        onCreateLink(dragStateRef.current.fromSessionId, windowId);
+      if (windowId && dragRef.current) {
+        onCreateLink(dragRef.current.fromSessionId, windowId);
       }
       setDrag(null);
     };
@@ -163,12 +176,10 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
       }}
       aria-hidden="true"
     >
-      {/* Установленные связи: линия + кликабельная область для разрыва */}
+      {/* Линии связей: rAF обновляет d напрямую (см. linkPaths ref). */}
       {boundAgents.map((session) => {
         const node = browserNodes.find((candidate) => candidate.id === session.browserWindowId);
         if (!node) return null;
-        const from = nodePort(session.id, agentPortOffset());
-        const to = nodePort(node.id, browserPortOffset());
         return (
           <g
             key={session.id}
@@ -179,22 +190,39 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
               onRemoveLink(session.id);
             }}
           >
-            <path d={bezierPath(from, to)} className="agent-link__hit" />
-            <path d={bezierPath(from, to)} className="agent-link__stroke" />
+            <path
+              ref={(el) => {
+                if (el) linkPaths.current.set(session.id, el);
+                else linkPaths.current.delete(session.id);
+              }}
+              className="agent-link__hit"
+              d="M 0 0"
+            />
+            <path
+              ref={(el) => {
+                if (el) linkPaths.current.set(`stroke-${session.id}`, el);
+                else linkPaths.current.delete(`stroke-${session.id}`);
+              }}
+              className="agent-link__stroke"
+              d="M 0 0"
+            />
           </g>
         );
       })}
 
-      {/* Порты агентов (выход): у всех сессий — агент может запуститься внутри */}
+      {/* Порты агентов */}
       {sessions.map((session) => {
-        const port = nodePort(session.id, agentPortOffset());
         const bound = Boolean(session.browserWindowId);
         return (
           <circle
             key={session.id}
+            ref={(el) => {
+              if (el) agentPorts.current.set(session.id, el);
+              else agentPorts.current.delete(session.id);
+            }}
             className={`agent-link-port ${bound ? "agent-link-port--bound" : ""}`}
-            cx={port.x}
-            cy={port.y}
+            cx={0}
+            cy={0}
             r={7}
             style={{ pointerEvents: "all", cursor: "crosshair" }}
             onPointerDown={(event) => startDrag(event, session.id)}
@@ -202,17 +230,20 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
         );
       })}
 
-      {/* Порты браузеров (вход): data-browser-port для drop через window listener */}
+      {/* Порты браузеров */}
       {browserNodes.map((node) => {
-        const port = nodePort(node.id, browserPortOffset());
         const hasIncoming = boundAgents.some((session) => session.browserWindowId === node.id);
         return (
           <circle
             key={node.id}
+            ref={(el) => {
+              if (el) browserPorts.current.set(node.id, el);
+              else browserPorts.current.delete(node.id);
+            }}
             data-browser-port={node.id}
             className={`agent-link-port agent-link-port--in ${hasIncoming ? "agent-link-port--bound" : ""}`}
-            cx={port.x}
-            cy={port.y}
+            cx={0}
+            cy={0}
             r={7}
             style={{ pointerEvents: "all", cursor: "crosshair" }}
           />
@@ -221,10 +252,7 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
 
       {/* Черновая линия при перетаскивании */}
       {drag && draggingSession && (
-        <path
-          d={bezierPath(nodePort(draggingSession.id, agentPortOffset()), { x: drag.x, y: drag.y })}
-          className="agent-link--draft"
-        />
+        <path ref={draftPath} className="agent-link--draft" d="M 0 0" />
       )}
     </svg>
   );
