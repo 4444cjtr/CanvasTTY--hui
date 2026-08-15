@@ -108,7 +108,7 @@ export interface AppSettings {
   homeGridSize: HomeGridSize;
   homeLayout: HomeWidgetPlacement[];
   pluginCanvas: PluginCanvasInstance[];
-  browserCanvas: BrowserCanvasState | null;
+  browserCanvases: BrowserCanvasNode[];
   browserAgentAccess: boolean;
   browserShowAgentPresence: boolean;
   browserRestoreTabs: boolean;
@@ -313,6 +313,12 @@ export interface PluginPlaylistFile {
 
 export interface BrowserCanvasState extends SessionBounds {}
 
+/** Одна «нода» браузера на канвасе: собственные вкладки + позиция/размер. */
+export interface BrowserCanvasNode {
+  id: string;
+  bounds: SessionBounds;
+}
+
 export interface BrowserViewportBounds extends Size {
   x: number;
   y: number;
@@ -399,6 +405,7 @@ export interface BrowserSnapshot {
 }
 
 export interface BrowserStateEvent {
+  windowId: string;
   snapshot: BrowserSnapshot;
 }
 
@@ -674,22 +681,25 @@ export interface CanvasTTYApi {
     onStorageChanged(listener: (event: PluginStorageChangeEvent) => void): () => void;
   };
   browser: {
-    getState(): Promise<BrowserSnapshot>;
-    open(url?: string): Promise<BrowserSnapshot>;
-    close(): Promise<void>;
-    closeAllTabs(): Promise<BrowserSnapshot>;
-    newTab(url?: string): Promise<BrowserSnapshot>;
-    selectTab(id: string): Promise<BrowserSnapshot>;
-    closeTab(id: string): Promise<BrowserSnapshot>;
-    navigate(id: string, value: string): Promise<BrowserSnapshot>;
-    back(id: string): Promise<BrowserSnapshot>;
-    forward(id: string): Promise<BrowserSnapshot>;
-    reload(id: string): Promise<BrowserSnapshot>;
-    execute(command: BrowserCommand): Promise<BrowserResult>;
-    getActivity(sinceSequence?: number): Promise<BrowserActivityEvent[]>;
-    clearData(): Promise<BrowserSnapshot>;
-    focus(): void;
-    setViewport(bounds: BrowserViewportBounds): void;
+    nodes(): Promise<BrowserCanvasNode[]>;
+    createNode(bounds: SessionBounds): Promise<BrowserCanvasNode>;
+    closeNode(windowId: string): Promise<void>;
+    getState(windowId?: string | null): Promise<BrowserSnapshot>;
+    open(windowId?: string | null, url?: string): Promise<BrowserSnapshot>;
+    close(windowId?: string | null): Promise<void>;
+    closeAllTabs(windowId?: string | null): Promise<BrowserSnapshot>;
+    newTab(windowId?: string | null, url?: string): Promise<BrowserSnapshot>;
+    selectTab(windowId: string | null, id: string): Promise<BrowserSnapshot>;
+    closeTab(windowId: string | null, id: string): Promise<BrowserSnapshot>;
+    navigate(windowId: string | null, id: string, value: string): Promise<BrowserSnapshot>;
+    back(windowId: string | null, id: string): Promise<BrowserSnapshot>;
+    forward(windowId: string | null, id: string): Promise<BrowserSnapshot>;
+    reload(windowId: string | null, id: string): Promise<BrowserSnapshot>;
+    execute(windowId: string | null, command: BrowserCommand): Promise<BrowserResult>;
+    getActivity(windowId: string | null, sinceSequence?: number): Promise<BrowserActivityEvent[]>;
+    clearData(windowId?: string | null): Promise<BrowserSnapshot>;
+    focus(windowId?: string | null): void;
+    setViewport(windowId: string, bounds: BrowserViewportBounds): void;
     onState(listener: (event: BrowserStateEvent) => void): () => void;
     onActivity(listener: (event: BrowserActivityStateEvent) => void): () => void;
     onCanvasWheel(listener: (event: BrowserCanvasWheelEvent) => void): () => void;
@@ -768,6 +778,9 @@ export const IPC = {
   browserClearData: "browser:clear-data",
   browserFocus: "browser:focus",
   browserSetViewport: "browser:set-viewport",
+  browserCreateNode: "browser:create-node",
+  browserCloseNode: "browser:close-node",
+  browserNodes: "browser:nodes",
   browserState: "browser:state",
   browserActivity: "browser:activity",
   browserCanvasWheel: "browser:canvas-wheel",

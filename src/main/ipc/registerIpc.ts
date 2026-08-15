@@ -19,6 +19,7 @@ import type { PluginManager } from "../services/PluginManager";
 import type { PluginMediaService } from "../services/PluginMediaService";
 import type { PluginSecretsService } from "../services/PluginSecretsService";
 import type { BrowserService } from "../services/BrowserService";
+import type { BrowserManager } from "../services/BrowserManager";
 
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
 const MEDIA_MIME: Record<string, string> = {
@@ -36,7 +37,7 @@ interface Dependencies {
   plugins: PluginManager;
   pluginMedia: PluginMediaService;
   pluginSecrets: PluginSecretsService;
-  browser: BrowserService;
+  browser: BrowserManager;
   getMainWindow(): BrowserWindow | null;
   applyBrowserSettings(settings: AppSettings): void;
   openPluginWindow(pluginId: string, contributionId: string): Promise<void>;
@@ -340,69 +341,82 @@ export function registerIpc({
     throw new Error(`Unsupported plugin method: ${String(method).slice(0, 80)}.`);
   });
 
-  ipcMain.handle(IPC.browserGetState, (event) => {
+  ipcMain.handle(IPC.browserNodes, (event) => {
     assertMainRenderer(event, getMainWindow);
-    return browser.getState();
+    return browser.list();
   });
-  ipcMain.handle(IPC.browserOpen, (event, url?: string) => {
+  ipcMain.handle(IPC.browserCreateNode, (event, bounds: SessionBounds) => {
     assertMainRenderer(event, getMainWindow);
-    return browser.open(url);
+    const node = awaitBrowserCreate(browser, bounds);
+    return node;
   });
-  ipcMain.handle(IPC.browserClose, (event) => {
+  ipcMain.handle(IPC.browserCloseNode, (event, windowId: string) => {
     assertMainRenderer(event, getMainWindow);
-    return browser.close();
+    return browser.dispose(windowId);
   });
-  ipcMain.handle(IPC.browserCloseAllTabs, (event) => {
+  ipcMain.handle(IPC.browserGetState, (event, windowId?: string | null) => {
     assertMainRenderer(event, getMainWindow);
-    return browser.closeAllTabs();
+    return browser.getState(windowId ?? null);
   });
-  ipcMain.handle(IPC.browserNewTab, (event, url?: string) => {
+  ipcMain.handle(IPC.browserOpen, (event, windowId?: string | null, url?: string) => {
     assertMainRenderer(event, getMainWindow);
-    return browser.newTab(url);
+    return browser.open(windowId ?? null, url);
   });
-  ipcMain.handle(IPC.browserSelectTab, (event, id: string) => {
+  ipcMain.handle(IPC.browserClose, (event, windowId?: string | null) => {
     assertMainRenderer(event, getMainWindow);
-    return browser.selectTab(id);
+    return nodeFor(browser, windowId)?.close() ?? null;
   });
-  ipcMain.handle(IPC.browserCloseTab, (event, id: string) => {
+  ipcMain.handle(IPC.browserCloseAllTabs, (event, windowId?: string | null) => {
     assertMainRenderer(event, getMainWindow);
-    return browser.closeTab(id);
+    return nodeFor(browser, windowId)?.closeAllTabs() ?? null;
   });
-  ipcMain.handle(IPC.browserNavigate, (event, id: string, value: string) => {
+  ipcMain.handle(IPC.browserNewTab, (event, windowId?: string | null, url?: string) => {
     assertMainRenderer(event, getMainWindow);
-    return browser.navigate(id, value);
+    return nodeFor(browser, windowId)?.newTab(url) ?? null;
   });
-  ipcMain.handle(IPC.browserBack, (event, id: string) => {
+  ipcMain.handle(IPC.browserSelectTab, (event, windowId: string | null, id: string) => {
     assertMainRenderer(event, getMainWindow);
-    return browser.back(id);
+    return nodeFor(browser, windowId)?.selectTab(id) ?? null;
   });
-  ipcMain.handle(IPC.browserForward, (event, id: string) => {
+  ipcMain.handle(IPC.browserCloseTab, (event, windowId: string | null, id: string) => {
     assertMainRenderer(event, getMainWindow);
-    return browser.forward(id);
+    return nodeFor(browser, windowId)?.closeTab(id) ?? null;
   });
-  ipcMain.handle(IPC.browserReload, (event, id: string) => {
+  ipcMain.handle(IPC.browserNavigate, (event, windowId: string | null, id: string, value: string) => {
     assertMainRenderer(event, getMainWindow);
-    return browser.reload(id);
+    return nodeFor(browser, windowId)?.navigate(id, value) ?? null;
   });
-  ipcMain.handle(IPC.browserExecute, (event, command: BrowserCommand) => {
+  ipcMain.handle(IPC.browserBack, (event, windowId: string | null, id: string) => {
     assertMainRenderer(event, getMainWindow);
-    return browser.executeHuman(command);
+    return nodeFor(browser, windowId)?.back(id) ?? null;
   });
-  ipcMain.handle(IPC.browserGetActivity, (event, sinceSequence?: number) => {
+  ipcMain.handle(IPC.browserForward, (event, windowId: string | null, id: string) => {
     assertMainRenderer(event, getMainWindow);
-    return browser.getActivity(sinceSequence);
+    return nodeFor(browser, windowId)?.forward(id) ?? null;
   });
-  ipcMain.handle(IPC.browserClearData, (event) => {
+  ipcMain.handle(IPC.browserReload, (event, windowId: string | null, id: string) => {
     assertMainRenderer(event, getMainWindow);
-    return browser.clearData();
+    return nodeFor(browser, windowId)?.reload(id) ?? null;
   });
-  ipcMain.on(IPC.browserFocus, (event) => {
+  ipcMain.handle(IPC.browserExecute, (event, windowId: string | null, command: BrowserCommand) => {
     assertMainRenderer(event, getMainWindow);
-    browser.focus();
+    return nodeFor(browser, windowId)?.executeHuman(command) ?? null;
   });
-  ipcMain.on(IPC.browserSetViewport, (event, bounds) => {
+  ipcMain.handle(IPC.browserGetActivity, (event, windowId: string | null, sinceSequence?: number) => {
     assertMainRenderer(event, getMainWindow);
-    browser.setViewport(bounds);
+    return nodeFor(browser, windowId)?.getActivity(sinceSequence) ?? [];
+  });
+  ipcMain.handle(IPC.browserClearData, (event, windowId?: string | null) => {
+    assertMainRenderer(event, getMainWindow);
+    return nodeFor(browser, windowId)?.clearData() ?? null;
+  });
+  ipcMain.on(IPC.browserFocus, (event, windowId?: string | null) => {
+    assertMainRenderer(event, getMainWindow);
+    nodeFor(browser, windowId)?.focus();
+  });
+  ipcMain.on(IPC.browserSetViewport, (event, windowId: string, bounds) => {
+    assertMainRenderer(event, getMainWindow);
+    browser.get(windowId)?.setViewport(bounds);
   });
 
   ipcMain.handle(IPC.terminalList, () => terminals.list());
@@ -532,4 +546,13 @@ async function readMedia(path: string): Promise<string> {
 
   const content = await readFile(path);
   return `data:${mime};base64,${content.toString("base64")}`;
+}
+
+function nodeFor(browser: BrowserManager, windowId: string | null | undefined): BrowserService | null {
+  return browser.get(windowId ?? "") ?? browser.first();
+}
+
+async function awaitBrowserCreate(browser: BrowserManager, bounds: SessionBounds) {
+  const node = await browser.create(bounds);
+  return { id: node.id, bounds: node.bounds };
 }

@@ -36,7 +36,7 @@ const fallback = {
     { widgetId: "core.settings", column: 10, row: 6, columnSpan: 2, rowSpan: 2 }
   ],
   pluginCanvas: [],
-  browserCanvas: null,
+  browserCanvases: [],
   browserAgentAccess: true,
   browserShowAgentPresence: true,
   browserRestoreTabs: true
@@ -119,7 +119,7 @@ test("fresh installs keep edge automation off but allow escaping applications wi
     assert.equal(store.get().hoverFocusSpeed, "normal");
     assert.equal(store.get().showShortcutHints, true);
     assert.deepEqual(store.get().homeGridSize, { columns: 16, rows: 12 });
-    assert.equal(store.get().browserCanvas, null);
+    assert.deepEqual(store.get().browserCanvases, []);
     assert.equal(store.get().browserAgentAccess, true);
     assert.equal(store.get().browserShowAgentPresence, true);
     assert.equal(store.get().browserRestoreTabs, true);
@@ -152,12 +152,14 @@ test("normalizes browser agent access, indicators, and tab restore preferences",
 test("normalizes the optional built-in browser canvas bounds", () => {
   assert.deepEqual(normalizeSettings({
     browserCanvas: { position: { x: 320, y: -40 }, size: { width: 900, height: 640 } }
-  }, fallback).browserCanvas, {
-    position: { x: 320, y: -40 }, size: { width: 900, height: 640 }
-  });
+  }, fallback).browserCanvases, [{
+    id: "default", bounds: { position: { x: 320, y: -40 }, size: { width: 900, height: 640 } }
+  }]);
   assert.deepEqual(normalizeSettings({
-    browserCanvas: { position: { x: 0, y: 0 }, size: { width: 20, height: 9_000 } }
-  }, fallback).browserCanvas?.size, { width: 560, height: 1_100 });
+    browserCanvases: [{
+      id: "default", bounds: { position: { x: 0, y: 0 }, size: { width: 20, height: 9_000 } }
+    }]
+  }, fallback).browserCanvases[0]?.bounds.size, { width: 560, height: 1_100 });
 });
 
 test("preserves plugin canvas bounds down to the manifest minimum floor", () => {

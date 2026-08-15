@@ -40,3 +40,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+pnpm-lock.yaml
+pnpm-workspace.yaml
+.hermes/

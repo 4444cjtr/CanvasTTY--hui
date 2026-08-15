@@ -82,7 +82,8 @@ export function SettingsPanel({
     if (!open || section !== "browser") return;
     let active = true;
     setActivityState("loading");
-    void window.canvasTTY.browser.getActivity()
+    const windowId = settings.browserCanvases[0]?.id ?? null;
+    void window.canvasTTY.browser.getActivity(windowId)
       .then((events) => {
         if (!active) return;
         setActivity(events.slice(-40));

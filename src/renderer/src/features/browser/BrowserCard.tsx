@@ -19,6 +19,7 @@ import { HOVER_FOCUS_DELAYS, shouldActivateCanvasFromClick } from "../workspace/
 import { snapMove, snapResize, type ResizeDirection } from "../workspace/snap";
 
 interface BrowserCardProps {
+  windowId: string;
   browser: BrowserSnapshot;
   bounds: BrowserCanvasState;
   locale: LocaleId;
@@ -56,6 +57,7 @@ type BrowserPanel = "downloads" | "close-all" | null;
 const RESIZE_DIRECTIONS: ResizeDirection[] = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
 
 export function BrowserCard({
+  windowId,
   browser,
   bounds,
   locale,
@@ -132,7 +134,7 @@ export function BrowserCard({
     if (!element) return;
     const rect = element.getBoundingClientRect();
     const state = viewportState.current;
-    window.canvasTTY.browser.setViewport({
+    window.canvasTTY.browser.setViewport(windowId, {
       x: rect.left,
       y: rect.top,
       width: rect.width,
@@ -150,7 +152,7 @@ export function BrowserCard({
       return;
     }
     const rect = viewport.current?.getBoundingClientRect();
-    window.canvasTTY.browser.setViewport({
+    window.canvasTTY.browser.setViewport(windowId, {
       x: rect?.left ?? 0,
       y: rect?.top ?? 0,
       width: rect?.width ?? 0,
@@ -176,7 +178,7 @@ export function BrowserCard({
 
   useEffect(() => () => {
     if (hoverFocusTimer.current !== null) window.clearTimeout(hoverFocusTimer.current);
-    window.canvasTTY.browser.setViewport({
+    window.canvasTTY.browser.setViewport(windowId, {
       x: 0,
       y: 0,
       width: 0,
@@ -200,7 +202,7 @@ export function BrowserCard({
     hoverFocusTimer.current = window.setTimeout(() => {
       hoverFocusTimer.current = null;
       onSelect();
-      window.canvasTTY.browser.focus();
+      window.canvasTTY.browser.focus(windowId);
     }, HOVER_FOCUS_DELAYS[hoverFocusSpeed]);
   }, [clearHoverFocusTimer, hoverFocus, hoverFocusSpeed, onSelect, selected]);
 
@@ -226,7 +228,7 @@ export function BrowserCard({
     if (event.type === "down") {
       clearHoverFocusTimer();
       onSelect();
-      window.canvasTTY.browser.focus();
+      window.canvasTTY.browser.focus(windowId);
       return;
     }
     if (shouldActivateCanvasFromClick(focusActivation, event.clickCount)) onActivate();
@@ -239,7 +241,7 @@ export function BrowserCard({
 
   useEffect(() => {
     if (!selected || !nativeViewVisible) return;
-    const frame = requestAnimationFrame(() => window.canvasTTY.browser.focus());
+    const frame = requestAnimationFrame(() => window.canvasTTY.browser.focus(windowId));
     return () => cancelAnimationFrame(frame);
   }, [nativeViewVisible, selected]);
 
@@ -332,14 +334,14 @@ export function BrowserCard({
   const submitAddress = (event: React.FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     if (!activeTab) return;
-    run(() => window.canvasTTY.browser.navigate(activeTab.id, address));
+    run(() => window.canvasTTY.browser.navigate(windowId, activeTab.id, address));
     addressFocused.current = false;
     (event.currentTarget.elements.namedItem("address") as HTMLInputElement | null)?.blur();
   };
 
   const closeAllTabs = (): void => {
     run(async () => {
-      await window.canvasTTY.browser.closeAllTabs();
+      await window.canvasTTY.browser.closeAllTabs(windowId);
       setPanel(null);
     });
   };
@@ -348,7 +350,7 @@ export function BrowserCard({
     const dialog = browser.pendingDialog;
     if (!dialog) return;
     run(async () => {
-      const result = await window.canvasTTY.browser.execute({
+      const result = await window.canvasTTY.browser.execute(windowId, {
         type: "browser_handle_dialog",
         requestId: crypto.randomUUID(),
         tabId: dialog.tabId,
@@ -435,7 +437,7 @@ export function BrowserCard({
                 type="button"
                 role="tab"
                 aria-selected={tab.id === browser.activeTabId}
-                onClick={() => run(() => window.canvasTTY.browser.selectTab(tab.id))}
+                onClick={() => run(() => window.canvasTTY.browser.selectTab(windowId, tab.id))}
                 title={tab.title}
               >
                 <TabFavicon tab={tab} />
@@ -445,7 +447,7 @@ export function BrowserCard({
               <button
                 className="browser-card__tab-close"
                 type="button"
-                onClick={() => run(() => window.canvasTTY.browser.closeTab(tab.id))}
+                onClick={() => run(() => window.canvasTTY.browser.closeTab(windowId, tab.id))}
                 title={t(locale, "closeTab")}
                 aria-label={t(locale, "closeTab")}
               >
@@ -457,7 +459,7 @@ export function BrowserCard({
         <button
           className="browser-card__new-tab"
           type="button"
-          onClick={() => run(() => window.canvasTTY.browser.newTab())}
+          onClick={() => run(() => window.canvasTTY.browser.newTab(windowId))}
           title={t(locale, "newTab")}
           aria-label={t(locale, "newTab")}
         >
@@ -474,13 +476,13 @@ export function BrowserCard({
       </div>
 
       <nav className="browser-card__navigation" aria-label={t(locale, "browserNavigation")}>
-        <button className="browser-card__back" type="button" disabled={!activeTab?.canGoBack} onClick={() => activeTab && run(() => window.canvasTTY.browser.back(activeTab.id))} title={t(locale, "back")}>
+        <button className="browser-card__back" type="button" disabled={!activeTab?.canGoBack} onClick={() => activeTab && run(() => window.canvasTTY.browser.back(windowId, activeTab.id))} title={t(locale, "back")}>
           <UiIcon name="arrow" size={16} />
         </button>
-        <button type="button" disabled={!activeTab?.canGoForward} onClick={() => activeTab && run(() => window.canvasTTY.browser.forward(activeTab.id))} title={t(locale, "forward")}>
+        <button type="button" disabled={!activeTab?.canGoForward} onClick={() => activeTab && run(() => window.canvasTTY.browser.forward(windowId, activeTab.id))} title={t(locale, "forward")}>
           <UiIcon name="arrow" size={16} />
         </button>
-        <button type="button" disabled={!activeTab} onClick={() => activeTab && run(() => window.canvasTTY.browser.reload(activeTab.id))} title={t(locale, "reload")}>
+        <button type="button" disabled={!activeTab} onClick={() => activeTab && run(() => window.canvasTTY.browser.reload(windowId, activeTab.id))} title={t(locale, "reload")}>
           <UiIcon name={activeTab?.loading ? "working" : "reload"} size={16} />
         </button>
         <form onSubmit={submitAddress}>
@@ -513,7 +515,7 @@ export function BrowserCard({
         <div className="browser-card__page-state">
           <UiIcon name="browser" size={36} />
           <strong>{t(locale, "browserNoTabs")}</strong>
-          <button type="button" onClick={() => run(() => window.canvasTTY.browser.newTab())}>{t(locale, "newTab")}</button>
+          <button type="button" onClick={() => run(() => window.canvasTTY.browser.newTab(windowId))}>{t(locale, "newTab")}</button>
         </div>
       )}
 
@@ -522,7 +524,7 @@ export function BrowserCard({
           <UiIcon name="error" size={34} />
           <strong>{t(locale, "browserTabCrashed")}</strong>
           <small>{activeTab.crashState ?? t(locale, "browserActionFailed")}</small>
-          <button type="button" onClick={() => run(() => window.canvasTTY.browser.reload(activeTab.id))}>{t(locale, "reload")}</button>
+          <button type="button" onClick={() => run(() => window.canvasTTY.browser.reload(windowId, activeTab.id))}>{t(locale, "reload")}</button>
         </div>
       )}
 

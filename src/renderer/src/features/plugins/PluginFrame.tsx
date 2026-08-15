@@ -213,10 +213,9 @@ async function handleRequest({
   if (method === "browser.open") {
     requirePermission(plugin, "external:open");
     const url = stringParam(params.url, "url");
-    await window.canvasTTY.browser.open(url);
-    // Сообщаем App: показать карточку браузера на канвасе (устанавливает
-    // browserCanvas, фокус камеры, выделение). Плагин сам не может менять
-    // состояние канваса — это делает владелец состояния.
+    // Открытие и показ карточки делает App через событие: он сам создаёт
+    // ноду, если её нет, и фокусирует камеру (плагин не может менять
+    // состояние канваса напрямую).
     window.dispatchEvent(new CustomEvent("canvastty:browser-open", { detail: { url } }));
     return null;
   }

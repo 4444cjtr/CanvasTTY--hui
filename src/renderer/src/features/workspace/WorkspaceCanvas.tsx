@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AgentProviderId,
   AppSettings,
-  BrowserCanvasState,
   BrowserSnapshot,
   CameraState,
   HomeGridSize,
@@ -31,7 +30,8 @@ interface WorkspaceCanvasProps {
   limits: LimitsSnapshot | null;
   limitsLoadState: LimitsLoadState;
   plugins: InstalledPlugin[];
-  browser: BrowserSnapshot;
+  browserStates: Record<string, BrowserSnapshot>;
+  browserSelectedId: string | null;
   browserViewVisible: boolean;
   homeEditing: boolean;
   camera: CameraState;
@@ -44,10 +44,9 @@ interface WorkspaceCanvasProps {
   onOpenBrowserNewWindow(): void;
   onFocusSession(session: SessionSnapshot): void;
   activeSessionId: string | null;
-  browserSelected: boolean;
   renamingSessionId: string | null;
   onSelectSession(id: string): void;
-  onSelectBrowser(): void;
+  onSelectBrowser(windowId: string): void;
   onClearCanvasSelection(): void;
   onDeselectSession(id: string): void;
   onDeselectBrowser(): void;
@@ -66,9 +65,9 @@ interface WorkspaceCanvasProps {
   onSessionBoundsChange(id: string, bounds: SessionBounds): void;
   onRestartSession(id: string): Promise<void>;
   onDisposeSession(id: string): void;
-  onBrowserBoundsChange(bounds: BrowserCanvasState): void;
-  onFocusBrowser(): void;
-  onCloseBrowser(): void;
+  onBrowserBoundsChange(windowId: string, bounds: SessionBounds): void;
+  onFocusBrowser(windowId: string): void;
+  onCloseBrowser(windowId: string): void;
 }
 
 interface PanState {
@@ -84,7 +83,8 @@ export function WorkspaceCanvas({
   limits,
   limitsLoadState,
   plugins,
-  browser,
+  browserStates,
+  browserSelectedId,
   browserViewVisible,
   homeEditing,
   camera,
@@ -97,7 +97,6 @@ export function WorkspaceCanvas({
   onOpenBrowserNewWindow,
   onFocusSession,
   activeSessionId,
-  browserSelected,
   renamingSessionId,
   onSelectSession,
   onSelectBrowser,
@@ -319,7 +318,7 @@ export function WorkspaceCanvas({
                   .filter((candidate) => candidate.id !== session.id)
                   .map((candidate) => ({ position: candidate.position, size: candidate.size })),
                 ...settings.pluginCanvas.map((candidate) => ({ position: candidate.position, size: candidate.size })),
-                ...(settings.browserCanvas ? [settings.browserCanvas] : [])
+                ...settings.browserCanvases.map((candidate) => ({ position: candidate.bounds.position, size: candidate.bounds.size }))
               ]}
               onActivate={onFocusSession}
               onSelect={onSelectSession}
@@ -353,7 +352,7 @@ export function WorkspaceCanvas({
                   ...settings.pluginCanvas
                     .filter((candidate) => candidate.id !== instance.id)
                     .map((candidate) => ({ position: candidate.position, size: candidate.size })),
-                  ...(settings.browserCanvas ? [settings.browserCanvas] : [])
+                  ...settings.browserCanvases.map((candidate) => ({ position: candidate.bounds.position, size: candidate.bounds.size }))
                 ]}
                 onActivate={() => onFocusPluginCanvas(instance.id)}
                 onBoundsChange={onPluginCanvasBoundsChange}
@@ -363,10 +362,12 @@ export function WorkspaceCanvas({
               />
             );
           })}
-          {settings.browserCanvas && (
+          {settings.browserCanvases.map((node) => (
             <BrowserCard
-              browser={browser}
-              bounds={settings.browserCanvas}
+              key={node.id}
+              windowId={node.id}
+              browser={browserStates[node.id] ?? EMPTY_NODE_SNAPSHOT}
+              bounds={node.bounds}
               locale={settings.locale}
               zoom={camera.zoom}
               camera={camera}
@@ -375,22 +376,25 @@ export function WorkspaceCanvas({
               focusActivation={settings.focusActivation}
               hoverFocus={settings.hoverFocus}
               hoverFocusSpeed={settings.hoverFocusSpeed}
-              selected={browserSelected}
+              selected={browserSelectedId === node.id}
               zoomOverApplications={settings.zoomOverApplications}
               showAgentPresence={settings.browserShowAgentPresence}
               snapTargets={[
                 homeBounds,
                 ...sessions.map((candidate) => ({ position: candidate.position, size: candidate.size })),
-                ...settings.pluginCanvas.map((candidate) => ({ position: candidate.position, size: candidate.size }))
+                ...settings.pluginCanvas.map((candidate) => ({ position: candidate.position, size: candidate.size })),
+                ...settings.browserCanvases
+                  .filter((candidate) => candidate.id !== node.id)
+                  .map((candidate) => ({ position: candidate.bounds.position, size: candidate.bounds.size }))
               ]}
-              onBoundsChange={onBrowserBoundsChange}
-              onActivate={onFocusBrowser}
-              onSelect={onSelectBrowser}
+              onBoundsChange={(bounds) => onBrowserBoundsChange(node.id, bounds)}
+              onActivate={() => onFocusBrowser(node.id)}
+              onSelect={() => onSelectBrowser(node.id)}
               onDeselect={onDeselectBrowser}
-              onClose={onCloseBrowser}
+              onClose={() => onCloseBrowser(node.id)}
               onError={onPluginError}
             />
-          )}
+          ))}
         </div>
       </div>
 
@@ -426,6 +430,15 @@ export function WorkspaceCanvas({
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
+
+const EMPTY_NODE_SNAPSHOT: BrowserSnapshot = {
+  tabs: [],
+  activeTabId: null,
+  visible: false,
+  agents: [],
+  downloads: [],
+  pendingDialog: null
+};
 
 function isApplicationWheelTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLElement
