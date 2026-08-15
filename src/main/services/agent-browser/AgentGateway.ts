@@ -1,9 +1,9 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { chmod, mkdir, rmdir, unlink } from "node:fs/promises";
+import { chmod, mkdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import type { Server } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { BrowserActor, BrowserResult } from "../../../shared/contracts.ts";
 import { MAX_BRIDGE_PAYLOAD_BYTES } from "../../../agent-browser/tool-catalog.mjs";
 import {
@@ -69,6 +69,8 @@ interface ConnectionState {
 export interface AgentGatewayOptions {
   platform?: NodeJS.Platform;
   runtimeDirectory?: string;
+  /** Файл, куда при старте пишется адрес gateway (для гостевого mcp-helper). */
+  endpointFile?: string;
   windowsHostPath?: string;
   windowsPipeHostFactory?: (options: WindowsPipeHostTransportOptions) => WindowsPipeHostTransport;
   capabilityTtlMs?: number;
@@ -86,8 +88,12 @@ export interface RegisterAgentInput {
 /** Разрешает ноду браузера по windowId; null = default. */
 export type BrowserNodeResolver = (windowId: string | null) => BrowserCoreLike | null;
 
+/** Возвращает привязку терминальной сессии к ноде браузера; null = нет привязки. */
+export type SessionBrowserResolver = (terminalSessionId: string) => string | null;
+
 export class AgentGateway {
   private readonly resolveBrowser: BrowserNodeResolver;
+  private readonly resolveSessionBrowser: SessionBrowserResolver | null;
   private readonly platform: NodeJS.Platform;
   private readonly capabilityTtlMs: number;
   private readonly now: () => number;
@@ -96,6 +102,7 @@ export class AgentGateway {
   private readonly windowsPipeHostFactory: (
     options: WindowsPipeHostTransportOptions
   ) => WindowsPipeHostTransport;
+  private readonly endpointFile: string | null;
   private readonly leases = new Map<string, CapabilityLease>();
   private readonly connections = new Map<string, Set<ConnectionState>>();
   private readonly acceptedConnections = new Set<ConnectionState>();
@@ -106,9 +113,14 @@ export class AgentGateway {
   private expiryTimer: NodeJS.Timeout | null = null;
   private enabled = true;
 
-  constructor(resolveBrowser: BrowserNodeResolver, options: AgentGatewayOptions = {}) {
+  constructor(
+    resolveBrowser: BrowserNodeResolver,
+    options: AgentGatewayOptions & { resolveSessionBrowser?: SessionBrowserResolver } = {}
+  ) {
     this.resolveBrowser = resolveBrowser;
+    this.resolveSessionBrowser = options.resolveSessionBrowser ?? null;
     this.platform = options.platform ?? process.platform;
+    this.endpointFile = options.endpointFile ?? null;
     this.requestedRuntimeDirectory = options.runtimeDirectory;
     this.windowsHostPath = options.windowsHostPath;
     this.windowsPipeHostFactory = options.windowsPipeHostFactory
@@ -160,6 +172,7 @@ export class AgentGateway {
         this.endpoint = endpoint;
         this.expiryTimer = setInterval(() => this.expireConnections(), 1_000);
         this.expiryTimer.unref();
+        await this.writeEndpointFile(endpoint);
         return endpoint;
       } catch (error) {
         await transport.close();
@@ -180,6 +193,7 @@ export class AgentGateway {
     try {
       await listen(server, endpoint, this.platform);
       await chmod(endpoint, 0o600);
+      await this.writeEndpointFile(endpoint);
     } catch (error) {
       for (const state of [...this.acceptedConnections]) this.disconnect(state, "closed");
       await closeServer(server);
@@ -258,6 +272,16 @@ export class AgentGateway {
     }
     for (const state of [...this.acceptedConnections]) {
       if (state.actor?.terminalSessionId === terminalSessionId) this.disconnect(state, "revoked");
+    }
+  }
+
+  private async writeEndpointFile(endpoint: string): Promise<void> {
+    if (!this.endpointFile) return;
+    try {
+      await mkdir(dirname(this.endpointFile), { recursive: true, mode: 0o700 });
+      await writeFile(this.endpointFile, `${endpoint}\n`, { mode: 0o600 });
+    } catch (error) {
+      console.warn("CanvasTTY could not persist the agent browser gateway address.", error);
     }
   }
 
@@ -377,6 +401,12 @@ export class AgentGateway {
     state: ConnectionState,
     message: Extract<ReturnType<typeof parseClientMessage>, { type: "authenticate" }>
   ): void {
+    // Гость: агент запущен сам (глобальный MCP-конфиг) без capability CanvasTTY.
+    // Привязку к ноде берём из терминальной сессии (CANVASTTY_TERMINAL_SESSION_ID).
+    if (message.capabilityToken.length === 0) {
+      this.authenticateGuest(state, message);
+      return;
+    }
     const activeConnections = this.connections.get(message.connectionId);
     if (!activeConnections && this.connections.size >= MAX_CONNECTED_AGENTS) {
       throw bridgeError("BRIDGE_BUSY", "Agent browser connection limit reached.", true);
@@ -462,6 +492,68 @@ export class AgentGateway {
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
       heartbeatExpiryMs: HEARTBEAT_EXPIRY_MS,
       reconnectToken
+    });
+  }
+
+  /** Гостевой вход: агент запущен сам, привязка — из терминальной сессии. */
+  private authenticateGuest(
+    state: ConnectionState,
+    message: Extract<ReturnType<typeof parseClientMessage>, { type: "authenticate" }>
+  ): void {
+    if (!this.resolveSessionBrowser) {
+      throw bridgeError("AUTH_INVALID", "Guest agent connections are not supported.", false);
+    }
+    if (this.connections.size >= MAX_CONNECTED_AGENTS) {
+      throw bridgeError("BRIDGE_BUSY", "Agent browser connection limit reached.", true);
+    }
+    const windowId = this.resolveSessionBrowser(message.terminalSessionId);
+    const nodeBrowser = windowId
+      ? this.resolveBrowser(windowId)
+      : this.resolveBrowser(null);
+    if (!nodeBrowser) {
+      throw bridgeError("BROWSER_UNAVAILABLE", "The bound browser node is unavailable.", true);
+    }
+    const actor: Extract<BrowserActor, { kind: "agent" }> = {
+      kind: "agent",
+      agentId: message.agentId,
+      provider: message.provider,
+      terminalSessionId: message.terminalSessionId,
+      connectionId: message.connectionId,
+      cwd: message.terminalSessionId,
+      browserWindowId: windowId
+    };
+    state.actor = actor;
+    state.browser = nodeBrowser;
+    state.authenticated = true;
+    state.lastHeartbeatAt = this.now();
+    const states = new Set<ConnectionState>();
+    try {
+      state.unsubscribe = nodeBrowser.subscribe(actor, 0, (event) => {
+        try {
+          this.write(state, { v: AGENT_BRIDGE_PROTOCOL_VERSION, type: "event", event });
+        } catch {
+          this.disconnect(state, "protocol_error");
+        }
+      });
+      states.add(state);
+      this.connections.set(actor.connectionId, states);
+      nodeBrowser.agentConnected?.(actor);
+    } catch (error) {
+      try {
+        state.unsubscribe?.();
+      } catch {
+        // Browser rejected registration while tearing down.
+      }
+      state.unsubscribe = null;
+      this.connections.delete(actor.connectionId);
+      throw bridgeError("INTERNAL_ERROR", "Browser core rejected the agent connection.", true);
+    }
+    this.write(state, {
+      v: AGENT_BRIDGE_PROTOCOL_VERSION,
+      type: "authenticated",
+      heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
+      heartbeatExpiryMs: HEARTBEAT_EXPIRY_MS,
+      reconnectToken: randomBytes(32).toString("base64url")
     });
   }
 

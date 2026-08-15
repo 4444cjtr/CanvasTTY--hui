@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createConnection } from "node:net";
 import { fileURLToPath } from "node:url";
 import {
@@ -414,13 +416,19 @@ export class BridgeClientError extends Error {
 }
 
 export function readIdentity(environment = process.env, platform = process.platform) {
+  const address = environment[ENV.address] ?? readEndpointFile();
+  const agentId = environment[ENV.agentId] ?? `guest-${randomUUID()}`;
+  const connectionId = environment[ENV.connectionId] ?? randomUUID();
+  const terminalSessionId = environment[ENV.terminalSessionId] ?? "";
+  const provider = environment[ENV.provider] ?? "codex";
+  const capabilityToken = environment[ENV.capabilityToken] ?? "";
   const identity = {
-    address: requiredEnvironment(environment, ENV.address),
-    agentId: requiredEnvironment(environment, ENV.agentId),
-    connectionId: requiredEnvironment(environment, ENV.connectionId),
-    terminalSessionId: requiredEnvironment(environment, ENV.terminalSessionId),
-    provider: requiredEnvironment(environment, ENV.provider),
-    capabilityToken: requiredEnvironment(environment, ENV.capabilityToken)
+    address,
+    agentId,
+    connectionId,
+    terminalSessionId,
+    provider,
+    capabilityToken
   };
   if (!isLocalEndpoint(identity.address, platform)) {
     throw new BridgeClientError({
@@ -433,6 +441,23 @@ export function readIdentity(environment = process.env, platform = process.platf
     throw new BridgeClientError({ code: "AUTH_INVALID", message: "Unknown CanvasTTY agent provider.", retryable: false });
   }
   return identity;
+}
+
+/** Гостевой адрес gateway: файл, который CanvasTTY пишет при старте. */
+export function readEndpointFile(
+  filePath = process.env.CANVASTTY_AGENT_BROWSER_ENDPOINT_FILE ?? defaultEndpointFile()
+) {
+  try {
+    const value = readFileSync(filePath, "utf8").trim();
+    return value.length > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function defaultEndpointFile() {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  return join(home, ".config", "canvastty", "agent-browser-address");
 }
 
 export function isLocalEndpoint(address, platform = process.platform) {

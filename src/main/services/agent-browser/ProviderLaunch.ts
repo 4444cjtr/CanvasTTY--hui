@@ -889,3 +889,70 @@ function tomlStringTable(values: Record<string, string>): string {
 function safeId(value: string): string {
   return value.replaceAll(/[^A-Za-z0-9_-]/g, "_").slice(0, 128);
 }
+
+/**
+ * Глобальный MCP-конфиг (вариант A): прописывает mcp-helper в стандартные
+ * конфиги CLI-агентов, чтобы ЛЮБОЙ запуск codex/claude (в терминале CanvasTTY,
+ * во внешнем терминале, в IDE) автоматически получал браузер-инструменты.
+ * Адрес gateway mcp-helper находит сам через файл agent-browser-address.
+ */
+export function writeGlobalMcpConfig(helper: StdioHelperLaunch, homeDirectory = homedir()): void {
+  validateStdioHelperLaunch(helper);
+  writeCodexMcpConfig(helper, homeDirectory);
+  writeClaudeMcpConfig(helper, homeDirectory);
+}
+
+function writeCodexMcpConfig(helper: StdioHelperLaunch, homeDirectory: string): void {
+  const configPath = join(homeDirectory, ".codex", "config.toml");
+  const existing = readOptional(configPath) ?? "";
+  const block = [
+    `[mcp_servers.${MCP_SERVER_NAME}]`,
+    `command=${tomlString(helper.command)}`,
+    `args=${tomlStringArray(helper.args)}`,
+    `env=${tomlStringTable({ ...(helper.env ?? {}), CANVASTTY_AGENT_PROVIDER: "codex" })}`,
+    "env_vars=[]",
+    "enabled=true",
+    "required=false",
+    'default_tools_approval_mode="approve"'
+  ].join("\n");
+  const marker = `[mcp_servers.${MCP_SERVER_NAME}]`;
+  const updated = upsertTomlSection(existing, marker, block);
+  if (updated === existing) return;
+  atomicWrite(configPath, `${updated}${updated.endsWith("\n") ? "" : "\n"}`);
+}
+
+function writeClaudeMcpConfig(helper: StdioHelperLaunch, homeDirectory: string): void {
+  const configPath = join(homeDirectory, ".claude.json");
+  const existing = readOptional(configPath);
+  let config: Record<string, unknown>;
+  try {
+    config = existing && existing.trim().length > 0 ? JSON.parse(existing) as Record<string, unknown> : {};
+  } catch {
+    console.warn("CanvasTTY left ~/.claude.json untouched: existing content is not valid JSON.");
+    return;
+  }
+  const servers = config.mcpServers && typeof config.mcpServers === "object" && !Array.isArray(config.mcpServers)
+    ? config.mcpServers as Record<string, unknown>
+    : {};
+  servers[MCP_SERVER_NAME] = {
+    type: "stdio",
+    command: helper.command,
+    args: helper.args,
+    ...(helper.env ? { env: { ...helper.env, CANVASTTY_AGENT_PROVIDER: "claude" } } : {})
+  };
+  config.mcpServers = servers;
+  atomicWrite(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+/** Обновляет TOML-секцию (маркер `[name]` → следующая `[`-секция), не трогая остальное. */
+function upsertTomlSection(existing: string, marker: string, block: string): string {
+  const start = existing.indexOf(marker);
+  if (start === -1) {
+    const trimmed = existing.trimEnd();
+    return trimmed.length === 0 ? block : `${trimmed}\n\n${block}`;
+  }
+  const after = existing.slice(start + marker.length);
+  const nextSection = after.indexOf("\n[");
+  const end = nextSection === -1 ? existing.length : start + marker.length + nextSection;
+  return `${existing.slice(0, start)}${block}${existing.slice(end)}`;
+}

@@ -176,12 +176,17 @@ export class TerminalManager {
   setBrowserBinding(id: string, browserWindowId: string | null): SessionMetadata {
     const session = this.sessions.get(id);
     if (!session) throw new Error("Terminal session does not exist.");
-    if (session.metadata.provider === "terminal") {
-      throw new Error("Only agent sessions can be bound to a browser node.");
-    }
+    // Привязка разрешена и для обычных терминалов: агент, запущенный внутри
+    // такого терминала (глобальный MCP-конфиг), получит доступ к этой ноде.
     session.metadata.browserWindowId = browserWindowId;
     this.emitSession(session.metadata);
     return structuredClone(session.metadata);
+  }
+
+  /** Привязка сессии к ноде браузера (для гостевого подключения агента). */
+  sessionBrowserBinding(id: string): string | null {
+    const session = this.sessions.get(id);
+    return session?.metadata.browserWindowId ?? null;
   }
 
   applyProviderSignal(id: string, signal: ProviderLifecycleSignal): void {
@@ -237,7 +242,13 @@ export class TerminalManager {
           cols: 100,
           rows: 30,
           cwd,
-          env: { ...terminalEnvironment(), ...agentBrowser?.environment }
+          env: {
+            ...terminalEnvironment(),
+            ...(agentBrowser?.environment ?? {}),
+            // Каждая сессия знает свой id — так агент, запущенный внутри
+            // терминала, может сообщить gateway свою привязку к ноде браузера.
+            CANVASTTY_TERMINAL_SESSION_ID: id
+          }
         }),
         agentBrowser
       };

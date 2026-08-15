@@ -169,7 +169,8 @@ export function parseClientMessage(value: unknown, authenticated: boolean): Clie
       connectionId: requiredString(object, "connectionId", 128),
       terminalSessionId: requiredString(object, "terminalSessionId", 128),
       provider,
-      capabilityToken: requiredString(object, "capabilityToken", 128)
+      // Пустая строка = гость (агент запущен сам, без capability CanvasTTY).
+      capabilityToken: optionalString(object, "capabilityToken", 128) ?? ""
     };
   }
 
@@ -322,6 +323,15 @@ function requiredString(value: Record<string, unknown>, key: string, maximum: nu
   const candidate = value[key];
   if (typeof candidate !== "string" || candidate.length === 0 || candidate.length > maximum) {
     throw protocolError(`message.${key} must be a non-empty string of at most ${maximum} characters.`);
+  }
+  return candidate;
+}
+
+function optionalString(value: Record<string, unknown>, key: string, maximum: number): string | undefined {
+  const candidate = value[key];
+  if (candidate === undefined || candidate === null) return undefined;
+  if (typeof candidate !== "string" || candidate.length === 0 || candidate.length > maximum) {
+    throw protocolError(`message.${key} must be a string of at most ${maximum} characters.`);
   }
   return candidate;
 }

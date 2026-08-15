@@ -24,7 +24,8 @@ import {
 } from "./services/agent-browser";
 import {
   recoverKimiConfigurationOnStartup,
-  resolveKimiHomeDirectory
+  resolveKimiHomeDirectory,
+  writeGlobalMcpConfig
 } from "./services/agent-browser/ProviderLaunch";
 import type { StdioHelperLaunch } from "./services/agent-browser/ProviderLaunch";
 import { startupPageUrl } from "./startupPage";
@@ -159,7 +160,13 @@ async function initializeServices(): Promise<void> {
       : undefined;
     agentGateway = new AgentGateway((windowId) => browserManager?.resolveCore(windowId) ?? null, {
       runtimeDirectory,
-      windowsHostPath
+      windowsHostPath,
+      endpointFile: join(userDataPath, "agent-browser-address"),
+      // Гостевое подключение (агент запущен сам): нода по привязке терминальной
+      // сессии (CANVASTTY_TERMINAL_SESSION_ID из env сессии).
+      resolveSessionBrowser: (terminalSessionId) => (
+        terminalManager?.sessionBrowserBinding(terminalSessionId) ?? null
+      )
     });
     agentGateway.setEnabled(settings.get().browserAgentAccess);
     await agentGateway.start();
@@ -171,6 +178,12 @@ async function initializeServices(): Promise<void> {
       args: [helperPath],
       env: { ELECTRON_RUN_AS_NODE: "1" }
     };
+    // Вариант A: любой запуск codex/claude (терминал, IDE) получает браузер-инструменты.
+    try {
+      writeGlobalMcpConfig(agentBrowserHelper);
+    } catch (error) {
+      console.warn("CanvasTTY could not write the global agent MCP configuration.", error);
+    }
     agentBrowserBridge = new AgentBrowserBridge(agentGateway, {
       helper: agentBrowserHelper,
       runtimeDirectory,

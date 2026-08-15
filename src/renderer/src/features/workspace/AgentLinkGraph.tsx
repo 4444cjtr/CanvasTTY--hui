@@ -52,7 +52,7 @@ export function AgentLinkGraph({ sessions, browserNodes, camera, onCreateLink, o
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
 
-  const boundAgents = sessions.filter((session) => session.provider !== "terminal" && session.browserWindowId);
+  const boundAgents = sessions.filter((session) => session.browserWindowId);
 
   const clientToCanvas = (clientX: number, clientY: number): { x: number; y: number } => {
     const svg = svgRef.current;
@@ -128,8 +128,8 @@ export function AgentLinkGraph({ sessions, browserNodes, camera, onCreateLink, o
         );
       })}
 
-      {/* Порты агентов (выход) */}
-      {sessions.filter((session) => session.provider !== "terminal").map((session) => {
+      {/* Порты агентов (выход): у всех сессий — агент может запуститься внутри */}
+      {sessions.map((session) => {
         const port = agentPort(session);
         const bound = Boolean(session.browserWindowId);
         return (
