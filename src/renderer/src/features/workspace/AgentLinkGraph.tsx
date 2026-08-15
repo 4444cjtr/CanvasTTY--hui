@@ -9,7 +9,9 @@ interface AgentLinkGraphProps {
 }
 
 interface DragState {
-  fromSessionId: string;
+  kind: "link" | "break";
+  /** Для link — сессия-источник; для break — нода браузера. */
+  fromId: string;
   x: number;
   y: number;
 }
@@ -170,12 +172,24 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
           if (pathStroke.getAttribute("d") !== d) pathStroke.setAttribute("d", d);
         }
 
-        // Черновая линия при drag.
+        // Черновая линия при drag: link — от порта агента; break — от порта браузера.
         if (dragRef.current && draftPath.current) {
-          const session = sessionsRef.current.find((s) => s.id === dragRef.current!.fromSessionId);
-          if (session) {
-            const from = readPort(session.id, SIDE_OFFSETS[session.id === dragRef.current!.fromSessionId ? dragFromSideRef.current : "right"]);
-            const d = bezierPath(from, dragRef.current!);
+          const dragState = dragRef.current;
+          if (dragState.kind === "link") {
+            const session = sessionsRef.current.find((s) => s.id === dragState.fromId);
+            if (session) {
+              const from = readPort(session.id, SIDE_OFFSETS[dragFromSideRef.current]);
+              const d = bezierPath(from, dragState);
+              if (draftPath.current.getAttribute("d") !== d) draftPath.current.setAttribute("d", d);
+            }
+          } else {
+            // break: тянем от порта браузера (ближайшая сторона к курсору),
+            // линия «отрывается» от входящего порта.
+            const nodeId = dragState.fromId;
+            const sides = SIDE_OFFSETS;
+            // Используем сторону, с которой начали отрыв.
+            const from = readPort(nodeId, sides[dragFromSideRef.current]);
+            const d = bezierPath(from, dragState);
             if (draftPath.current.getAttribute("d") !== d) draftPath.current.setAttribute("d", d);
           }
         }
@@ -207,7 +221,16 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
     event.preventDefault();
     dragFromSideRef.current = side;
     const point = clientToSvg(event.clientX, event.clientY);
-    setDrag({ fromSessionId: sessionId, x: point.x, y: point.y });
+    setDrag({ kind: "link", fromId: sessionId, x: point.x, y: point.y });
+  };
+
+  /** Отрыв линковки: потянули за порт браузера, у которого есть входящая связь. */
+  const startBreakDrag = (event: React.PointerEvent, nodeId: string, side: Side): void => {
+    event.stopPropagation();
+    event.preventDefault();
+    dragFromSideRef.current = side;
+    const point = clientToSvg(event.clientX, event.clientY);
+    setDrag({ kind: "break", fromId: nodeId, x: point.x, y: point.y });
   };
 
   const dragActive = drag !== null;
@@ -218,10 +241,20 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
       setDrag((current) => (current ? { ...current, x: point.x, y: point.y } : current));
     };
     const onUp = (event: PointerEvent): void => {
-      const target = event.target instanceof Element ? event.target.closest("[data-browser-port]") : null;
-      const windowId = target?.getAttribute("data-browser-port") ?? null;
-      if (windowId && dragRef.current) {
-        onCreateLink(dragRef.current.fromSessionId, windowId);
+      const current = dragRef.current;
+      if (current?.kind === "link") {
+        // link: drop над портом браузера — создаём связь.
+        const target = event.target instanceof Element ? event.target.closest("[data-browser-port]") : null;
+        const windowId = target?.getAttribute("data-browser-port") ?? null;
+        if (windowId) {
+          onCreateLink(current.fromId, windowId);
+        }
+      } else if (current?.kind === "break") {
+        // break: отрыв линковки от ноды браузера.
+        const session = sessionsRef.current.find((s) => s.browserWindowId === current.fromId);
+        if (session) {
+          onRemoveLink(session.id);
+        }
       }
       setDrag(null);
     };
@@ -233,9 +266,12 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", () => setDrag(null));
     };
-  }, [dragActive, onCreateLink]);
+  }, [dragActive, onCreateLink, onRemoveLink]);
 
-  const draggingSession = drag ? sessions.find((session) => session.id === drag.fromSessionId) ?? null : null;
+  const draggingSession = drag?.kind === "link"
+    ? sessions.find((session) => session.id === drag.fromId) ?? null
+    : null;
+  const draggingBreak = drag?.kind === "break";
 
   return (
     <svg
@@ -308,7 +344,8 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
         ))
       )}
 
-      {/* Порты браузеров: 4 стороны, видимы при hover/drag */}
+      {/* Порты браузеров: 4 стороны, видимы при hover/drag.
+          Если есть входящая связь — pointerdown запускает ОТРЫВ линковки. */}
       {browserNodes.map((node) =>
         SIDES.map((side) => {
           const hasIncoming = boundAgents.some((session) => session.browserWindowId === node.id);
@@ -325,15 +362,22 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
               cx={0}
               cy={0}
               r={7}
-              style={{ pointerEvents: "all", cursor: "crosshair", opacity: 0 }}
+              style={{ pointerEvents: "all", cursor: hasIncoming ? "alias" : "crosshair", opacity: 0 }}
+              onPointerDown={(event) => {
+                if (hasIncoming) startBreakDrag(event, node.id, side);
+              }}
             />
           );
         })
       )}
 
-      {/* Черновая линия при перетаскивании */}
-      {drag && draggingSession && (
-        <path ref={draftPath} className="agent-link--draft" d="M 0 0" />
+      {/* Черновая линия при перетаскивании: link (синяя) или break (красная) */}
+      {drag && (draggingSession || draggingBreak) && (
+        <path
+          ref={draftPath}
+          className={`agent-link--draft ${draggingBreak ? "agent-link--draft-break" : ""}`}
+          d="M 0 0"
+        />
       )}
     </svg>
   );
