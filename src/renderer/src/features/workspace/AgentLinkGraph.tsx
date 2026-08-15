@@ -49,6 +49,8 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [hoverNodeId, setHoverNodeId] = useState<string | null>(null);
+  // Нода, линия к которой скрыта до подтверждения IPC (relink/обрыв).
+  const [pendingHide, setPendingHide] = useState<string | null>(null);
 
   // Прямые ссылки на SVG-элементы: ключ `${nodeId}:${side}`.
   const agentPorts = useRef(new Map<string, SVGCircleElement>());
@@ -108,6 +110,15 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
     window.addEventListener("pointermove", onMove);
     return () => window.removeEventListener("pointermove", onMove);
   }, []);
+
+  // Сброс pendingHide после подтверждения IPC: если ни одна сессия больше
+  // не указывает на скрытую ноду (обрыв) или указала на другую (перенос) —
+  // линия к этой ноде больше не существует, скрывать нечего.
+  useEffect(() => {
+    if (!pendingHide) return;
+    const stillBound = boundAgents.some((session) => session.browserWindowId === pendingHide);
+    if (!stillBound) setPendingHide(null);
+  }, [boundAgents, pendingHide]);
 
   // rAF: обновляет SVG-геометрию и видимость портов напрямую (без React).
   useEffect(() => {
@@ -271,9 +282,12 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
           const target = event.target instanceof Element ? event.target.closest("[data-browser-port]") : null;
           const windowId = target?.getAttribute("data-browser-port") ?? null;
           if (windowId && windowId !== current.fromId) {
+            // IPC асинхронный: держим линию скрытой, пока React не получит
+            // обновлённые сессии (иначе на 1-2 кадра мелькнёт старая линия).
+            setPendingHide(current.fromId);
             onCreateLink(session.id, windowId);
           } else if (!windowId) {
-            // Пустое место → обрыв.
+            setPendingHide(current.fromId);
             onRemoveLink(session.id);
           }
         }
@@ -314,9 +328,10 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
       {boundAgents.map((session) => {
         const node = browserNodes.find((candidate) => candidate.id === session.browserWindowId);
         if (!node) return null;
-        // Линию, которую сейчас перетаскивают (relink), скрываем через
-        // React-класс — атомарно с коммитом, без вспышки opacity.
-        const relinking = drag?.kind === "break" && drag.fromId === node.id;
+        // Линию, которую сейчас перетаскивают (relink) или чей IPC ещё не
+        // подтверждён, скрываем через React-класс — атомарно с коммитом,
+        // без вспышки opacity.
+        const relinking = (drag?.kind === "break" && drag.fromId === node.id) || pendingHide === node.id;
         return (
           <g
             key={session.id}
