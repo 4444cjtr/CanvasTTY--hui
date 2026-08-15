@@ -80,15 +80,17 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
           circle.setAttribute("cx", String(Math.round(pos.x)));
           circle.setAttribute("cy", String(Math.round(pos.y)));
         };
-        // Линии связей.
+        // Линии связей: обновляем и кликабельный hit, и видимый stroke.
         for (const session of boundAgents) {
           const node = browserNodes.find((candidate) => candidate.id === session.browserWindowId);
-          const path = linkPaths.current.get(session.id);
-          if (!node || !path) continue;
+          const pathHit = linkPaths.current.get(session.id);
+          const pathStroke = linkPaths.current.get(`stroke-${session.id}`);
+          if (!node || !pathHit || !pathStroke) continue;
           const from = readPort(session.id, agentPortOffset());
           const to = readPort(node.id, browserPortOffset());
           const d = bezierPath(from, to);
-          if (path.getAttribute("d") !== d) path.setAttribute("d", d);
+          if (pathHit.getAttribute("d") !== d) pathHit.setAttribute("d", d);
+          if (pathStroke.getAttribute("d") !== d) pathStroke.setAttribute("d", d);
         }
         // Порты агентов.
         for (const session of sessions) {
