@@ -51,6 +51,9 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
   const [hoverNodeId, setHoverNodeId] = useState<string | null>(null);
   // Нода, линия к которой скрыта до подтверждения IPC (relink/обрыв).
   const [pendingHide, setPendingHide] = useState<string | null>(null);
+  // Сохранённые стороны связи: линия идёт от стороны старта драга (на агенте)
+  // к стороне дропа (на браузере), а не по «умной» автоматике.
+  const [savedSides, setSavedSides] = useState<Record<string, { from: Side; to: Side }>>({});
 
   // Прямые ссылки на SVG-элементы: ключ `${nodeId}:${side}`.
   const agentPorts = useRef(new Map<string, SVGCircleElement>());
@@ -179,7 +182,9 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
           const pathHit = linkPaths.current.get(session.id);
           const pathStroke = linkPaths.current.get(`stroke-${session.id}`);
           if (!node || !pathHit || !pathStroke) continue;
-          const sides = linkSides(session.id, node.id);
+          // Сохранённые стороны (откуда тянули → куда дропнули), иначе умные.
+          const saved = linkSidesRef.current[session.id];
+          const sides = saved ?? linkSides(session.id, node.id);
           const from = readPort(session.id, SIDE_OFFSETS[sides.from]);
           const to = readPort(node.id, SIDE_OFFSETS[sides.to]);
           const d = bezierPath(from, to);
@@ -225,6 +230,8 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
   const hoverNodeRef = useRef<string | null>(hoverNodeId);
   hoverNodeRef.current = hoverNodeId;
   const dragFromSideRef = useRef<Side>("right");
+  const linkSidesRef = useRef<Record<string, { from: Side; to: Side }>>({});
+  linkSidesRef.current = savedSides;
 
   const clientToSvg = (clientX: number, clientY: number): { x: number; y: number } => {
     const svg = svgRef.current;
@@ -271,6 +278,8 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
         const target = event.target instanceof Element ? event.target.closest("[data-browser-port]") : null;
         const windowId = target?.getAttribute("data-browser-port") ?? null;
         if (windowId) {
+          const dropSide = (target?.getAttribute("data-side") as Side | null) ?? "left";
+          setSavedSides((prev) => ({ ...prev, [current.fromId]: { from: dragFromSideRef.current, to: dropSide } }));
           onCreateLink(current.fromId, windowId);
         }
       } else if (current?.kind === "break") {
@@ -284,10 +293,18 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
           if (windowId && windowId !== current.fromId) {
             // IPC асинхронный: держим линию скрытой, пока React не получит
             // обновлённые сессии (иначе на 1-2 кадра мелькнёт старая линия).
+            const dropSide = (target?.getAttribute("data-side") as Side | null) ?? "left";
+            setSavedSides((prev) => ({ ...prev, [session.id]: { from: prev[session.id]?.from ?? "right", to: dropSide } }));
             setPendingHide(current.fromId);
             onCreateLink(session.id, windowId);
           } else if (!windowId) {
             setPendingHide(current.fromId);
+            setSavedSides((prev) => {
+              if (!(session.id in prev)) return prev;
+              const next = { ...prev };
+              delete next[session.id];
+              return next;
+            });
             onRemoveLink(session.id);
           }
         }
@@ -339,6 +356,12 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
             style={{ pointerEvents: "stroke", cursor: "pointer" }}
             onClick={(event) => {
               event.stopPropagation();
+              setSavedSides((prev) => {
+                if (!(session.id in prev)) return prev;
+                const next = { ...prev };
+                delete next[session.id];
+                return next;
+              });
               onRemoveLink(session.id);
             }}
           >
@@ -398,6 +421,7 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
               }}
               data-browser-port={node.id}
               data-canvas-node-id={node.id}
+              data-side={side}
               className={`agent-link-port agent-link-port--in ${hasIncoming ? "agent-link-port--bound" : ""}`}
               cx={0}
               cy={0}
