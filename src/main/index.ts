@@ -158,7 +158,13 @@ async function initializeServices(): Promise<void> {
         ? join(process.resourcesPath, "agent-browser", WINDOWS_PIPE_HOST_FILENAME)
         : join(app.getAppPath(), "build", "windows-agent-pipe-host", WINDOWS_PIPE_HOST_FILENAME)
       : undefined;
-    agentGateway = new AgentGateway((windowId) => browserManager?.resolveCore(windowId) ?? null, {
+    agentGateway = new AgentGateway((windowId) => {
+      // Гость без явной ноды: предпочитаем первую ВИДИМУЮ ноду на канвасе
+      // (browserCanvases), иначе — default. Иначе агент работал бы с невидимой
+      // default-нодой, а пользователь смотрел бы на пустую карточку.
+      const target = windowId ?? settings.get().browserCanvases[0]?.id ?? null;
+      return browserManager?.resolveCore(target) ?? null;
+    }, {
       runtimeDirectory,
       windowsHostPath,
       endpointFile: join(userDataPath, "agent-browser-address"),
