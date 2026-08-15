@@ -14,13 +14,17 @@ interface DragState {
   y: number;
 }
 
-function agentPortOffset(): { x: number; y: number } {
-  return { x: 1, y: 0.5 };
-}
+type Side = "top" | "right" | "bottom" | "left";
 
-function browserPortOffset(): { x: number; y: number } {
-  return { x: 0, y: 0.5 };
-}
+/** Позиция порта на карточке (относительно карточки, в долях). */
+const SIDE_OFFSETS: Record<Side, { x: number; y: number }> = {
+  top: { x: 0.5, y: 0 },
+  right: { x: 1, y: 0.5 },
+  bottom: { x: 0.5, y: 1 },
+  left: { x: 0, y: 0.5 }
+};
+
+const SIDES: Side[] = ["top", "right", "bottom", "left"];
 
 function bezierPath(from: { x: number; y: number }, to: { x: number; y: number }): string {
   const dx = Math.max(48, Math.abs(to.x - from.x) * 0.4);
@@ -31,26 +35,28 @@ function bezierPath(from: { x: number; y: number }, to: { x: number; y: number }
 }
 
 /**
- * Граф связей «агент ↔ браузер». Порты/линии привязаны к РЕАЛЬНОМУ DOM
- * карточек (data-canvas-node-id): requestAnimationFrame-цикл читает
- * getBoundingClientRect и обновляет SVG-атрибуты НАПРЯМУЮ (setAttribute),
- * без React-состояния — поэтому линии следуют за окнами и камерой вживую,
- * без лага на re-render. React рендерит только структуру (при изменении
- * сессий/нод), геометрию ведёт rAF.
+ * Граф связей «агент ↔ браузер» (ноды DaVinci). У каждой карточки 4 порта
+ * (по сторонам), видимые ТОЛЬКО при наведении курсора. Линия соединяет
+ * ближайшие друг к другу стороны (умный выбор): drag с любого порта,
+ * drop на любой порт другой карточки.
+ *
+ * Геометрия читается из реального DOM (data-canvas-node-id) и обновляется
+ * напрямую в requestAnimationFrame (без React-состояния — нет лага).
  */
 export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveLink }: AgentLinkGraphProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [hoverNodeId, setHoverNodeId] = useState<string | null>(null);
 
-  // Прямые ссылки на SVG-элементы для live-обновления в rAF.
-  const linkPaths = useRef(new Map<string, SVGPathElement>());
+  // Прямые ссылки на SVG-элементы: ключ `${nodeId}:${side}`.
   const agentPorts = useRef(new Map<string, SVGCircleElement>());
   const browserPorts = useRef(new Map<string, SVGCircleElement>());
+  const linkPaths = useRef(new Map<string, SVGPathElement>());
   const draftPath = useRef<SVGPathElement | null>(null);
 
   const boundAgents = sessions.filter((session) => session.browserWindowId);
 
-  // Геометрия карточки → координата порта в SVG-пространстве (client coords).
+  /** Читает DOM-позицию карточки и возвращает координаты порта в SVG-пространстве. */
   const readPort = (nodeId: string, offset: { x: number; y: number }): { x: number; y: number } => {
     const el = document.querySelector<HTMLElement>(`[data-canvas-node-id="${CSS.escape(nodeId)}"]`);
     const svg = svgRef.current;
@@ -63,9 +69,45 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
     };
   };
 
-  // rAF: обновляет SVG-геометрию напрямую, минуя React (нет лага).
-  // Кэш последних координат: setAttribute выполняется только при изменении —
-  // неподвижные окна не вызывают перерисовку (layout-read дёшев, DOM-write нет).
+  const cardRect = (nodeId: string): { left: number; top: number; width: number; height: number } | null => {
+    const el = document.querySelector<HTMLElement>(`[data-canvas-node-id="${CSS.escape(nodeId)}"]`);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+  };
+
+  /**
+   * Выбирает пару сторон для линии: сравнивает центры карточек —
+   * горизонтально, если |dx| > |dy|, иначе вертикально.
+   */
+  const linkSides = (fromId: string, toId: string): { from: Side; to: Side } => {
+    const a = cardRect(fromId);
+    const b = cardRect(toId);
+    if (!a || !b) return { from: "right", to: "left" };
+    const ax = a.left + a.width / 2;
+    const ay = a.top + a.height / 2;
+    const bx = b.left + b.width / 2;
+    const by = b.top + b.height / 2;
+    const dx = bx - ax;
+    const dy = by - ay;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      return dx >= 0 ? { from: "right", to: "left" } : { from: "left", to: "right" };
+    }
+    return dy >= 0 ? { from: "bottom", to: "top" } : { from: "top", to: "bottom" };
+  };
+
+  // Ховер: определяем карточку под курсором (порты видны только у неё).
+  useEffect(() => {
+    const onMove = (event: PointerEvent): void => {
+      const el = document.elementFromPoint(event.clientX, event.clientY);
+      const card = el?.closest<HTMLElement>("[data-canvas-node-id]");
+      setHoverNodeId(card?.dataset.canvasNodeId ?? null);
+    };
+    window.addEventListener("pointermove", onMove);
+    return () => window.removeEventListener("pointermove", onMove);
+  }, []);
+
+  // rAF: обновляет SVG-геометрию и видимость портов напрямую (без React).
   useEffect(() => {
     const lastPositions = new Map<string, { x: number; y: number }>();
     let raf = 0;
@@ -75,36 +117,64 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
         const applyPort = (key: string, circle: SVGCircleElement | undefined, pos: { x: number; y: number }): void => {
           if (!circle) return;
           const prev = lastPositions.get(key);
-          if (prev && prev.x === pos.x && prev.y === pos.y) return;
-          lastPositions.set(key, pos);
-          circle.setAttribute("cx", String(Math.round(pos.x)));
-          circle.setAttribute("cy", String(Math.round(pos.y)));
+          if (!prev || prev.x !== pos.x || prev.y !== pos.y) {
+            lastPositions.set(key, pos);
+            circle.setAttribute("cx", String(Math.round(pos.x)));
+            circle.setAttribute("cy", String(Math.round(pos.y)));
+          }
         };
-        // Линии связей: обновляем и кликабельный hit, и видимый stroke.
+
+        // Порты агентов: 4 стороны каждой карточки.
+        for (const session of sessions) {
+          for (const side of SIDES) {
+            applyPort(`a:${session.id}:${side}`, agentPorts.current.get(`${session.id}:${side}`), readPort(session.id, SIDE_OFFSETS[side]));
+          }
+        }
+        // Порты браузеров: 4 стороны каждой карточки.
+        for (const node of browserNodes) {
+          for (const side of SIDES) {
+            applyPort(`b:${node.id}:${side}`, browserPorts.current.get(`${node.id}:${side}`), readPort(node.id, SIDE_OFFSETS[side]));
+          }
+        }
+
+        // Видимость портов: hover-карточка + источник при drag.
+        const hoverId = hoverNodeRef.current;
+        const dragging = dragRef.current !== null;
+        const showFor = (nodeId: string): boolean => dragging || nodeId === hoverId;
+        for (const session of sessions) {
+          const show = showFor(session.id);
+          for (const side of SIDES) {
+            const circle = agentPorts.current.get(`${session.id}:${side}`);
+            if (circle) circle.style.opacity = show ? "1" : "0";
+          }
+        }
+        for (const node of browserNodes) {
+          const show = showFor(node.id);
+          for (const side of SIDES) {
+            const circle = browserPorts.current.get(`${node.id}:${side}`);
+            if (circle) circle.style.opacity = show ? "1" : "0";
+          }
+        }
+
+        // Линии связей (умные стороны) + hit/stroke.
         for (const session of boundAgents) {
           const node = browserNodes.find((candidate) => candidate.id === session.browserWindowId);
           const pathHit = linkPaths.current.get(session.id);
           const pathStroke = linkPaths.current.get(`stroke-${session.id}`);
           if (!node || !pathHit || !pathStroke) continue;
-          const from = readPort(session.id, agentPortOffset());
-          const to = readPort(node.id, browserPortOffset());
+          const sides = linkSides(session.id, node.id);
+          const from = readPort(session.id, SIDE_OFFSETS[sides.from]);
+          const to = readPort(node.id, SIDE_OFFSETS[sides.to]);
           const d = bezierPath(from, to);
           if (pathHit.getAttribute("d") !== d) pathHit.setAttribute("d", d);
           if (pathStroke.getAttribute("d") !== d) pathStroke.setAttribute("d", d);
         }
-        // Порты агентов.
-        for (const session of sessions) {
-          applyPort(`a:${session.id}`, agentPorts.current.get(session.id), readPort(session.id, agentPortOffset()));
-        }
-        // Порты браузеров.
-        for (const node of browserNodes) {
-          applyPort(`b:${node.id}`, browserPorts.current.get(node.id), readPort(node.id, browserPortOffset()));
-        }
+
         // Черновая линия при drag.
         if (dragRef.current && draftPath.current) {
           const session = sessionsRef.current.find((s) => s.id === dragRef.current!.fromSessionId);
           if (session) {
-            const from = readPort(session.id, agentPortOffset());
+            const from = readPort(session.id, SIDE_OFFSETS[session.id === dragRef.current!.fromSessionId ? dragFromSideRef.current : "right"]);
             const d = bezierPath(from, dragRef.current!);
             if (draftPath.current.getAttribute("d") !== d) draftPath.current.setAttribute("d", d);
           }
@@ -116,11 +186,14 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
     return () => cancelAnimationFrame(raf);
   }, [sessions, browserNodes, boundAgents]);
 
-  // Ref-зеркала для rAF (замыкания).
+  // Ref-зеркала для rAF.
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
   const dragRef = useRef<DragState | null>(null);
   dragRef.current = drag;
+  const hoverNodeRef = useRef<string | null>(hoverNodeId);
+  hoverNodeRef.current = hoverNodeId;
+  const dragFromSideRef = useRef<Side>("right");
 
   const clientToSvg = (clientX: number, clientY: number): { x: number; y: number } => {
     const svg = svgRef.current;
@@ -129,9 +202,10 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
     return { x: clientX - rect.left, y: clientY - rect.top };
   };
 
-  const startDrag = (event: React.PointerEvent, sessionId: string): void => {
+  const startDrag = (event: React.PointerEvent, sessionId: string, side: Side): void => {
     event.stopPropagation();
     event.preventDefault();
+    dragFromSideRef.current = side;
     const point = clientToSvg(event.clientX, event.clientY);
     setDrag({ fromSessionId: sessionId, x: point.x, y: point.y });
   };
@@ -178,7 +252,7 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
       }}
       aria-hidden="true"
     >
-      {/* Линии связей: rAF обновляет d напрямую (см. linkPaths ref). */}
+      {/* Линии связей */}
       {boundAgents.map((session) => {
         const node = browserNodes.find((candidate) => candidate.id === session.browserWindowId);
         if (!node) return null;
@@ -197,6 +271,7 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
                 if (el) linkPaths.current.set(session.id, el);
                 else linkPaths.current.delete(session.id);
               }}
+              data-canvas-node-id={session.id}
               className="agent-link__hit"
               d="M 0 0"
             />
@@ -205,6 +280,7 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
                 if (el) linkPaths.current.set(`stroke-${session.id}`, el);
                 else linkPaths.current.delete(`stroke-${session.id}`);
               }}
+              data-canvas-node-id={session.id}
               className="agent-link__stroke"
               d="M 0 0"
             />
@@ -212,45 +288,48 @@ export function AgentLinkGraph({ sessions, browserNodes, onCreateLink, onRemoveL
         );
       })}
 
-      {/* Порты агентов */}
-      {sessions.map((session) => {
-        const bound = Boolean(session.browserWindowId);
-        return (
+      {/* Порты агентов: 4 стороны, видимы при hover/drag */}
+      {sessions.map((session) =>
+        SIDES.map((side) => (
           <circle
-            key={session.id}
+            key={`${session.id}:${side}`}
             ref={(el) => {
-              if (el) agentPorts.current.set(session.id, el);
-              else agentPorts.current.delete(session.id);
+              if (el) agentPorts.current.set(`${session.id}:${side}`, el);
+              else agentPorts.current.delete(`${session.id}:${side}`);
             }}
-            className={`agent-link-port ${bound ? "agent-link-port--bound" : ""}`}
+            data-canvas-node-id={session.id}
+            className={`agent-link-port ${session.browserWindowId ? "agent-link-port--bound" : ""}`}
             cx={0}
             cy={0}
             r={7}
-            style={{ pointerEvents: "all", cursor: "crosshair" }}
-            onPointerDown={(event) => startDrag(event, session.id)}
+            style={{ pointerEvents: "all", cursor: "crosshair", opacity: 0 }}
+            onPointerDown={(event) => startDrag(event, session.id, side)}
           />
-        );
-      })}
+        ))
+      )}
 
-      {/* Порты браузеров */}
-      {browserNodes.map((node) => {
-        const hasIncoming = boundAgents.some((session) => session.browserWindowId === node.id);
-        return (
-          <circle
-            key={node.id}
-            ref={(el) => {
-              if (el) browserPorts.current.set(node.id, el);
-              else browserPorts.current.delete(node.id);
-            }}
-            data-browser-port={node.id}
-            className={`agent-link-port agent-link-port--in ${hasIncoming ? "agent-link-port--bound" : ""}`}
-            cx={0}
-            cy={0}
-            r={7}
-            style={{ pointerEvents: "all", cursor: "crosshair" }}
-          />
-        );
-      })}
+      {/* Порты браузеров: 4 стороны, видимы при hover/drag */}
+      {browserNodes.map((node) =>
+        SIDES.map((side) => {
+          const hasIncoming = boundAgents.some((session) => session.browserWindowId === node.id);
+          return (
+            <circle
+              key={`${node.id}:${side}`}
+              ref={(el) => {
+                if (el) browserPorts.current.set(`${node.id}:${side}`, el);
+                else browserPorts.current.delete(`${node.id}:${side}`);
+              }}
+              data-browser-port={node.id}
+              data-canvas-node-id={node.id}
+              className={`agent-link-port agent-link-port--in ${hasIncoming ? "agent-link-port--bound" : ""}`}
+              cx={0}
+              cy={0}
+              r={7}
+              style={{ pointerEvents: "all", cursor: "crosshair", opacity: 0 }}
+            />
+          );
+        })
+      )}
 
       {/* Черновая линия при перетаскивании */}
       {drag && draggingSession && (
