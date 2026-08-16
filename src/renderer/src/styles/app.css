@@ -21,7 +21,17 @@ button { border: 0; }
 }
 .titlebar__brand { height: 100%; padding-left: 14px; display: flex; align-items: center; gap: 9px; -webkit-app-region: drag; }
 .titlebar__brand strong { font-size: 13px; letter-spacing: .02em; }
-.titlebar__brand > span:last-child { color: rgba(255,255,255,.43); font-size: 11px; }
+.titlebar__badge {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.12);
+  color: rgba(255,255,255,.78);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  line-height: 1.4;
+  -webkit-app-region: no-drag;
+}
 .titlebar__logo { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 7px; color: #373842; background: var(--primary); }
 .titlebar__logo .provider-icon { width: 20px; height: 20px; }
 .titlebar__drag { flex: 1; height: 100%; -webkit-app-region: drag; }
