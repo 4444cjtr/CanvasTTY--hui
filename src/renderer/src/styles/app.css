@@ -21,11 +21,12 @@ button { border: 0; }
 }
 .titlebar__brand { height: 100%; padding-left: 14px; display: flex; align-items: center; gap: 9px; -webkit-app-region: drag; }
 .titlebar__brand strong { font-size: 13px; letter-spacing: .02em; }
+.titlebar__brand > span:not(.titlebar__badge) { color: rgba(255,255,255,.43); font-size: 11px; }
 .titlebar__badge {
   padding: 2px 9px;
   border-radius: 999px;
-  background: rgba(255,255,255,.12);
-  color: rgba(255,255,255,.78);
+  background: #f2c744;
+  color: #373842;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: .02em;
