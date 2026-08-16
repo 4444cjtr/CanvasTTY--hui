@@ -236,13 +236,53 @@ export interface PluginManifest {
   name: string;
   version: string;
   description: string;
+  /** Optional icon path inside the package root (defaults to `icon.png`). */
+  icon?: string;
+  /** Russian description override (shown when locale is ru). */
+  "description.ru"?: string;
+  /** English description override (shown when locale is en). */
+  "description.en"?: string;
   author?: string;
   homepage?: string;
+  /** Platforms this plugin declares support for (e.g. `["canvastty"]`).
+   *  Absent = compatible with every platform (legacy). */
+  platforms?: string[];
+  /** Minimal host (CanvasTTY) version this plugin is written for, semver,
+   *  e.g. `"1.2.0"`. Absent = no host-version constraint (legacy). */
+  minHostVersion?: string;
   permissions: PluginPermission[];
   contributions: PluginContribution[];
   settingsContribution?: string;
   coreFiles?: PluginModuleAsset[];
   modules?: PluginModule[];
+}
+
+export interface GithubPluginSearchResult {
+  fullName: string;
+  url: string;
+  description: string;
+  stars: number;
+  updatedAt: string;
+  /** Minimal host version declared in the plugin manifest (semver). */
+  minHostVersion?: string;
+}
+
+export interface PluginUpdateStatus {
+  pluginId: string;
+  installedVersion: string;
+  latestVersion: string;
+}
+
+export interface GithubAuthStatus {
+  authorized: boolean;
+  login: string | null;
+  tokenExpiresAt: number | null;
+}
+
+export interface GithubDeviceFlowStart {
+  userCode: string;
+  verificationUri: string;
+  interval: number;
 }
 
 export interface InstalledPlugin {
@@ -645,6 +685,7 @@ export interface LimitsSnapshot {
 }
 
 export interface CanvasTTYApi {
+  appVersion(): Promise<string>;
   clipboard: {
     readText(): Promise<string>;
     writeText(text: string): void;
@@ -665,6 +706,13 @@ export interface CanvasTTYApi {
   };
   plugins: {
     list(): Promise<InstalledPlugin[]>;
+    search(query: string): Promise<GithubPluginSearchResult[]>;
+    showcase(): Promise<GithubPluginSearchResult[]>;
+    icon(sourceUrls: string[]): Promise<Record<string, string | null>>;
+    manifests(sourceUrls: string[]): Promise<Record<string, PluginManifest>>;
+    checkUpdates(): Promise<PluginUpdateStatus[]>;
+    update(pluginId: string): Promise<InstalledPlugin>;
+    onUpdatesAvailable(listener: (updates: PluginUpdateStatus[]) => void): () => void;
     previewInstall(sourceUrl: string): Promise<PluginInstallPreview>;
     install(token: string, selectedModules?: string[]): Promise<InstalledPlugin>;
     setModules(pluginId: string, selectedModules: string[]): Promise<InstalledPlugin>;
@@ -714,6 +762,12 @@ export interface CanvasTTYApi {
     onCanvasWheel(listener: (event: BrowserCanvasWheelEvent) => void): () => void;
     onCanvasPointer(listener: (event: BrowserCanvasPointerEvent) => void): () => void;
   };
+  githubAuth: {
+    status(): Promise<GithubAuthStatus>;
+    start(): Promise<GithubDeviceFlowStart>;
+    signOut(): Promise<void>;
+    openUrl(url: string): Promise<void>;
+  };
   terminal: {
     list(): Promise<SessionSnapshot[]>;
     create(request: CreateSessionRequest): Promise<SessionSnapshot>;
@@ -748,6 +802,13 @@ export const IPC = {
   mediaRead: "media:read",
   limitsGet: "limits:get",
   pluginsList: "plugins:list",
+  pluginsSearch: "plugins:search",
+  pluginsShowcase: "plugins:showcase",
+  pluginsIcon: "plugins:icon",
+  pluginsManifests: "plugins:manifests",
+  pluginsCheckUpdates: "plugins:check-updates",
+  pluginsUpdate: "plugins:update",
+  pluginsUpdatesAvailable: "plugins:updates-available",
   pluginsPreviewInstall: "plugins:preview-install",
   pluginsInstall: "plugins:install",
   pluginsSetModules: "plugins:set-modules",
@@ -795,6 +856,11 @@ export const IPC = {
   browserActivity: "browser:activity",
   browserCanvasWheel: "browser:canvas-wheel",
   browserCanvasPointer: "browser:canvas-pointer",
+  appVersion: "app:version",
+  githubAuthStatus: "github-auth:status",
+  githubAuthStart: "github-auth:start",
+  githubAuthSignOut: "github-auth:sign-out",
+  githubAuthOpenUrl: "github-auth:open-url",
   terminalList: "terminal:list",
   terminalCreate: "terminal:create",
   terminalRestart: "terminal:restart",
