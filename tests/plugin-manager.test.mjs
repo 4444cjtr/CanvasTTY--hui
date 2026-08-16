@@ -601,6 +601,609 @@ test("setModules keeps the previous module set when activation fails", async () 
   }
 });
 
+test("searches GitHub for canvastty-plugin repositories", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousToken = process.env.GITHUB_TOKEN;
+  delete process.env.GITHUB_TOKEN;
+  try {
+    globalThis.fetch = async (url) => {
+      const text = String(url);
+      if (!text.startsWith("https://api.github.com/search/repositories")) {
+        return new Response("not found", { status: 404 });
+      }
+      return Response.json({
+        items: [
+          {
+            full_name: "example/canvastty-clock",
+            description: "A clock widget",
+            stargazers_count: 12,
+            updated_at: "2026-08-01T00:00:00Z"
+          },
+          {
+            full_name: "example/canvastty-plugin-clock",
+            description: "A clock widget",
+            stargazers_count: 12,
+            updated_at: "2026-08-01T00:00:00Z"
+          },
+          {
+            full_name: "example/canvastty-ticker",
+            description: null,
+            stargazers_count: 0,
+            updated_at: "2026-07-01T00:00:00Z"
+          },
+          { full_name: "not-a-plugin", description: "x", stargazers_count: 0, updated_at: "" }
+        ]
+      });
+    };
+    const userData = await mkdtemp(join(tmpdir(), "canvastty-plugin-search-"));
+    const manager = new PluginManager(userData);
+    try {
+      await manager.load();
+      assert.deepEqual(await manager.searchGithubPlugins("clock"), [
+        {
+          fullName: "example/canvastty-plugin-clock",
+          url: "https://github.com/example/canvastty-plugin-clock",
+          description: "A clock widget",
+          stars: 12,
+          updatedAt: "2026-08-01T00:00:00Z"
+        }
+      ]);
+      assert.deepEqual(await manager.searchGithubPlugins("   "), []);
+    } finally {
+      await manager.dispose();
+      await rm(userData, { recursive: true, force: true });
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previousToken;
+  }
+});
+
+test("showcase lists only repositories with the canvastty-plugin- prefix", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousToken = process.env.GITHUB_TOKEN;
+  delete process.env.GITHUB_TOKEN;
+  try {
+    let calls = 0;
+    globalThis.fetch = async (url) => {
+      const text = String(url);
+      calls += 1;
+      if (!text.startsWith("https://api.github.com/search/repositories")) {
+        return new Response("not found", { status: 404 });
+      }
+      if (calls === 1) {
+        return Response.json({
+          items: [
+            { full_name: "a/canvastty-plugin-one", description: "One", stargazers_count: 1, updated_at: "2026-08-01T00:00:00Z" },
+            { full_name: "a/canvastty-plugin-two", description: "Two", stargazers_count: 2, updated_at: "2026-08-02T00:00:00Z" },
+            { full_name: "a/not-a-plugin", description: "x", stargazers_count: 0, updated_at: "" }
+          ]
+        });
+      }
+      return Response.json({ items: [] });
+    };
+    const userData = await mkdtemp(join(tmpdir(), "canvastty-plugin-showcase-"));
+    const manager = new PluginManager(userData);
+    try {
+      await manager.load();
+      const showcase = await manager.listShowcasePlugins();
+      assert.deepEqual(showcase.map((item) => item.fullName), [
+        "a/canvastty-plugin-one",
+        "a/canvastty-plugin-two"
+      ]);
+      assert.ok(calls >= 1);
+    } finally {
+      await manager.dispose();
+      await rm(userData, { recursive: true, force: true });
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previousToken;
+  }
+});
+
+test("showcase excludes repositories that are already installed", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousToken = process.env.GITHUB_TOKEN;
+  delete process.env.GITHUB_TOKEN;
+  const userData = await mkdtemp(join(tmpdir(), "canvastty-plugin-showcase-excl-"));
+  const fixture = await mkdtemp(join(tmpdir(), "canvastty-plugin-showcase-excl-fixture-"));
+  try {
+    await writeFile(join(fixture, "clock.html"), "<h1>Clock</h1>", "utf8");
+    await writeFile(join(fixture, "canvastty.plugin.json"), JSON.stringify({
+      apiVersion: 1,
+      id: "com.example.one",
+      name: "One",
+      version: "1.0.0",
+      description: "One fixture.",
+      permissions: [],
+      contributions: [{
+        id: "clock",
+        kind: "home-widget",
+        title: "Clock",
+        entry: "clock.html",
+        defaultSize: { columns: 2, rows: 2 }
+      }]
+    }), "utf8");
+
+    globalThis.fetch = async (url) => {
+      const text = String(url);
+      if (text.startsWith("https://api.github.com/search/repositories")) {
+        return Response.json({
+          items: [
+            { full_name: "a/canvastty-plugin-one", description: "One", stargazers_count: 1, updated_at: "2026-08-01T00:00:00Z" },
+            { full_name: "a/canvastty-plugin-two", description: "Two", stargazers_count: 2, updated_at: "2026-08-02T00:00:00Z" }
+          ]
+        });
+      }
+      if (text.startsWith("https://api.github.com/")) return Response.json({ default_branch: "main" });
+      return new Response("missing", { status: 404 });
+    };
+
+    const manager = new PluginManager(userData, async (_url, destination) => {
+      await cp(fixture, destination, { recursive: true });
+    });
+    try {
+      await manager.load();
+      // Nothing installed yet: both repositories are listed.
+      const before = await manager.listShowcasePlugins();
+      assert.deepEqual(before.map((item) => item.fullName), [
+        "a/canvastty-plugin-one",
+        "a/canvastty-plugin-two"
+      ]);
+
+      // Install the first repository, then it must disappear from the showcase.
+      await manager.install((await manager.previewInstall("https://github.com/a/canvastty-plugin-one")).token);
+      const after = await manager.listShowcasePlugins();
+      assert.deepEqual(after.map((item) => item.fullName), ["a/canvastty-plugin-two"]);
+
+      // After uninstall it shows up again.
+      await manager.uninstall("com.example.one");
+      const afterUninstall = await manager.listShowcasePlugins();
+      assert.deepEqual(afterUninstall.map((item) => item.fullName), [
+        "a/canvastty-plugin-one",
+        "a/canvastty-plugin-two"
+      ]);
+    } finally {
+      await manager.dispose();
+      await rm(userData, { recursive: true, force: true });
+      await rm(fixture, { recursive: true, force: true });
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previousToken;
+  }
+});
+
+test("showcase uses GraphQL search when a token is present", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousToken = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = "test-token";
+  let graphqlCalls = 0;
+  let restSearchCalls = 0;
+  try {
+    globalThis.fetch = async (url, options) => {
+      const text = String(url);
+      if (text === "https://api.github.com/graphql") {
+        graphqlCalls += 1;
+        const body = JSON.parse(String((options && typeof options === "object" && "body" in options ? options.body : null) ?? "{}"));
+        const q = String(body.variables?.q ?? "");
+        const allNodes = [
+          { nameWithOwner: "a/canvastty-plugin-one", description: "One", stargazerCount: 1, updatedAt: "2026-08-01T00:00:00Z" },
+          { nameWithOwner: "a/canvastty-plugin-two", description: "Two", stargazerCount: 2, updatedAt: "2026-08-02T00:00:00Z" }
+        ];
+        const match = q.match(/canvastty-plugin-([a-z0-9-]+)/);
+        const nodes = match ? allNodes.filter((node) => node.nameWithOwner.includes(`canvastty-plugin-${match[1]}`)) : allNodes;
+        return Response.json({
+          data: {
+            search: {
+              repositoryCount: nodes.length,
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes
+            }
+          }
+        });
+      }
+      if (text.startsWith("https://api.github.com/search/")) {
+        restSearchCalls += 1;
+        return Response.json({ items: [] });
+      }
+      return new Response("missing", { status: 404 });
+    };
+    const userData = await mkdtemp(join(tmpdir(), "canvastty-plugin-graphql-"));
+    const manager = new PluginManager(userData);
+    try {
+      await manager.load();
+      const showcase = await manager.listShowcasePlugins();
+      assert.deepEqual(showcase.map((item) => item.fullName), [
+        "a/canvastty-plugin-one",
+        "a/canvastty-plugin-two"
+      ]);
+      assert.ok(graphqlCalls >= 1, `expected at least 1 GraphQL call, got ${graphqlCalls}`);
+      assert.equal(restSearchCalls, 0, "REST search must not be used when a token is present");
+      const found = await manager.searchGithubPlugins("one");
+      assert.deepEqual(found.map((item) => item.fullName), ["a/canvastty-plugin-one"]);
+    } finally {
+      await manager.dispose();
+      await rm(userData, { recursive: true, force: true });
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previousToken;
+  }
+});
+
+test("rejects empty search queries and surfaces GitHub rate limits", async () => {
+  const userData = await mkdtemp(join(tmpdir(), "canvastty-plugin-searchrate-"));
+  const manager = new PluginManager(userData);
+  try {
+    await manager.load();
+    assert.deepEqual(await manager.searchGithubPlugins(""), []);
+  } finally {
+    await manager.dispose();
+    await rm(userData, { recursive: true, force: true });
+  }
+
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response("rate limited", { status: 429 });
+    const userData2 = await mkdtemp(join(tmpdir(), "canvastty-plugin-searchrate2-"));
+    const manager2 = new PluginManager(userData2);
+    try {
+      await manager2.load();
+      await assert.rejects(() => manager2.searchGithubPlugins("clock"), /rate limit/);
+    } finally {
+      await manager2.dispose();
+      await rm(userData2, { recursive: true, force: true });
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("checkForUpdates compares installed and remote versions", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousToken = process.env.GITHUB_TOKEN;
+  delete process.env.GITHUB_TOKEN;
+  const userData = await mkdtemp(join(tmpdir(), "canvastty-plugin-updates-"));
+  const fixture = await mkdtemp(join(tmpdir(), "canvastty-plugin-updates-fixture-"));
+  const writeFixture = async (version) => {
+    await rm(fixture, { recursive: true, force: true });
+    await mkdir(fixture, { recursive: true });
+    await writeFile(join(fixture, "clock.html"), "<h1>Clock</h1>", "utf8");
+    await writeFile(join(fixture, "canvastty.plugin.json"), JSON.stringify({
+      apiVersion: 1,
+      id: "com.example.updates",
+      name: "Updates",
+      version,
+      description: "Update fixture.",
+      permissions: [],
+      contributions: [{
+        id: "clock",
+        kind: "home-widget",
+        title: "Clock",
+        entry: "clock.html",
+        defaultSize: { columns: 2, rows: 2 }
+      }]
+    }), "utf8");
+  };
+  await writeFixture("1.0.0");
+  // The manager copies the fixture for previews/installs, but update checks
+  // resolve the remote manifest via raw.githubusercontent.com.
+  let remoteVersion = "1.0.0";
+  const manager = new PluginManager(userData, async (_url, destination) => {
+    await cp(fixture, destination, { recursive: true });
+  });
+  try {
+    globalThis.fetch = async (url) => {
+      const text = String(url);
+      if (text.startsWith("https://api.github.com/")) return Response.json({ default_branch: "main" });
+      const path = text.slice(text.indexOf("/main/") + "/main/".length);
+      if (path === "canvastty.plugin.json") {
+        return new Response(JSON.stringify({
+          apiVersion: 1,
+          id: "com.example.updates",
+          name: "Updates",
+          version: remoteVersion,
+          description: "Update fixture.",
+          permissions: [],
+          contributions: [{
+            id: "clock",
+            kind: "home-widget",
+            title: "Clock",
+            entry: "clock.html",
+            defaultSize: { columns: 2, rows: 2 }
+          }]
+        }), { status: 200 });
+      }
+      return new Response("missing", { status: 404 });
+    };
+    await manager.load();
+    await manager.install((await manager.previewInstall("https://github.com/example/updates")).token);
+
+    // Same version: no update.
+    assert.deepEqual(await manager.checkForUpdates(), []);
+
+    // Remote bumps: update reported.
+    remoteVersion = "1.1.0";
+    const updates = await manager.checkForUpdates();
+    assert.deepEqual(updates, [{
+      pluginId: "com.example.updates",
+      installedVersion: "1.0.0",
+      latestVersion: "1.1.0"
+    }]);
+
+    // Version manifest is persisted.
+    const versionsRaw = await readFile(join(userData, "plugin-versions.json"), "utf8");
+    const versions = JSON.parse(versionsRaw);
+    assert.equal(versions["com.example.updates"].installedVersion, "1.0.0");
+    assert.equal(versions["com.example.updates"].latestVersion, "1.1.0");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previousToken;
+    await manager.dispose();
+    await rm(userData, { recursive: true, force: true });
+    await rm(fixture, { recursive: true, force: true });
+  }
+});
+
+test("updatePlugin replaces files and keeps enabled and modules", async () => {
+  const originalFetch = globalThis.fetch;
+  const userData = await mkdtemp(join(tmpdir(), "canvastty-plugin-updateflow-"));
+  const fixture = await mkdtemp(join(tmpdir(), "canvastty-plugin-updateflow-fixture-"));
+  let version = "1.0.0";
+  const writeFixture = async () => {
+    await rm(fixture, { recursive: true, force: true });
+    await mkdir(fixture, { recursive: true });
+    await writeFile(join(fixture, "app.html"), version === "1.0.0" ? "<h1>v1</h1>" : "<h1>v2</h1>", "utf8");
+    await writeFile(join(fixture, "canvastty.plugin.json"), JSON.stringify({
+      apiVersion: 1,
+      id: "com.example.updateflow",
+      name: "Update Flow",
+      version,
+      description: "Update flow fixture.",
+      permissions: [],
+      contributions: [{
+        id: "app",
+        kind: "canvas-app",
+        title: "App",
+        entry: "app.html",
+        defaultSize: { width: 480, height: 300 }
+      }]
+    }), "utf8");
+  };
+  await writeFixture();
+  const manager = new PluginManager(userData, async (_url, destination) => {
+    await cp(fixture, destination, { recursive: true });
+  });
+  try {
+    globalThis.fetch = async (url) => {
+      const text = String(url);
+      if (text.startsWith("https://api.github.com/")) return Response.json({ default_branch: "main" });
+      return new Response("missing", { status: 404 });
+    };
+    await manager.load();
+    await manager.install((await manager.previewInstall("https://github.com/example/updateflow")).token);
+
+    version = "1.2.0";
+    await writeFixture();
+    const updated = await manager.updatePlugin("com.example.updateflow");
+    assert.equal(updated.manifest.version, "1.2.0");
+    assert.equal(updated.enabled, true);
+    const asset = await manager.protocolResponse("canvastty-plugin://com.example.updateflow/app.html");
+    assert.equal(asset.status, 200);
+    // The fork main base predates the upstream canvas-navigation input bridge.
+    assert.equal(await asset.text(), '<h1>v2</h1>');
+  } finally {
+    globalThis.fetch = originalFetch;
+    await manager.dispose();
+    await rm(userData, { recursive: true, force: true });
+    await rm(fixture, { recursive: true, force: true });
+  }
+});
+
+test("validatePluginManifest accepts icon and localized descriptions", () => {
+  const valid = validatePluginManifest({
+    apiVersion: 1,
+    id: "com.example.localized",
+    name: "Localized",
+    version: "1.0.0",
+    description: "Default description.",
+    "description.ru": "Русское описание.",
+    "description.en": "English description.",
+    icon: "icon.png",
+    permissions: [],
+    contributions: [{
+      id: "w",
+      kind: "home-widget",
+      title: "W",
+      entry: "w.html",
+      defaultSize: { columns: 2, rows: 2 }
+    }]
+  });
+  assert.equal(valid["description.ru"], "Русское описание.");
+  assert.equal(valid["description.en"], "English description.");
+  assert.equal(valid.icon, "icon.png");
+  assert.equal(valid.description, "Default description.");
+});
+
+test("fetchPluginIcons returns data URLs or null for plugins without icons", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousToken = process.env.GITHUB_TOKEN;
+  delete process.env.GITHUB_TOKEN;
+  const userData = await mkdtemp(join(tmpdir(), "canvastty-plugin-icon-"));
+  const manager = new PluginManager(userData);
+  try {
+    const served = new Map([
+      ["plugin-a/icon.png", Buffer.from("PNGDATA")],
+      ["plugin-a/icon.svg", Buffer.from("<svg/>")]
+    ]);
+    globalThis.fetch = async (url) => {
+      const text = String(url);
+      if (text.startsWith("https://api.github.com/")) return Response.json({ default_branch: "main" });
+      const mark = "/main/";
+      const start = text.indexOf(mark);
+      const parts = text.slice(start + mark.length).split("/");
+      const repoStart = text.indexOf("raw.githubusercontent.com/") + "raw.githubusercontent.com/".length;
+      const repo = text.slice(repoStart, start).split("/")[1];
+      const path = parts.join("/");
+      const content = served.get(`${repo}/${path}`);
+      return content ? new Response(content, { status: 200 }) : new Response("missing", { status: 404 });
+    };
+    await manager.load();
+
+    const withPng = await manager.fetchPluginIcons(["https://github.com/example/plugin-a"]);
+    const png = withPng.get("https://github.com/example/plugin-a");
+    assert.ok(png?.startsWith("data:image/png;base64,"));
+    assert.ok(png?.endsWith(Buffer.from("PNGDATA").toString("base64")));
+
+    // Batch across two plugins while icons still exist: present resolves,
+    // missing path resolves null.
+    const mixed = await manager.fetchPluginIcons([
+      "https://github.com/example/plugin-a",
+      "https://github.com/example/plugin-b"
+    ]);
+    assert.equal(mixed.get("https://github.com/example/plugin-a")?.startsWith("data:image/png;base64,"), true);
+    assert.equal(mixed.get("https://github.com/example/plugin-b"), null);
+
+    served.delete("plugin-a/icon.png");
+    served.delete("plugin-a/icon.svg");
+    const withoutIcon = await manager.fetchPluginIcons(["https://github.com/example/plugin-b"]);
+    assert.equal(withoutIcon.get("https://github.com/example/plugin-b"), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previousToken;
+    await manager.dispose();
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
+test("platforms: validation accepts canvastty and multi-platform declarations", () => {
+  const base = { ...manifest, id: "com.example.platform-ok" };
+  const single = validatePluginManifest({ ...base, platforms: ["canvastty"] });
+  assert.deepEqual(single.platforms, ["canvastty"]);
+  const multi = validatePluginManifest({ ...base, platforms: ["canvastty", "canvastty-superkruto"] });
+  assert.deepEqual(multi.platforms, ["canvastty", "canvastty-superkruto"]);
+  const legacy = validatePluginManifest({ ...base });
+  assert.equal(legacy.platforms, undefined);
+});
+
+test("platforms: validation rejects empty or malformed declarations", () => {
+  const base = { ...manifest, id: "com.example.platform-bad" };
+  assert.throws(() => validatePluginManifest({ ...base, platforms: [] }), /non-empty array/);
+  assert.throws(() => validatePluginManifest({ ...base, platforms: ["UPPER"] }), /lowercase/);
+  assert.throws(() => validatePluginManifest({ ...base, platforms: [42] }), /lowercase/);
+  assert.throws(() => validatePluginManifest({ ...base, platforms: ["canvastty ", "canvastty"] }), /lowercase/);
+});
+
+test("minHostVersion: validation accepts semver and rejects malformed", () => {
+  const base = { ...manifest, id: "com.example.host-version" };
+  const ok = validatePluginManifest({ ...base, minHostVersion: "1.2.0" });
+  assert.equal(ok.minHostVersion, "1.2.0");
+  assert.throws(() => validatePluginManifest({ ...base, minHostVersion: "abc" }), /semantic version/);
+  assert.throws(() => validatePluginManifest({ ...base, minHostVersion: "1.2" }), /semantic version/);
+  const legacy = validatePluginManifest({ ...base });
+  assert.equal(legacy.minHostVersion, undefined);
+});
+
+test("reads a metadata/ manifest when present in the package", async () => {
+  const userData = await mkdtemp(join(tmpdir(), "canvastty-plugin-metadata-read-"));
+  const fixture = await mkdtemp(join(tmpdir(), "canvastty-plugin-metadata-fixture-"));
+  const metadataManifest = {
+    ...manifest,
+    id: "com.example.metadata-first",
+    name: "Metadata first",
+    version: "2.1.0",
+    platforms: ["canvastty"]
+  };
+  await mkdir(join(fixture, "metadata"), { recursive: true });
+  await mkdir(join(fixture, "apps"), { recursive: true });
+  await mkdir(join(fixture, "widgets"), { recursive: true });
+  await mkdir(join(fixture, "windows"), { recursive: true });
+  await writeFile(join(fixture, "metadata", "canvastty.plugin.json"), JSON.stringify(metadataManifest));
+  await writeFile(join(fixture, "apps", "notes.html"), "<h1>Metadata</h1>");
+  await writeFile(join(fixture, "widgets", "clock.html"), "<h1>Clock</h1>");
+  await writeFile(join(fixture, "windows", "focus.html"), "<h1>Focus</h1>");
+
+  const manager = new PluginManager(userData, async (_url, destination) => {
+    await cp(fixture, destination, { recursive: true });
+  });
+  try {
+    await manager.load();
+    const preview = await manager.previewInstall("https://github.com/example/metadata-first");
+    assert.equal(preview.manifest.id, "com.example.metadata-first");
+    assert.equal(preview.manifest.version, "2.1.0");
+    assert.deepEqual(preview.manifest.platforms, ["canvastty"]);
+    const installed = await manager.install(preview.token);
+    // The installed plugin manifest lives in metadata/ inside the package.
+    const onDisk = JSON.parse(await readFile(
+      join(userData, "plugins", "com.example.metadata-first", "metadata", "canvastty.plugin.json"),
+      "utf8"
+    ));
+    assert.equal(onDisk.id, "com.example.metadata-first");
+    assert.deepEqual(installed.manifest.platforms, ["canvastty"]);
+  } finally {
+    await manager.dispose();
+    await rm(userData, { recursive: true, force: true });
+    await rm(fixture, { recursive: true, force: true });
+  }
+});
+
+test("filters showcase results by declared platform", async () => {
+  const userData = await mkdtemp(join(tmpdir(), "canvastty-plugin-platform-filter-"));
+  const manager = new PluginManager(userData);
+  const originalFetch = globalThis.fetch;
+  const previousToken = process.env.GITHUB_TOKEN;
+  delete process.env.GITHUB_TOKEN;
+  try {
+    await manager.load();
+    // Two repos: one supports canvastty, the other only canvastty-superkruto.
+    const canvasttyManifest = { ...manifest, id: "com.example.plat-ok", version: "1.0.0", platforms: ["canvastty"] };
+    const foreignManifest = { ...manifest, id: "com.example.plat-foreign", version: "1.0.0", platforms: ["canvastty-superkruto"] };
+    const repos = {
+      "canvastty-plugin-ok": canvasttyManifest,
+      "canvastty-plugin-foreign": foreignManifest
+    };
+    let metadataCalls = 0;
+    globalThis.fetch = async (url) => {
+      const text = String(url);
+      if (text.startsWith("https://api.github.com/")) {
+        metadataCalls += 1;
+        // First call is the showcase search; the rest are branch/metadata.
+        if (metadataCalls === 1) {
+          return Response.json({ total_count: 2, items: [
+            { full_name: "example/canvastty-plugin-ok", description: "ok" },
+            { full_name: "example/canvastty-plugin-foreign", description: "foreign" }
+          ] });
+        }
+        return Response.json({ default_branch: "main" });
+      }
+      // raw.githubusercontent.com: return the manifest from repo metadata.
+      const match = text.match(/example\/(canvastty-plugin-[^/]+)\//);
+      const repo = match?.[1];
+      const repoManifest = repo ? repos[repo] : undefined;
+      if (!repoManifest) return new Response("not found", { status: 404 });
+      return Response.json(repoManifest);
+    };
+
+    const results = await manager.listShowcasePlugins();
+    assert.equal(results.length, 1);
+    assert.equal(results[0].fullName, "example/canvastty-plugin-ok");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previousToken;
+    await manager.dispose();
+    await rm(userData, { recursive: true, force: true });
+  }
+});
+
 function tarArchive(entries) {
   const blocks = [];
   for (const entry of entries) {

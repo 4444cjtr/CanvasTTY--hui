@@ -12,6 +12,7 @@ import type {
   PluginCanvasRequest,
   PluginLauncherRequest,
   PluginStorageChangeEvent,
+  PluginUpdateStatus,
   SessionBounds,
   SessionEvent,
   SessionRemovedEvent,
@@ -26,6 +27,7 @@ function subscribe<T>(channel: string, listener: (event: T) => void): () => void
 }
 
 const api: CanvasTTYApi = {
+  appVersion: () => ipcRenderer.invoke(IPC.appVersion),
   clipboard: {
     readText: () => ipcRenderer.invoke(IPC.clipboardRead),
     writeText: (text: string) => ipcRenderer.send(IPC.clipboardWrite, text)
@@ -46,6 +48,13 @@ const api: CanvasTTYApi = {
   },
   plugins: {
     list: () => ipcRenderer.invoke(IPC.pluginsList),
+    search: (query: string) => ipcRenderer.invoke(IPC.pluginsSearch, query),
+    showcase: () => ipcRenderer.invoke(IPC.pluginsShowcase),
+    icon: (sourceUrls: string[]) => ipcRenderer.invoke(IPC.pluginsIcon, sourceUrls),
+    manifests: (sourceUrls: string[]) => ipcRenderer.invoke(IPC.pluginsManifests, sourceUrls),
+    checkUpdates: () => ipcRenderer.invoke(IPC.pluginsCheckUpdates),
+    update: (pluginId: string) => ipcRenderer.invoke(IPC.pluginsUpdate, pluginId),
+    onUpdatesAvailable: (listener: (updates: PluginUpdateStatus[]) => void) => subscribe(IPC.pluginsUpdatesAvailable, listener),
     previewInstall: (sourceUrl: string) => ipcRenderer.invoke(IPC.pluginsPreviewInstall, sourceUrl),
     install: (token: string, selectedModules?: string[]) => ipcRenderer.invoke(IPC.pluginsInstall, token, selectedModules),
     setModules: (pluginId: string, selectedModules: string[]) => (
@@ -73,6 +82,12 @@ const api: CanvasTTYApi = {
     onOpenLauncher: (listener: (event: PluginLauncherRequest) => void) => subscribe(IPC.pluginsLauncherRequested, listener),
     onOpenCanvas: (listener: (event: PluginCanvasRequest) => void) => subscribe(IPC.pluginsCanvasRequested, listener),
     onStorageChanged: (listener: (event: PluginStorageChangeEvent) => void) => subscribe(IPC.pluginsStorageChanged, listener)
+  },
+  githubAuth: {
+    status: () => ipcRenderer.invoke(IPC.githubAuthStatus),
+    start: () => ipcRenderer.invoke(IPC.githubAuthStart),
+    signOut: () => ipcRenderer.invoke(IPC.githubAuthSignOut),
+    openUrl: (url: string) => ipcRenderer.invoke(IPC.githubAuthOpenUrl, url)
   },
   browser: {
     nodes: () => ipcRenderer.invoke(IPC.browserNodes),
