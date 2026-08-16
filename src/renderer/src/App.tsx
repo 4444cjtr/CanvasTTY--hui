@@ -50,7 +50,10 @@ const FALLBACK_SETTINGS: AppSettings = {
   edgePan: false,
   edgePanSpeed: "normal",
   zoomSensitivity: "normal",
-  zoomOverApplications: true,
+  useScrollWheelToZoom: false,
+  canvasWheelCaptureMode: "key",
+  canvasWheelOverride: window.canvasTTY.window.isMacOS ? "Meta" : "Ctrl",
+  canvasNavigationOverride: "Alt",
   focusActivation: "off",
   hoverFocus: false,
   hoverFocusSpeed: "normal",
@@ -684,8 +687,6 @@ export function App(): React.JSX.Element {
             setActiveSessionId(null);
             setBrowserSelected(false);
           }}
-          onDeselectSession={(id) => setActiveSessionId((current) => current === id ? null : current)}
-          onDeselectBrowser={() => setBrowserSelected(false)}
           onRenameSession={renameSession}
           onRenameEnd={() => setRenamingSessionId(null)}
           onSessionBoundsChange={changeSessionBounds}

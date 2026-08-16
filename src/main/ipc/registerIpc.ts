@@ -39,6 +39,7 @@ interface Dependencies {
   browser: BrowserService;
   getMainWindow(): BrowserWindow | null;
   applyBrowserSettings(settings: AppSettings): void;
+  setCanvasNavigationShortcutCapture(active: boolean): void;
   openPluginWindow(pluginId: string, contributionId: string): Promise<void>;
   closePluginWindows(pluginId: string): void;
   requestPluginLauncher(provider: ProviderId): void;
@@ -56,6 +57,7 @@ export function registerIpc({
   browser,
   getMainWindow,
   applyBrowserSettings,
+  setCanvasNavigationShortcutCapture,
   openPluginWindow,
   closePluginWindows,
   requestPluginLauncher,
@@ -72,6 +74,21 @@ export function registerIpc({
     const next = await settings.update(patch);
     applyBrowserSettings(next);
     return next;
+  });
+  ipcMain.on(IPC.canvasNavigationShortcutCapture, (event, active: boolean) => {
+    assertMainRenderer(event, getMainWindow);
+    if (typeof active !== "boolean") return;
+    setCanvasNavigationShortcutCapture(active);
+  });
+  ipcMain.on(IPC.canvasNavigationOwnerWheel, (event, input: unknown) => {
+    assertMainRenderer(event, getMainWindow);
+    browser.beginRendererWheelSequence(input);
+    event.returnValue = true;
+  });
+  ipcMain.on(IPC.canvasNavigationPointerGesture, (event, active: boolean) => {
+    assertMainRenderer(event, getMainWindow);
+    if (typeof active !== "boolean") return;
+    browser.setRendererCanvasGestureActive(active);
   });
 
   ipcMain.handle(IPC.dialogPickDirectory, async (event, defaultPath?: string) => {
@@ -395,9 +412,20 @@ export function registerIpc({
     assertMainRenderer(event, getMainWindow);
     browser.focus();
   });
+  ipcMain.on(IPC.browserSetInputFocused, (event, focused: unknown) => {
+    assertMainRenderer(event, getMainWindow);
+    browser.setInputFocused(focused === true);
+    event.returnValue = true;
+  });
   ipcMain.on(IPC.browserSetViewport, (event, bounds) => {
     assertMainRenderer(event, getMainWindow);
     browser.setViewport(bounds);
+  });
+  ipcMain.on(IPC.browserPageWheelDecision, (event, input: unknown) => {
+    event.returnValue = browser.decidePageWheel(event.sender, input);
+  });
+  ipcMain.on(IPC.browserPageWheel, (event, input: unknown) => {
+    browser.handlePageWheel(event.sender, input);
   });
 
   ipcMain.handle(IPC.terminalList, () => terminals.list());

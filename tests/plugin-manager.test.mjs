@@ -9,9 +9,19 @@ import {
   PluginManager,
   downloadGithubRepository,
   extractGithubTarball,
+  injectPluginInputBridge,
   normalizeGithubUrl,
   validatePluginManifest
 } from "../src/main/services/PluginManager.ts";
+
+test("injects one trusted input bridge before plugin scripts", () => {
+  const html = "<!doctype html><html><head><script src='plugin.js'></script></head><body></body></html>";
+  const injected = injectPluginInputBridge(html);
+  const bridge = "canvastty-plugin://host/input-bridge.js";
+  assert.equal(injected.split(bridge).length - 1, 1);
+  assert.ok(injected.indexOf(bridge) < injected.indexOf("plugin.js"));
+  assert.equal(injectPluginInputBridge(injected), injected);
+});
 
 const manifest = {
   apiVersion: 1,
@@ -132,6 +142,17 @@ test("previews, installs, serves, stores, disables, and uninstalls a static pack
     assert.equal(installed.enabled, true);
     assert.equal(manager.list().length, 1);
 
+    const inputBridge = await manager.protocolResponse("canvastty-plugin://host/input-bridge.js");
+    assert.equal(inputBridge.status, 200);
+    const inputBridgeSource = await inputBridge.text();
+    assert.match(inputBridgeSource, /addEventListener\("wheel"/);
+    assert.match(inputBridgeSource, /addEventListener\("pointerdown"/);
+    assert.match(inputBridgeSource, /type: "canvas-focus"/);
+    assert.match(inputBridgeSource, /type: "canvas-hover", active: true/);
+    assert.match(inputBridgeSource, /type: "canvas-hover", active: false/);
+    const pointerStart = inputBridgeSource.indexOf('addEventListener("pointerdown"');
+    assert.doesNotMatch(inputBridgeSource.slice(pointerStart), /event\.preventDefault\(\)/);
+
     await manager.storageSet(installed.manifest.id, "draft", { text: "real storage" });
     assert.deepEqual(await manager.storageGet(installed.manifest.id, "draft"), { text: "real storage" });
 
@@ -139,7 +160,9 @@ test("previews, installs, serves, stores, disables, and uninstalls a static pack
       "canvastty-plugin://com.example.studio-kit/widgets/status.html"
     );
     assert.equal(asset.status, 200);
-    assert.match(await asset.text(), /Session status/);
+    const assetHtml = await asset.text();
+    assert.match(assetHtml, /Session status/);
+    assert.match(assetHtml, /canvastty-plugin:\/\/host\/input-bridge\.js/);
     assert.match(asset.headers.get("content-security-policy"), /connect-src 'none'/);
 
     const sdk = await manager.protocolResponse("canvastty-plugin://host/sdk.js");
@@ -542,7 +565,7 @@ test("setModules keeps the previous module set when activation fails", async () 
     assert.deepEqual(installed.selectedModules, ["one"]);
     const oneAsset = await manager.protocolResponse("canvastty-plugin://com.example.rollback/one.html");
     assert.equal(oneAsset.status, 200);
-    assert.equal(await oneAsset.text(), one.toString("utf8"));
+    assert.match(await oneAsset.text(), /<h1>Module one<\/h1>/);
 
     // Integrity failure while activating a new selection: the old set survives.
     served.set("two.html", tamperedTwo);
@@ -553,7 +576,7 @@ test("setModules keeps the previous module set when activation fails", async () 
     assert.deepEqual(manager.list()[0].selectedModules, ["one"]);
     const intactAsset = await manager.protocolResponse("canvastty-plugin://com.example.rollback/one.html");
     assert.equal(intactAsset.status, 200);
-    assert.equal(await intactAsset.text(), one.toString("utf8"));
+    assert.match(await intactAsset.text(), /<h1>Module one<\/h1>/);
     assert.equal(
       (await manager.protocolResponse("canvastty-plugin://com.example.rollback/two.html")).status,
       404
@@ -581,7 +604,7 @@ test("setModules keeps the previous module set when activation fails", async () 
         "canvastty-plugin://com.example.rollback/one.html"
       );
       assert.equal(reloadedAsset.status, 200);
-      assert.equal(await reloadedAsset.text(), one.toString("utf8"));
+      assert.match(await reloadedAsset.text(), /<h1>Module one<\/h1>/);
     } finally {
       await reloaded.dispose();
     }
