@@ -34,8 +34,8 @@ export function TitleBar({ locale, windowState, onWindowStateChange }: TitleBarP
         <div className="titlebar__brand">
           <span className="titlebar__logo"><ProviderIcon provider="terminal" size="small" /></span>
           <strong>CanvasTTY</strong>
-          <span>{t(locale, "appSubtitle")}</span>
           <span className="titlebar__badge">--hui</span>
+          <span>{t(locale, "appSubtitle")}</span>
         </div>
         <div className="titlebar__drag" />
       </header>
@@ -47,8 +47,8 @@ export function TitleBar({ locale, windowState, onWindowStateChange }: TitleBarP
       <div className="titlebar__brand">
         <span className="titlebar__logo"><ProviderIcon provider="terminal" size="small" /></span>
         <strong>CanvasTTY</strong>
-        <span>{t(locale, "appSubtitle")}</span>
         <span className="titlebar__badge">--hui</span>
+        <span>{t(locale, "appSubtitle")}</span>
       </div>
       <div className="titlebar__drag" />
       {controls}
