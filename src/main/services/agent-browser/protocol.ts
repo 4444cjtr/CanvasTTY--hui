@@ -41,7 +41,12 @@ export interface BrowserCoreLike {
 
 export type AgentDisconnectReason = "closed" | "expired" | "revoked" | "protocol_error";
 
-export type AgentProvider = "claude" | "codex" | "kimi";
+/**
+ * Провайдер CLI-агента. Не whitelist: любой харнесс (opencode, hermes, pi и
+ * др.) проходит аутентификацию — валидируется только формат строки.
+ * Канонические значения: claude, codex, kimi, opencode, hermes, pi, unknown.
+ */
+export type AgentProvider = string;
 
 export interface AgentCapability {
   agentId: string;
@@ -97,6 +102,7 @@ export type BridgeErrorCode =
   | "AUTH_INVALID"
   | "AUTH_REPLAYED"
   | "BRIDGE_BUSY"
+  | "BROWSER_UNAVAILABLE"
   | "CANCELED"
   | "INVALID_REQUEST"
   | "PAYLOAD_TOO_LARGE"
@@ -158,17 +164,19 @@ export function parseClientMessage(value: unknown, authenticated: boolean): Clie
     ]);
     if (authenticated) throw bridgeError("AUTH_REPLAYED", "This connection is already authenticated.", false);
     const provider = requiredString(object, "provider", 16);
-    if (provider !== "claude" && provider !== "codex" && provider !== "kimi") {
-      throw bridgeError("AUTH_INVALID", "Unknown agent provider.", false);
+    if (!/^[a-z0-9_-]+$/.test(provider)) {
+      throw bridgeError("AUTH_INVALID", "Agent provider is invalid.", false);
     }
     return {
       v: AGENT_BRIDGE_PROTOCOL_VERSION,
       type,
       agentId: requiredString(object, "agentId", 128),
       connectionId: requiredString(object, "connectionId", 128),
-      terminalSessionId: requiredString(object, "terminalSessionId", 128),
+      // Гость (без capability) может не иметь сессии — тогда default-нода.
+      terminalSessionId: optionalString(object, "terminalSessionId", 128) ?? "",
       provider,
-      capabilityToken: requiredString(object, "capabilityToken", 128)
+      // Пустая строка = гость (агент запущен сам, без capability CanvasTTY).
+      capabilityToken: optionalString(object, "capabilityToken", 128) ?? ""
     };
   }
 
@@ -321,6 +329,16 @@ function requiredString(value: Record<string, unknown>, key: string, maximum: nu
   const candidate = value[key];
   if (typeof candidate !== "string" || candidate.length === 0 || candidate.length > maximum) {
     throw protocolError(`message.${key} must be a non-empty string of at most ${maximum} characters.`);
+  }
+  return candidate;
+}
+
+function optionalString(value: Record<string, unknown>, key: string, maximum: number): string | undefined {
+  const candidate = value[key];
+  if (candidate === undefined || candidate === null) return undefined;
+  // Пустая строка допустима (например, гость без terminalSessionId).
+  if (typeof candidate !== "string" || candidate.length > maximum) {
+    throw protocolError(`message.${key} must be a string of at most ${maximum} characters.`);
   }
   return candidate;
 }

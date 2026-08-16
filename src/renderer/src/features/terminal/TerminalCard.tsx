@@ -420,6 +420,7 @@ export function TerminalCard({
       className={`terminal-card ${summaryMode ? "terminal-card--summary" : ""} ${selected ? "terminal-card--selected" : ""}`}
       data-interactive="true"
       data-canvas-zoom-surface="application"
+      data-canvas-node-id={session.id}
       data-wheel-owner={summaryMode ? undefined : "local"}
       tabIndex={-1}
       onPointerDownCapture={(event) => {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,6 +15,7 @@ import {
   BridgeClientError,
   GatewayClient,
   createMcpDispatcher,
+  findTerminalSessionId,
   formatToolResult,
   isLocalEndpoint,
   readIdentity
@@ -407,3 +409,61 @@ async function waitFor(predicate, timeoutMs = 1_000) {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
 }
+
+test("findTerminalSessionId climbs the process tree and finds the session var", () => {
+  // Функция должна вернуть строку (пустую, если переменной ни у кого нет).
+  assert.equal(typeof findTerminalSessionId(), "string");
+});
+
+test("findTerminalSessionId finds the session id inherited by an ancestor harness", async () => {
+  // Реальная цепочка: pty-терминал (переменная при старте) → hermes node
+  // (наследует) → mcp-helper (env очищен safe_env фильтрацией харнесса).
+  // helper должен подняться по ppid и найти сессию у предка-hermes.
+  const helperPath = join(process.cwd(), "src", "agent-browser", "mcp-helper.mjs");
+  const childScript = `
+    import { findTerminalSessionId } from ${JSON.stringify(`file://${helperPath}`)};
+    console.log("OWN:", JSON.stringify(process.env.CANVASTTY_TERMINAL_SESSION_ID));
+    console.log("FOUND:", JSON.stringify(findTerminalSessionId()));
+  `;
+  // «hermes»: node с переменной (как наследует из pty-терминала), запускает
+  // «mcp-helper» с ОЧИЩЕННЫМ env (как после safe_env фильтрации харнесса).
+  const result = spawnSync(process.execPath, ["-e", `
+    const { spawnSync: innerSpawn } = require("node:child_process");
+    const r = innerSpawn(process.execPath, ["--input-type=module", "-e", ${JSON.stringify(childScript)}], {
+      env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== "CANVASTTY_TERMINAL_SESSION_ID")),
+      encoding: "utf8"
+    });
+    process.stdout.write(r.stdout);
+  `], {
+    env: { ...process.env, CANVASTTY_TERMINAL_SESSION_ID: "chain-test-session-42" },
+    encoding: "utf8"
+  });
+  const output = result.stdout ?? "";
+  assert.match(output, /OWN: undefined/);
+  assert.match(output, /FOUND: "chain-test-session-42"/);
+});
+
+test("readIdentity falls back to the ancestor session id when env is filtered", () => {
+  // Полный env (как у pty-терминала CanvasTTY) → берётся из env.
+  const identity = readIdentity({
+    CANVASTTY_AGENT_BROWSER_ADDRESS: "/tmp/canvastty.sock",
+    CANVASTTY_AGENT_ID: "agent-1",
+    CANVASTTY_AGENT_CONNECTION_ID: "conn-1",
+    CANVASTTY_TERMINAL_SESSION_ID: "session-abc",
+    CANVASTTY_AGENT_PROVIDER: "hermes",
+    CANVASTTY_AGENT_CAPABILITY: ""
+  }, "linux");
+  assert.equal(identity.terminalSessionId, "session-abc");
+
+  // Env отфильтрован харнессом (нет CANVASTTY_TERMINAL_SESSION_ID) —
+  // гость: session id пустой, но провайдер остаётся.
+  const filtered = readIdentity({
+    CANVASTTY_AGENT_BROWSER_ADDRESS: "/tmp/canvastty.sock",
+    CANVASTTY_AGENT_ID: "agent-1",
+    CANVASTTY_AGENT_CONNECTION_ID: "conn-1",
+    CANVASTTY_AGENT_PROVIDER: "hermes",
+    CANVASTTY_AGENT_CAPABILITY: ""
+  }, "linux");
+  assert.equal(filtered.terminalSessionId, "");
+  assert.equal(filtered.provider, "hermes");
+});

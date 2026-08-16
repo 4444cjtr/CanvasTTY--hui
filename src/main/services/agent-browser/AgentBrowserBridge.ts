@@ -9,6 +9,8 @@ export interface PrepareAgentBrowserLaunchInput {
   terminalSessionId: string;
   provider: AgentProvider;
   cwd: string;
+  /** Нода браузера для привязки агента; null/undefined = default (единый браузер). */
+  browserWindowId?: string | null;
 }
 
 export interface PreparedAgentBrowserPtyLaunch {

@@ -4,7 +4,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import type {
   AgentProviderId,
   AppSettings,
-  BrowserCanvasState,
+  BrowserCanvasNode,
   CanvasPatternId,
   EdgePanSpeed,
   FocusActivation,
@@ -14,6 +14,7 @@ import type {
   MediaFit,
   PaletteId,
   PluginCanvasInstance,
+  SessionBounds,
   ShortcutBindings,
   ZoomSensitivity
 } from "../../shared/contracts";
@@ -35,7 +36,7 @@ const EDGE_PAN_SPEEDS = new Set<EdgePanSpeed>(["slow", "normal", "fast"]);
 const ZOOM_SENSITIVITIES = new Set<ZoomSensitivity>(["slow", "normal", "fast"]);
 const FOCUS_ACTIVATIONS = new Set<FocusActivation>(["off", "single", "double"]);
 const SHORTCUT_MODIFIERS = new Set(["Ctrl", "Alt", "Shift", "Meta"]);
-const DEFAULT_SHORTCUTS: ShortcutBindings = { home: "Home", renameWindow: "F2" };
+const DEFAULT_SHORTCUTS: ShortcutBindings = { home: "Home", renameWindow: "F2", browserNewWindow: "Ctrl+Click" };
 
 export class SettingsStore {
   private readonly filePath: string;
@@ -111,7 +112,7 @@ function createDefaults(systemLocale: string): AppSettings {
     homeGridSize: { ...DEFAULT_HOME_GRID_SIZE },
     homeLayout: structuredClone(DEFAULT_HOME_LAYOUT),
     pluginCanvas: [],
-    browserCanvas: null,
+    browserCanvases: [],
     browserAgentAccess: true,
     browserShowAgentPresence: true,
     browserRestoreTabs: true
@@ -143,7 +144,10 @@ export function normalizeSettings(candidate: unknown, fallback: AppSettings): Ap
     homeGridSize
   );
   const pluginCanvas = normalizePluginCanvas(source.pluginCanvas, fallback.pluginCanvas ?? []);
-  const browserCanvas = normalizeBrowserCanvas(source.browserCanvas, fallback.browserCanvas ?? null);
+  const browserCanvases = normalizeBrowserCanvases(
+    source.browserCanvases ?? (source as unknown as Record<string, unknown>).browserCanvas,
+    fallback.browserCanvases ?? []
+  );
 
   return {
     locale: LOCALES.has(source.locale as LocaleId) ? source.locale as LocaleId : fallback.locale,
@@ -188,7 +192,7 @@ export function normalizeSettings(candidate: unknown, fallback: AppSettings): Ap
     homeGridSize,
     homeLayout,
     pluginCanvas,
-    browserCanvas,
+    browserCanvases,
     browserAgentAccess: typeof source.browserAgentAccess === "boolean"
       ? source.browserAgentAccess
       : fallback.browserAgentAccess,
@@ -280,21 +284,50 @@ function normalizePluginCanvas(candidate: unknown, fallback: readonly PluginCanv
   return instances;
 }
 
-function normalizeBrowserCanvas(candidate: unknown, fallback: BrowserCanvasState | null): BrowserCanvasState | null {
-  if (candidate === null) return null;
-  if (!candidate || typeof candidate !== "object") return fallback ? structuredClone(fallback) : null;
-  const source = candidate as Partial<BrowserCanvasState>;
-  if (!isFinitePoint(source.position) || !isFiniteSize(source.size)) {
-    return fallback ? structuredClone(fallback) : null;
+function normalizeBrowserCanvases(candidate: unknown, fallback: readonly BrowserCanvasNode[]): BrowserCanvasNode[] {
+  // Миграция: старое одиночное значение browserCanvas (без id) → нода "default".
+  if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+    const single = normalizeBrowserNode(candidate);
+    if (!single) return fallback.map((node) => structuredClone(node));
+    return [{ id: "default", bounds: single.bounds }];
   }
+  if (!Array.isArray(candidate)) return fallback.map((node) => structuredClone(node));
+
+  const nodes: BrowserCanvasNode[] = [];
+  const ids = new Set<string>();
+  for (const value of candidate.slice(0, MAX_BROWSER_NODES_SETTINGS)) {
+    if (!value || typeof value !== "object") continue;
+    const source = value as Partial<BrowserCanvasNode>;
+    if (!isInstanceId(source.id) || ids.has(source.id)) continue;
+    const node = normalizeBrowserNode(value);
+    if (!node) continue;
+    nodes.push({ id: source.id, bounds: node.bounds });
+    ids.add(source.id);
+  }
+  return nodes;
+}
+
+function normalizeBrowserNode(candidate: unknown): BrowserCanvasNode | null {
+  if (!candidate || typeof candidate !== "object") return null;
+  const source = candidate as Partial<BrowserCanvasNode>;
+  // Принимаем и { id, bounds }, и плоскую форму { position, size } (старые настройки).
+  const bounds = (source.bounds ?? source) as Partial<SessionBounds>;
+  const position = bounds.position;
+  const size = bounds.size;
+  if (!position || !size || !isFinitePoint(position) || !isFiniteSize(size)) return null;
   return {
-    position: { x: source.position.x, y: source.position.y },
-    size: {
-      width: clamp(source.size.width, 560, 1_600),
-      height: clamp(source.size.height, 380, 1_100)
+    id: typeof source.id === "string" && source.id.length > 0 ? source.id : "default",
+    bounds: {
+      position: { x: position.x, y: position.y },
+      size: {
+        width: clamp(size.width, 560, 1_600),
+        height: clamp(size.height, 380, 1_100)
+      }
     }
   };
 }
+
+const MAX_BROWSER_NODES_SETTINGS = 8;
 
 function normalizeShortcuts(candidate: unknown, fallback: ShortcutBindings): ShortcutBindings {
   const source = candidate && typeof candidate === "object"
@@ -302,13 +335,19 @@ function normalizeShortcuts(candidate: unknown, fallback: ShortcutBindings): Sho
     : {};
   const shortcuts = {
     home: isValidShortcut(source.home) ? source.home : fallback.home,
-    renameWindow: isValidShortcut(source.renameWindow) ? source.renameWindow : fallback.renameWindow
+    renameWindow: isValidShortcut(source.renameWindow) ? source.renameWindow : fallback.renameWindow,
+    // Мышиный жест (Ctrl+Click) — не клавиатурная комбинация, валидируем мягко.
+    browserNewWindow: isValidMouseShortcut(source.browserNewWindow) ? source.browserNewWindow : fallback.browserNewWindow
   };
 
   if (shortcuts.home.toLowerCase() === shortcuts.renameWindow.toLowerCase()) {
     return { ...fallback };
   }
   return shortcuts;
+}
+
+function isValidMouseShortcut(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 40;
 }
 
 function isValidShortcut(value: unknown): value is string {

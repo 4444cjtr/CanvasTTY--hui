@@ -157,7 +157,7 @@ async function connectClient(address) {
 
 async function startedGateway(t, browser, options = {}) {
   const runtimeDirectory = options.runtimeDirectory ?? await fixture(t, "canvastty-gateway-");
-  const gateway = new AgentGateway(browser, { runtimeDirectory, ...options });
+  const gateway = new AgentGateway(() => browser, { runtimeDirectory, ...options });
   await gateway.start();
   t.after(() => gateway.close());
   return gateway;
@@ -290,7 +290,7 @@ test("AgentGateway uses a mode-0600 local socket instead of a TCP listener", POS
 
 test("AgentGateway supports Windows only when the secure native pipe host is supplied", async () => {
   assert.equal(supportsAgentGatewayPlatform("win32"), true);
-  const gateway = new AgentGateway(core(), { platform: "win32" });
+  const gateway = new AgentGateway(() => core(), { platform: "win32" });
 
   await assert.rejects(gateway.start(), /current-user-only named-pipe host/i);
   assert.throws(() => gateway.address, /has not started/i);

@@ -73,6 +73,7 @@ interface DownloadWaiter {
 }
 
 export interface BrowserServiceOptions {
+  windowId?: string;
   userDataPath?: string;
   downloadRoot?: string;
   uploadRoots?: readonly string[];
@@ -82,6 +83,7 @@ export interface BrowserServiceOptions {
 
 export class BrowserService {
   readonly core: BrowserCore;
+  readonly windowId: string;
   private readonly getOwner: () => BrowserWindow | null;
   private readonly now: () => number;
   private readonly tabs = new Map<string, BrowserTab>();
@@ -124,7 +126,13 @@ export class BrowserService {
     const userDataPath = options.userDataPath ?? app.getPath("userData");
     const downloadRoot = join(options.downloadRoot ?? join(app.getPath("downloads"), "CanvasTTY"), randomUUID());
     this.restoreTabsEnabled = options.restoreTabs ?? true;
-    this.store = new BrowserStore(userDataPath);
+    this.windowId = options.windowId ?? "default";
+    // Дефолтная нода сохраняет прежний файл состояния (обратная совместимость
+    // восстановления вкладок); остальные ноды изолированы по имени файла.
+    const storeFileName = this.windowId === "default"
+      ? "browser-state.json"
+      : `browser-state-${this.windowId}.json`;
+    this.store = new BrowserStore(userDataPath, storeFileName);
     this.policy = new BrowserPolicyService({
       downloadRoot,
       uploadRoots: [downloadRoot, ...(options.uploadRoots ?? [])],
@@ -1116,7 +1124,7 @@ export class BrowserService {
 
   private emit(): void {
     const owner = this.getOwner();
-    if (owner && !owner.isDestroyed()) owner.webContents.send(IPC.browserState, { snapshot: this.getState() });
+    if (owner && !owner.isDestroyed()) owner.webContents.send(IPC.browserState, { windowId: this.windowId, snapshot: this.getState() });
   }
 
   private emitActivity(event: BrowserActivityEvent): void {

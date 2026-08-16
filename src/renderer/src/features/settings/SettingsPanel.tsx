@@ -24,7 +24,7 @@ import { t } from "../../lib/i18n";
 import { PluginSettingsSection } from "../plugins/PluginSettingsSection";
 import { HomeAppearanceSettings } from "../home/HomeAppearanceSettings";
 
-type SettingsSection = "general" | "appearance" | "controls" | "browser" | "plugins";
+type SettingsSection = "general" | "appearance" | "controls" | "shortcuts" | "browser" | "plugins";
 
 interface SettingsPanelProps {
   open: boolean;
@@ -82,7 +82,8 @@ export function SettingsPanel({
     if (!open || section !== "browser") return;
     let active = true;
     setActivityState("loading");
-    void window.canvasTTY.browser.getActivity()
+    const windowId = settings.browserCanvases[0]?.id ?? null;
+    void window.canvasTTY.browser.getActivity(windowId)
       .then((events) => {
         if (!active) return;
         setActivity(events.slice(-40));
@@ -158,7 +159,7 @@ export function SettingsPanel({
         </header>
 
         <nav className="settings-tabs" role="tablist" aria-label={t(locale, "settingsSections")}>
-          {(["general", "appearance", "controls", "browser", "plugins"] as SettingsSection[]).map((value) => (
+          {(["general", "appearance", "controls", "shortcuts", "browser", "plugins"] as SettingsSection[]).map((value) => (
             <button
               key={value}
               className={section === value ? "settings-tabs__button settings-tabs__button--active" : "settings-tabs__button"}
@@ -289,6 +290,25 @@ export function SettingsPanel({
                   options={[["normal", t(locale, "wheelNormal")], ["inverted", t(locale, "wheelInverted")]]}
                   onChange={(value) => void onChange({ invertCanvasWheel: value === "inverted" })}
                 />
+              </SettingGroup>
+            </>
+          )}
+
+          {section === "shortcuts" && (
+            <>
+              <SettingGroup
+                label={t(locale, "browserNewWindowShortcut")}
+                description={t(locale, "browserNewWindowShortcutDescription")}
+              >
+                <div className="shortcut-editor">
+                  <ShortcutRow
+                    label={t(locale, "browserNewWindow")}
+                    value={settings.shortcuts.browserNewWindow}
+                    capturing={false}
+                    onStart={() => undefined}
+                    onKeyDown={() => undefined}
+                  />
+                </div>
               </SettingGroup>
               <SettingGroup label={t(locale, "keyboardShortcuts")}>
                 <div className="shortcut-editor">
@@ -463,7 +483,7 @@ function BrowserActivityList({
           <div className={`browser-settings__activity ${event.ok ? "" : "browser-settings__activity--failed"}`} key={event.sequence}>
             <span
               className="browser-settings__agent-mark"
-              style={{ "--agent-color": BROWSER_PROVIDER_COLORS[provider] } as React.CSSProperties}
+              style={{ "--agent-color": BROWSER_PROVIDER_COLORS[provider] ?? BROWSER_PROVIDER_COLORS.unknown } as React.CSSProperties}
               aria-hidden="true"
             />
             <span className="browser-settings__row-copy">

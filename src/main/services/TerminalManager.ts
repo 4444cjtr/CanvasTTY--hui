@@ -20,6 +20,7 @@ import type {
   PreparedAgentBrowserPtyLaunch
 } from "./agent-browser/AgentBrowserBridge.ts";
 import { AGENT_BROWSER_ENV } from "./agent-browser/AgentBrowserBridge.ts";
+import { writeAgentBrowserContext } from "./agent-browser/ProviderLaunch.ts";
 import { tryPtyOperation } from "./ptySafety.ts";
 import { resolveTerminalLaunch } from "./terminalLaunch.ts";
 
@@ -70,7 +71,20 @@ export class TerminalManager {
     assertDirectory(request.cwd);
 
     const id = randomUUID();
-    const launched = this.spawnProcess(id, request.provider, request.profile, request.cwd);
+    const launched = this.spawnProcess(
+      id,
+      request.provider,
+      request.profile,
+      request.cwd,
+      request.browserWindowId
+    );
+    // Хук для любого харнесса: AGENTS.md в cwd сессии сообщает агенту, что
+    // доступен видимый браузер CanvasTTY (инструменты mcp__canvastty_browser__*).
+    try {
+      writeAgentBrowserContext(request.cwd);
+    } catch (error) {
+      console.warn("CanvasTTY could not write AGENTS.md browser context.", error);
+    }
     const metadata: SessionMetadata = {
       id,
       provider: request.provider,
@@ -82,7 +96,8 @@ export class TerminalManager {
       size: DEFAULT_TERMINAL_SIZE,
       status: "idle",
       startedAt: Date.now(),
-      exitCode: null
+      exitCode: null,
+      browserWindowId: request.browserWindowId ?? null
     };
 
     const session: ManagedSession = {
@@ -111,7 +126,8 @@ export class TerminalManager {
       id,
       session.metadata.provider,
       session.metadata.profile,
-      session.metadata.cwd
+      session.metadata.cwd,
+      session.metadata.browserWindowId
     );
     session.process = launched.process;
     session.agentBrowser = launched.agentBrowser;
@@ -165,6 +181,22 @@ export class TerminalManager {
     return structuredClone(session.metadata);
   }
 
+  setBrowserBinding(id: string, browserWindowId: string | null): SessionMetadata {
+    const session = this.sessions.get(id);
+    if (!session) throw new Error("Terminal session does not exist.");
+    // Привязка разрешена и для обычных терминалов: агент, запущенный внутри
+    // такого терминала (глобальный MCP-конфиг), получит доступ к этой ноде.
+    session.metadata.browserWindowId = browserWindowId;
+    this.emitSession(session.metadata);
+    return structuredClone(session.metadata);
+  }
+
+  /** Привязка сессии к ноде браузера (для гостевого подключения агента). */
+  sessionBrowserBinding(id: string): string | null {
+    const session = this.sessions.get(id);
+    return session?.metadata.browserWindowId ?? null;
+  }
+
   applyProviderSignal(id: string, signal: ProviderLifecycleSignal): void {
     const session = this.sessions.get(id);
     if (!session || session.metadata.status === "done" || session.metadata.status === "failed") return;
@@ -204,11 +236,12 @@ export class TerminalManager {
     id: string,
     provider: ProviderId,
     profile: CreateSessionRequest["profile"],
-    cwd: string
+    cwd: string,
+    browserWindowId: string | null | undefined
   ): { process: IPty; agentBrowser: PreparedAgentBrowserPtyLaunch | null } {
     const agentBrowser = provider === "terminal"
       ? null
-      : this.agentBrowser?.prepareLaunch({ terminalSessionId: id, provider, cwd }) ?? null;
+      : this.agentBrowser?.prepareLaunch({ terminalSessionId: id, provider, cwd, browserWindowId }) ?? null;
     try {
       const launch = resolveTerminalLaunch(provider, profile, agentBrowser?.args ?? []);
       return {
@@ -217,7 +250,13 @@ export class TerminalManager {
           cols: 100,
           rows: 30,
           cwd,
-          env: { ...terminalEnvironment(), ...agentBrowser?.environment }
+          env: {
+            ...terminalEnvironment(),
+            ...(agentBrowser?.environment ?? {}),
+            // Каждая сессия знает свой id — так агент, запущенный внутри
+            // терминала, может сообщить gateway свою привязку к ноде браузера.
+            CANVASTTY_TERMINAL_SESSION_ID: id
+          }
         }),
         agentBrowser
       };

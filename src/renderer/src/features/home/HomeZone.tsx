@@ -55,6 +55,7 @@ interface HomeZoneProps {
   onOpenAgent(provider: AgentProviderId): void;
   onOpenTerminal(): void;
   onOpenBrowser(): void;
+  onOpenBrowserNewWindow(): void;
   onFocusSession(session: SessionSnapshot): void;
   onRequestMedia(): Promise<void>;
   onRemoveMedia(): Promise<void>;
@@ -93,6 +94,7 @@ export function HomeZone({
   onOpenAgent,
   onOpenTerminal,
   onOpenBrowser,
+  onOpenBrowserNewWindow,
   onFocusSession,
   onRequestMedia,
   onRemoveMedia,
@@ -315,7 +317,14 @@ export function HomeZone({
           <button
             className="launcher-button launcher-button--browser"
             type="button"
-            onClick={onOpenBrowser}
+            onClick={(event) => {
+              if (event.ctrlKey) {
+                event.preventDefault();
+                onOpenBrowserNewWindow();
+              } else {
+                onOpenBrowser();
+              }
+            }}
             title={t(locale, "browser")}
             aria-label={t(locale, "browser")}
           >

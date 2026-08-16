@@ -450,3 +450,15 @@ button { border: 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
+
+/* Граф связей агент↔браузер (DaVinci-стиль) */
+.agent-link__stroke { fill: none; stroke: var(--primary); stroke-width: 2; stroke-linecap: round; opacity: .85; }
+.agent-link__hit { fill: none; stroke: transparent; stroke-width: 14; }
+.agent-link--hidden { opacity: 0; pointer-events: none; }
+.agent-link:hover .agent-link__stroke { stroke-width: 3; opacity: 1; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--primary) 60%, transparent)); }
+.agent-link--draft { fill: none; stroke: var(--primary); stroke-width: 2; stroke-dasharray: 6 5; stroke-linecap: round; opacity: .6; }
+.agent-link--draft-break { stroke: #e5484d; stroke-width: 2.5; opacity: .9; }
+.agent-link-port { fill: var(--surface-soft); stroke: var(--primary); stroke-width: 2; transition: r .12s ease, fill .12s ease; }
+.agent-link-port:hover { fill: var(--primary); }
+.agent-link-port--bound { fill: var(--primary); }
+.agent-link-port--in { stroke-dasharray: 3 2; }

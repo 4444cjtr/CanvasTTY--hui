@@ -31,7 +31,7 @@ test("browser native input participates in canvas selection and hover focus", as
   assert.match(service, /mouse\.type === "mouseMove" && this\.pointerTabId !== tab\.id/);
   assert.match(card, /window\.canvasTTY\.browser\.onCanvasPointer/);
   assert.match(card, /browser-card--selected/);
-  assert.match(workspace, /selected=\{browserSelected\}/);
+  assert.match(workspace, /selected=\{browserSelectedId === node\.id\}/);
   assert.match(workspace, /focusActivation=\{settings\.focusActivation\}/);
   assert.match(workspace, /hoverFocus=\{settings\.hoverFocus\}/);
   assert.match(workspace, /closest\("\.terminal-card, \.browser-card"\)/);

@@ -889,3 +889,211 @@ function tomlStringTable(values: Record<string, string>): string {
 function safeId(value: string): string {
   return value.replaceAll(/[^A-Za-z0-9_-]/g, "_").slice(0, 128);
 }
+
+/**
+ * Глобальный MCP-конфиг (вариант A): прописывает mcp-helper в стандартные
+ * конфиги CLI-агентов, чтобы ЛЮБОЙ запуск codex/claude/opencode/hermes/pi
+ * (в терминале CanvasTTY, во внешнем терминале, в IDE) автоматически получал
+ * браузер-инструменты. Установленные харнессы обнаруживаются автоматически —
+ * новые провайдеры добавлять в код не нужно.
+ * Адрес gateway mcp-helper находит сам через файл agent-browser-address.
+ */
+export function writeGlobalMcpConfig(helper: StdioHelperLaunch, homeDirectory = homedir()): void {
+  validateStdioHelperLaunch(helper);
+  writeCodexMcpConfig(helper, homeDirectory);
+  writeClaudeMcpConfig(helper, homeDirectory);
+  writeOpenCodeMcpConfig(helper, homeDirectory);
+  writeHermesMcpConfig(helper);
+  writePiMcpConfig(helper, homeDirectory);
+}
+
+function writeCodexMcpConfig(helper: StdioHelperLaunch, homeDirectory: string): void {
+  const configPath = join(homeDirectory, ".codex", "config.toml");
+  const existing = readOptional(configPath) ?? "";
+  const block = [
+    `[mcp_servers.${MCP_SERVER_NAME}]`,
+    `command=${tomlString(helper.command)}`,
+    `args=${tomlStringArray(helper.args)}`,
+    `env=${tomlStringTable({ ...(helper.env ?? {}), CANVASTTY_AGENT_PROVIDER: "codex" })}`,
+    "env_vars=[]",
+    "enabled=true",
+    "required=false",
+    'default_tools_approval_mode="approve"'
+  ].join("\n");
+  const marker = `[mcp_servers.${MCP_SERVER_NAME}]`;
+  const updated = upsertTomlSection(existing, marker, block);
+  if (updated === existing) return;
+  atomicWrite(configPath, `${updated}${updated.endsWith("\n") ? "" : "\n"}`);
+}
+
+function writeClaudeMcpConfig(helper: StdioHelperLaunch, homeDirectory: string): void {
+  const configPath = join(homeDirectory, ".claude.json");
+  const existing = readOptional(configPath);
+  let config: Record<string, unknown>;
+  try {
+    config = existing && existing.trim().length > 0 ? JSON.parse(existing) as Record<string, unknown> : {};
+  } catch {
+    console.warn("CanvasTTY left ~/.claude.json untouched: existing content is not valid JSON.");
+    return;
+  }
+  const servers = config.mcpServers && typeof config.mcpServers === "object" && !Array.isArray(config.mcpServers)
+    ? config.mcpServers as Record<string, unknown>
+    : {};
+  servers[MCP_SERVER_NAME] = {
+    type: "stdio",
+    command: helper.command,
+    args: helper.args,
+    ...(helper.env ? { env: { ...helper.env, CANVASTTY_AGENT_PROVIDER: "claude" } } : {})
+  };
+  config.mcpServers = servers;
+  atomicWrite(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+function writeOpenCodeMcpConfig(helper: StdioHelperLaunch, homeDirectory: string): void {
+  const configPath = join(homeDirectory, ".config", "opencode", "opencode.json");
+  const existing = readOptional(configPath);
+  let config: Record<string, unknown>;
+  try {
+    config = existing && existing.trim().length > 0 ? JSON.parse(existing) as Record<string, unknown> : {};
+  } catch {
+    console.warn("CanvasTTY left opencode config untouched: existing content is not valid JSON.");
+    return;
+  }
+  const servers = config.mcpServers && typeof config.mcpServers === "object" && !Array.isArray(config.mcpServers)
+    ? config.mcpServers as Record<string, unknown>
+    : {};
+  servers[MCP_SERVER_NAME] = {
+    type: "stdio",
+    command: helper.command,
+    args: helper.args,
+    ...(helper.env ? { env: { ...helper.env, CANVASTTY_AGENT_PROVIDER: "opencode" } } : {})
+  };
+  config.mcpServers = servers;
+  atomicWrite(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+/** Hermes: используем его собственный CLI `hermes mcp add` (если установлен). */
+function writeHermesMcpConfig(helper: StdioHelperLaunch): void {
+  const probe = spawnSync("hermes", ["mcp", "list"], {
+    encoding: "utf8",
+    timeout: 5_000,
+    maxBuffer: 256 * 1024,
+    windowsHide: true
+  });
+  if (probe.error || probe.status !== 0) return; // hermes не установлен
+  if (probe.stdout?.includes(MCP_SERVER_NAME)) return; // уже добавлен
+  const envValues = [
+    ...Object.entries(helper.env ?? {}).map(([key, value]) => `${key}=${value}`),
+    "CANVASTTY_AGENT_PROVIDER=hermes"
+  ];
+  const args = [
+    "mcp", "add", MCP_SERVER_NAME,
+    "--command", helper.command,
+    // ВАЖНО: --env обязан идти ДО --args (--args с nargs='+' съедает остальное).
+    "--env", ...envValues,
+    "--args", ...helper.args
+  ];
+  const result = spawnSync("hermes", args, {
+    encoding: "utf8",
+    timeout: 30_000,
+    maxBuffer: 256 * 1024,
+    windowsHide: true,
+    // `hermes mcp add` интерактивен: спрашивает «Save config anyway? [y/N]».
+    // Electron-helper на медленных машинах отвечает >10s, таймаут щедрый.
+    input: "y\n"
+  });
+  if (result.error || result.status !== 0) {
+    console.warn("CanvasTTY could not register the Hermes MCP server.", result.stderr?.trim() || result.error?.message);
+  }
+}
+
+function writePiMcpConfig(helper: StdioHelperLaunch, homeDirectory: string): void {
+  // Pi хранит конфиг MCP-серверов в ~/.config/pi/mcp.json (соглашение
+  // большинства харнессов). Если файла нет — Pi просто не установлен.
+  const configPath = join(homeDirectory, ".config", "pi", "mcp.json");
+  const existing = readOptional(configPath);
+  let config: Record<string, unknown>;
+  try {
+    config = existing && existing.trim().length > 0 ? JSON.parse(existing) as Record<string, unknown> : {};
+  } catch {
+    console.warn("CanvasTTY left Pi MCP config untouched: existing content is not valid JSON.");
+    return;
+  }
+  const servers = config.mcpServers && typeof config.mcpServers === "object" && !Array.isArray(config.mcpServers)
+    ? config.mcpServers as Record<string, unknown>
+    : {};
+  servers[MCP_SERVER_NAME] = {
+    type: "stdio",
+    command: helper.command,
+    args: helper.args,
+    ...(helper.env ? { env: { ...helper.env, CANVASTTY_AGENT_PROVIDER: "pi" } } : {})
+  };
+  config.mcpServers = servers;
+  atomicWrite(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+/** Обновляет TOML-секцию (маркер `[name]` → следующая `[`-секция), не трогая остальное. */
+function upsertTomlSection(existing: string, marker: string, block: string): string {
+  const start = existing.indexOf(marker);
+  if (start === -1) {
+    const trimmed = existing.trimEnd();
+    return trimmed.length === 0 ? block : `${trimmed}\n\n${block}`;
+  }
+  const after = existing.slice(start + marker.length);
+  const nextSection = after.indexOf("\n[");
+  const end = nextSection === -1 ? existing.length : start + marker.length + nextSection;
+  return `${existing.slice(0, start)}${block}${existing.slice(end)}`;
+}
+
+const AGENTS_MARKER_START = "<!-- canvas-tty-browser-context-start -->";
+const AGENTS_MARKER_END = "<!-- canvas-tty-browser-context-end -->";
+
+/**
+ * «Хук» для ЛЮБОГО харнесса: пишет/обновляет секцию про браузер CanvasTTY в
+ * AGENTS.md рабочей директории терминальной сессии. AGENTS.md читают все
+ * основные харнессы (Claude Code, Codex, opencode, Hermes, Cursor и др.),
+ * поэтому агент, запущенный в терминале, автоматически узнаёт, что он может
+ * управлять видимым браузером CanvasTTY — без локальных костылей.
+ *
+ * Существующий AGENTS.md не затирается: секция ограничена маркерами, всё
+ * остальное содержимое сохраняется как было.
+ */
+export function writeAgentBrowserContext(cwd: string): void {
+  const configPath = join(cwd, "AGENTS.md");
+  const existing = readOptional(configPath) ?? "";
+  const section = [
+    AGENTS_MARKER_START,
+    "",
+    "## CanvasTTY browser (MCP)",
+    "",
+    "You are running inside CanvasTTY, which has a visible browser on the canvas.",
+    "Browser tools are exposed through the `canvastty_browser` MCP server as",
+    "`mcp__canvastty_browser__browser_*` (browser_list_tabs, browser_navigate,",
+    "browser_observe, browser_click, browser_type, browser_scroll, ...).",
+    "",
+    "For web tasks, PREFER these CanvasTTY browser tools over built-in or",
+    "other browser/computer-use tools: they drive the real visible browser on",
+    "the user's canvas, and the user can watch every action live.",
+    "",
+    "Workflow: browser_list_tabs → browser_navigate(url) → browser_observe →",
+    "one bounded action → browser_observe again.",
+    "",
+    AGENTS_MARKER_END
+  ].join("\n");
+
+  const start = existing.indexOf(AGENTS_MARKER_START);
+  if (start === -1) {
+    // Нет секции — добавляем в конец (или создаём файл).
+    const trimmed = existing.trimEnd();
+    atomicWrite(configPath, `${trimmed.length === 0 ? "" : `${trimmed}\n\n`}${section}\n`);
+    return;
+  }
+  const end = existing.indexOf(AGENTS_MARKER_END, start);
+  if (end === -1) {
+    // Битый маркер: заменяем от старта до конца файла.
+    atomicWrite(configPath, `${existing.slice(0, start)}${section}\n`);
+    return;
+  }
+  const afterEnd = existing.slice(end + AGENTS_MARKER_END.length);
+  atomicWrite(configPath, `${existing.slice(0, start)}${section}${afterEnd}`);
+}

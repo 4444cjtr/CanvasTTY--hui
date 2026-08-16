@@ -9,7 +9,7 @@ import { augmentCliPath } from "./services/cliEnvironment";
 import { PluginManager } from "./services/PluginManager";
 import { PluginMediaService } from "./services/PluginMediaService";
 import { PluginSecretsService } from "./services/PluginSecretsService";
-import { BrowserService } from "./services/BrowserService";
+import { BrowserManager } from "./services/BrowserManager";
 import { runBrowserElectronSmoke } from "./services/browser/BrowserElectronSmoke";
 import {
   runProviderElectronSmoke,
@@ -24,7 +24,8 @@ import {
 } from "./services/agent-browser";
 import {
   recoverKimiConfigurationOnStartup,
-  resolveKimiHomeDirectory
+  resolveKimiHomeDirectory,
+  writeGlobalMcpConfig
 } from "./services/agent-browser/ProviderLaunch";
 import type { StdioHelperLaunch } from "./services/agent-browser/ProviderLaunch";
 import { startupPageUrl } from "./startupPage";
@@ -66,7 +67,7 @@ let limitsService: LimitsService | null = null;
 let pluginManager: PluginManager | null = null;
 let pluginMediaService: PluginMediaService | null = null;
 let pluginSecretsService: PluginSecretsService | null = null;
-let browserService: BrowserService | null = null;
+let browserManager: BrowserManager | null = null;
 let agentGateway: AgentGateway | null = null;
 let agentBrowserBridge: AgentBrowserBridge | null = null;
 let agentBrowserHelper: StdioHelperLaunch | null = null;
@@ -121,14 +122,34 @@ async function initializeServices(): Promise<void> {
   const settings = new SettingsStore(userDataPath, app.getLocale());
   await settings.load();
 
-  browserService = new BrowserService(() => mainWindow, {
+  browserManager = new BrowserManager({
+    getOwner: () => mainWindow,
     userDataPath,
-    restoreTabs: settings.get().browserRestoreTabs,
-    ...(process.env.CANVASTTY_BROWSER_SMOKE_URL
-      ? { downloadRoot: join(userDataPath, "browser-smoke-downloads") }
-      : {})
+    restoreTabs: settings.get().browserRestoreTabs
   });
+  // Восстанавливаем ноды из сохранённых настроек (включая "default", если
+  // она там есть — миграция из старого одиночного browserCanvas даёт её).
+  const restoredNodes = settings.get().browserCanvases;
+  for (const node of restoredNodes) {
+    try {
+      await browserManager.create(node.bounds, { windowId: node.id });
+    } catch (error) {
+      console.warn("CanvasTTY could not restore browser node", node.id, error);
+    }
+  }
+  // Дефолтная нода гарантированно существует (даже если в настройках её нет).
+  if (!browserManager.has("default")) {
+    await browserManager.create({
+      position: { x: 0, y: 0 },
+      size: { width: 920, height: 620 }
+    }, { windowId: "default" });
+  }
+  const browserService = browserManager.get("default") ?? browserManager.first();
+  if (!browserService) throw new Error("CanvasTTY failed to create the default browser node.");
   await browserService.ready();
+  if (process.env.CANVASTTY_BROWSER_SMOKE_URL) {
+    await browserService.open(process.env.CANVASTTY_BROWSER_SMOKE_URL);
+  }
 
   if (supportsAgentGatewayPlatform()) {
     const runtimeDirectory = join(userDataPath, "browser", "runtime");
@@ -137,7 +158,22 @@ async function initializeServices(): Promise<void> {
         ? join(process.resourcesPath, "agent-browser", WINDOWS_PIPE_HOST_FILENAME)
         : join(app.getAppPath(), "build", "windows-agent-pipe-host", WINDOWS_PIPE_HOST_FILENAME)
       : undefined;
-    agentGateway = new AgentGateway(browserService.core, { runtimeDirectory, windowsHostPath });
+    agentGateway = new AgentGateway((windowId) => {
+      // Гость без явной ноды: предпочитаем первую ВИДИМУЮ ноду на канвасе
+      // (browserCanvases), иначе — default. Иначе агент работал бы с невидимой
+      // default-нодой, а пользователь смотрел бы на пустую карточку.
+      const target = windowId ?? settings.get().browserCanvases[0]?.id ?? null;
+      return browserManager?.resolveCore(target) ?? null;
+    }, {
+      runtimeDirectory,
+      windowsHostPath,
+      endpointFile: join(userDataPath, "agent-browser-address"),
+      // Гостевое подключение (агент запущен сам): нода по привязке терминальной
+      // сессии (CANVASTTY_TERMINAL_SESSION_ID из env сессии).
+      resolveSessionBrowser: (terminalSessionId) => (
+        terminalManager?.sessionBrowserBinding(terminalSessionId) ?? null
+      )
+    });
     agentGateway.setEnabled(settings.get().browserAgentAccess);
     await agentGateway.start();
     const helperPath = app.isPackaged
@@ -148,6 +184,12 @@ async function initializeServices(): Promise<void> {
       args: [helperPath],
       env: { ELECTRON_RUN_AS_NODE: "1" }
     };
+    // Вариант A: любой запуск codex/claude (терминал, IDE) получает браузер-инструменты.
+    try {
+      writeGlobalMcpConfig(agentBrowserHelper);
+    } catch (error) {
+      console.warn("CanvasTTY could not write the global agent MCP configuration.", error);
+    }
     agentBrowserBridge = new AgentBrowserBridge(agentGateway, {
       helper: agentBrowserHelper,
       runtimeDirectory,
@@ -192,11 +234,13 @@ async function initializeServices(): Promise<void> {
     plugins: pluginManager,
     pluginMedia: pluginMediaService,
     pluginSecrets: pluginSecretsService,
-    browser: browserService,
+    browser: browserManager,
     getMainWindow: () => mainWindow,
     applyBrowserSettings: (next) => {
       agentBrowserBridge?.setEnabled(next.browserAgentAccess);
-      browserService?.setRestoreTabs(next.browserRestoreTabs);
+      for (const node of browserManager?.list() ?? []) {
+        browserManager?.get(node.id)?.setRestoreTabs(next.browserRestoreTabs);
+      }
     },
     openPluginWindow,
     closePluginWindows,
@@ -222,10 +266,13 @@ async function loadApplication(window: BrowserWindow): Promise<void> {
     app.quit();
   }
   const browserSmokeUrl = process.env.CANVASTTY_BROWSER_SMOKE_URL;
-  if (browserSmokeUrl && browserService) {
-    await runBrowserElectronSmoke(browserService, browserSmokeUrl, app.getPath("userData"));
-    console.log("CANVASTTY_BROWSER_SMOKE_READY");
-    app.quit();
+  if (browserSmokeUrl && browserManager) {
+    const smokeNode = browserManager.get("default") ?? browserManager.first();
+    if (smokeNode) {
+      await runBrowserElectronSmoke(smokeNode, browserSmokeUrl, app.getPath("userData"));
+      console.log("CANVASTTY_BROWSER_SMOKE_READY");
+      app.quit();
+    }
   }
   const providerSmoke = process.env.CANVASTTY_PROVIDER_SMOKE;
   if (providerSmoke) {
@@ -345,7 +392,7 @@ async function shutdownServices(): Promise<void> {
   terminalManager?.disposeAll();
   limitsService?.dispose();
   if (agentGateway) await Promise.allSettled([agentGateway.close()]);
-  if (browserService) await Promise.allSettled([browserService.dispose()]);
+  if (browserManager) await browserManager.disposeAll();
   if (pluginManager) await Promise.allSettled([pluginManager.dispose()]);
 }
 

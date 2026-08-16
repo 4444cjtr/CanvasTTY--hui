@@ -57,11 +57,13 @@ export const DEFAULT_HOME_LAYOUT: HomeWidgetPlacement[] = [
 export interface ShortcutBindings {
   home: string;
   renameWindow: string;
+  browserNewWindow: string;
 }
 
 export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   home: "Home",
-  renameWindow: "F2"
+  renameWindow: "F2",
+  browserNewWindow: "Ctrl+Click"
 };
 
 export interface Point {
@@ -106,7 +108,7 @@ export interface AppSettings {
   homeGridSize: HomeGridSize;
   homeLayout: HomeWidgetPlacement[];
   pluginCanvas: PluginCanvasInstance[];
-  browserCanvas: BrowserCanvasState | null;
+  browserCanvases: BrowserCanvasNode[];
   browserAgentAccess: boolean;
   browserShowAgentPresence: boolean;
   browserRestoreTabs: boolean;
@@ -118,6 +120,8 @@ export interface CreateSessionRequest {
   profile: LaunchProfileId;
   position: Point;
   title?: string;
+  /** Нода браузера для привязки агента (provider !== terminal); null = default. */
+  browserWindowId?: string | null;
 }
 
 export interface SessionMetadata {
@@ -132,6 +136,8 @@ export interface SessionMetadata {
   status: SessionStatus;
   startedAt: number;
   exitCode: number | null;
+  /** Нода браузера, к которой привязан агент; null = не привязан (default). */
+  browserWindowId: string | null;
 }
 
 export interface SessionSnapshot extends SessionMetadata {
@@ -311,6 +317,12 @@ export interface PluginPlaylistFile {
 
 export interface BrowserCanvasState extends SessionBounds {}
 
+/** Одна «нода» браузера на канвасе: собственные вкладки + позиция/размер. */
+export interface BrowserCanvasNode {
+  id: string;
+  bounds: SessionBounds;
+}
+
 export interface BrowserViewportBounds extends Size {
   x: number;
   y: number;
@@ -322,12 +334,15 @@ export interface BrowserViewportBounds extends Size {
 
 export type BrowserTabStatus = "loading" | "ready" | "error" | "crashed";
 export type BrowserConnectionState = "connected" | "stale";
-export type BrowserAgentProvider = AgentProviderId | "unknown";
+export type BrowserAgentProvider = AgentProviderId | "opencode" | "hermes" | "pi" | "unknown" | (string & {});
 
 export const BROWSER_PROVIDER_COLORS: Record<BrowserAgentProvider, string> = {
   claude: "#D97757",
   codex: "#10A37F",
   kimi: "#7C5CFC",
+  opencode: "#F97316",
+  hermes: "#38BDF8",
+  pi: "#F472B6",
   unknown: "#7A8291"
 };
 
@@ -397,6 +412,7 @@ export interface BrowserSnapshot {
 }
 
 export interface BrowserStateEvent {
+  windowId: string;
   snapshot: BrowserSnapshot;
 }
 
@@ -452,6 +468,8 @@ export type BrowserActor =
     terminalSessionId: string;
     connectionId: string;
     cwd: string;
+    /** Нода браузера, к которой привязан агент; null = default (единый браузер). */
+    browserWindowId: string | null;
   };
 
 export interface BrowserElementRef {
@@ -672,22 +690,25 @@ export interface CanvasTTYApi {
     onStorageChanged(listener: (event: PluginStorageChangeEvent) => void): () => void;
   };
   browser: {
-    getState(): Promise<BrowserSnapshot>;
-    open(url?: string): Promise<BrowserSnapshot>;
-    close(): Promise<void>;
-    closeAllTabs(): Promise<BrowserSnapshot>;
-    newTab(url?: string): Promise<BrowserSnapshot>;
-    selectTab(id: string): Promise<BrowserSnapshot>;
-    closeTab(id: string): Promise<BrowserSnapshot>;
-    navigate(id: string, value: string): Promise<BrowserSnapshot>;
-    back(id: string): Promise<BrowserSnapshot>;
-    forward(id: string): Promise<BrowserSnapshot>;
-    reload(id: string): Promise<BrowserSnapshot>;
-    execute(command: BrowserCommand): Promise<BrowserResult>;
-    getActivity(sinceSequence?: number): Promise<BrowserActivityEvent[]>;
-    clearData(): Promise<BrowserSnapshot>;
-    focus(): void;
-    setViewport(bounds: BrowserViewportBounds): void;
+    nodes(): Promise<BrowserCanvasNode[]>;
+    createNode(bounds: SessionBounds): Promise<BrowserCanvasNode>;
+    closeNode(windowId: string): Promise<void>;
+    getState(windowId?: string | null): Promise<BrowserSnapshot>;
+    open(windowId?: string | null, url?: string): Promise<BrowserSnapshot>;
+    close(windowId?: string | null): Promise<void>;
+    closeAllTabs(windowId?: string | null): Promise<BrowserSnapshot>;
+    newTab(windowId?: string | null, url?: string): Promise<BrowserSnapshot>;
+    selectTab(windowId: string | null, id: string): Promise<BrowserSnapshot>;
+    closeTab(windowId: string | null, id: string): Promise<BrowserSnapshot>;
+    navigate(windowId: string | null, id: string, value: string): Promise<BrowserSnapshot>;
+    back(windowId: string | null, id: string): Promise<BrowserSnapshot>;
+    forward(windowId: string | null, id: string): Promise<BrowserSnapshot>;
+    reload(windowId: string | null, id: string): Promise<BrowserSnapshot>;
+    execute(windowId: string | null, command: BrowserCommand): Promise<BrowserResult>;
+    getActivity(windowId: string | null, sinceSequence?: number): Promise<BrowserActivityEvent[]>;
+    clearData(windowId?: string | null): Promise<BrowserSnapshot>;
+    focus(windowId?: string | null): void;
+    setViewport(windowId: string, bounds: BrowserViewportBounds): void;
     onState(listener: (event: BrowserStateEvent) => void): () => void;
     onActivity(listener: (event: BrowserActivityStateEvent) => void): () => void;
     onCanvasWheel(listener: (event: BrowserCanvasWheelEvent) => void): () => void;
@@ -701,6 +722,7 @@ export interface CanvasTTYApi {
     resize(id: string, cols: number, rows: number): void;
     setBounds(id: string, bounds: SessionBounds): void;
     rename(id: string, title: string): Promise<SessionMetadata>;
+    setBrowserBinding(id: string, browserWindowId: string | null): Promise<SessionMetadata>;
     dispose(id: string): Promise<void>;
     onData(listener: (event: TerminalDataEvent) => void): () => void;
     onSession(listener: (event: SessionEvent) => void): () => void;
@@ -766,6 +788,9 @@ export const IPC = {
   browserClearData: "browser:clear-data",
   browserFocus: "browser:focus",
   browserSetViewport: "browser:set-viewport",
+  browserCreateNode: "browser:create-node",
+  browserCloseNode: "browser:close-node",
+  browserNodes: "browser:nodes",
   browserState: "browser:state",
   browserActivity: "browser:activity",
   browserCanvasWheel: "browser:canvas-wheel",
@@ -778,6 +803,7 @@ export const IPC = {
   terminalBounds: "terminal:bounds",
   terminalRename: "terminal:rename",
   terminalDispose: "terminal:dispose",
+  terminalSetBrowserBinding: "terminal:set-browser-binding",
   terminalData: "terminal:data",
   terminalSession: "terminal:session",
   terminalRemoved: "terminal:removed",

@@ -210,6 +210,15 @@ async function handleRequest({
     await window.canvasTTY.plugins.openExternal(pluginId, stringParam(params.url, "url"));
     return null;
   }
+  if (method === "browser.open") {
+    requirePermission(plugin, "external:open");
+    const url = stringParam(params.url, "url");
+    // Открытие и показ карточки делает App через событие: он сам создаёт
+    // ноду, если её нет, и фокусирует камеру (плагин не может менять
+    // состояние канваса напрямую).
+    window.dispatchEvent(new CustomEvent("canvastty:browser-open", { detail: { url } }));
+    return null;
+  }
   if (method === "media.pickLibrary") {
     requirePermission(plugin, "media:library");
     return window.canvasTTY.plugins.mediaPickLibrary(pluginId);
