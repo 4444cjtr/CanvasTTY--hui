@@ -176,6 +176,7 @@ export type PluginPermission =
   | "limits:read"
   | "launcher:open"
   | "external:open"
+  | "browser:open"
   | "media:library"
   | "playlists:read"
   | "playlists:write"
@@ -285,6 +286,18 @@ export interface PluginCanvasRequest {
   pluginId: string;
   contributionId: string;
   sourceCanvasInstanceId?: string;
+}
+
+export interface PluginBrowserOpenRequest {
+  requestId: string;
+  pluginId: string;
+  url: string;
+}
+
+export interface PluginBrowserOpenResponse {
+  requestId: string;
+  ok: boolean;
+  error?: string;
 }
 
 export interface PluginStorageChangeEvent {
@@ -681,6 +694,7 @@ export interface CanvasTTYApi {
     openCanvas(pluginId: string, contributionId: string, sourceCanvasInstanceId?: string): Promise<void>;
     openWindow(pluginId: string, contributionId: string): Promise<void>;
     openExternal(pluginId: string, url: string): Promise<void>;
+    openBrowser(pluginId: string, url: string): Promise<void>;
     storageGet(pluginId: string, key: string): Promise<unknown>;
     storageSet(pluginId: string, key: string, value: unknown): Promise<void>;
     secretsGet(pluginId: string, key: string): Promise<string | null>;
@@ -695,6 +709,8 @@ export interface CanvasTTYApi {
     playlistsWrite(pluginId: string, libraryId: string, name: string, content: string): Promise<PluginPlaylistFile>;
     onOpenLauncher(listener: (event: PluginLauncherRequest) => void): () => void;
     onOpenCanvas(listener: (event: PluginCanvasRequest) => void): () => void;
+    onBrowserOpenRequested(listener: (event: PluginBrowserOpenRequest) => void): () => void;
+    completeBrowserOpen(response: PluginBrowserOpenResponse): Promise<boolean>;
     onStorageChanged(listener: (event: PluginStorageChangeEvent) => void): () => void;
   };
   browser: {
@@ -769,6 +785,7 @@ export const IPC = {
   pluginsOpenCanvas: "plugins:open-canvas",
   pluginsOpenWindow: "plugins:open-window",
   pluginsOpenExternal: "plugins:open-external",
+  pluginsOpenBrowser: "plugins:open-browser",
   pluginsStorageGet: "plugins:storage-get",
   pluginsStorageSet: "plugins:storage-set",
   pluginsSecretsGet: "plugins:secrets-get",
@@ -784,6 +801,8 @@ export const IPC = {
   pluginsHostInvoke: "plugins:host-invoke",
   pluginsLauncherRequested: "plugins:launcher-requested",
   pluginsCanvasRequested: "plugins:canvas-requested",
+  pluginsBrowserOpenRequested: "plugins:browser-open-requested",
+  pluginsBrowserOpenResponded: "plugins:browser-open-responded",
   pluginsStorageChanged: "plugins:storage-changed",
   browserGetState: "browser:get-state",
   browserOpen: "browser:open",

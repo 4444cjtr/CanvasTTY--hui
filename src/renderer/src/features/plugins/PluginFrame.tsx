@@ -263,13 +263,8 @@ async function handleRequest({
     return null;
   }
   if (method === "browser.open") {
-    requirePermission(plugin, "external:open");
-    const url = stringParam(params.url, "url");
-    await window.canvasTTY.browser.open(url);
-    // Сообщаем App: показать карточку браузера на канвасе (устанавливает
-    // browserCanvas, фокус камеры, выделение). Плагин сам не может менять
-    // состояние канваса — это делает владелец состояния.
-    window.dispatchEvent(new CustomEvent("canvastty:browser-open", { detail: { url } }));
+    requirePermission(plugin, "browser:open");
+    await window.canvasTTY.plugins.openBrowser(pluginId, stringParam(params.url, "url"));
     return null;
   }
   if (method === "media.pickLibrary") {

@@ -89,6 +89,12 @@ test("validates all supported contribution shapes and permissions", () => {
   assert.deepEqual(validatePluginManifest(manifest), manifest);
 });
 
+test("recognizes browser:open as a distinct plugin permission", () => {
+  const browserManifest = { ...manifest, permissions: ["browser:open"] };
+  assert.deepEqual(validatePluginManifest(browserManifest), browserManifest);
+  assert.deepEqual(validatePluginManifest({ ...manifest, permissions: ["external:open"] }).permissions, ["external:open"]);
+});
+
 test("rejects executable escapes, unknown permissions, and unsupported API versions", () => {
   assert.throws(() => validatePluginManifest({ ...manifest, apiVersion: 2 }));
   assert.throws(() => validatePluginManifest({ ...manifest, permissions: ["filesystem"] }));

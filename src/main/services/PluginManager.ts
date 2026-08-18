@@ -59,6 +59,7 @@ const PLUGIN_PERMISSIONS = new Set<PluginPermission>([
   "limits:read",
   "launcher:open",
   "external:open",
+  "browser:open",
   "media:library",
   "playlists:read",
   "playlists:write",

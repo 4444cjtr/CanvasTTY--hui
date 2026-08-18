@@ -6,6 +6,7 @@ import type {
   AppSettings,
   BrowserCommand,
   CreateSessionRequest,
+  PluginBrowserOpenResponse,
   PluginCanvasRequest,
   ProviderId,
   SessionBounds
@@ -19,6 +20,8 @@ import type { PluginManager } from "../services/PluginManager";
 import type { PluginMediaService } from "../services/PluginMediaService";
 import type { PluginSecretsService } from "../services/PluginSecretsService";
 import type { BrowserService } from "../services/BrowserService";
+import { normalizePluginBrowserUrl } from "../services/browser/PluginBrowserOpenPolicy";
+import { PluginBrowserOpenBroker } from "./PluginBrowserOpenBroker";
 
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
 const MEDIA_MIME: Record<string, string> = {
@@ -64,6 +67,12 @@ export function registerIpc({
   requestPluginCanvas,
   broadcastPluginStorageChange
 }: Dependencies): void {
+  const pluginBrowserOpenBroker = new PluginBrowserOpenBroker(getMainWindow);
+  const requestPluginBrowserOpen = async (pluginId: string, value: unknown): Promise<void> => {
+    plugins.assertPermission(pluginId, "browser:open");
+    await pluginBrowserOpenBroker.request(pluginId, normalizePluginBrowserUrl(value));
+  };
+
   ipcMain.handle(IPC.clipboardRead, () => clipboard.readText());
   ipcMain.on(IPC.clipboardWrite, (_event, text: string) => {
     if (typeof text === "string" && text.length > 0) clipboard.writeText(text);
@@ -186,6 +195,10 @@ export function registerIpc({
     const url = safeExternalUrl(value);
     await shell.openExternal(url);
   });
+  ipcMain.handle(IPC.pluginsOpenBrowser, async (event, pluginId: string, value: unknown) => {
+    assertMainRenderer(event, getMainWindow);
+    await requestPluginBrowserOpen(pluginId, value);
+  });
   ipcMain.handle(IPC.pluginsStorageGet, (_event, pluginId: string, key: string) => (
     plugins.storageGet(pluginId, key)
   ));
@@ -307,9 +320,8 @@ export function registerIpc({
       return null;
     }
     if (method === "browser.open") {
-      // Open a URL in CanvasTTY's own embedded browser (canvas card).
-      plugins.assertPermission(pluginId, "external:open");
-      return browser.open(stringValue(values.url, "url"));
+      await requestPluginBrowserOpen(pluginId, values.url);
+      return null;
     }
     if (method === "media.pickLibrary") {
       return pickPluginMediaLibrary(event, pluginId, plugins, pluginMedia);
@@ -355,6 +367,11 @@ export function registerIpc({
       return null;
     }
     throw new Error(`Unsupported plugin method: ${String(method).slice(0, 80)}.`);
+  });
+
+  ipcMain.handle(IPC.pluginsBrowserOpenResponded, (event, response: unknown) => {
+    assertMainRenderer(event, getMainWindow);
+    return pluginBrowserOpenBroker.complete(pluginBrowserOpenResponse(response));
   });
 
   ipcMain.handle(IPC.browserGetState, (event) => {
@@ -484,6 +501,23 @@ function safeExternalUrl(value: unknown): string {
     throw new Error("Plugins may open only HTTP(S) URLs.");
   }
   return url.toString();
+}
+
+function pluginBrowserOpenResponse(value: unknown): PluginBrowserOpenResponse {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Plugin browser.open response is invalid.");
+  }
+  const response = value as Record<string, unknown>;
+  if (typeof response.requestId !== "string" || !/^plugin-browser-[a-z0-9]+$/.test(response.requestId)) {
+    throw new Error("Plugin browser.open response ID is invalid.");
+  }
+  if (typeof response.ok !== "boolean") throw new Error("Plugin browser.open response is invalid.");
+  if (response.error !== undefined && (typeof response.error !== "string" || response.error.length > 240)) {
+    throw new Error("Plugin browser.open response error is invalid.");
+  }
+  return response.error === undefined
+    ? { requestId: response.requestId, ok: response.ok }
+    : { requestId: response.requestId, ok: response.ok, error: response.error };
 }
 
 function assertPluginWindowSender(

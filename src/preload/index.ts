@@ -12,6 +12,8 @@ import type {
   CanvasNavigationOverrideStateEvent,
   CanvasTTYApi,
   CreateSessionRequest,
+  PluginBrowserOpenRequest,
+  PluginBrowserOpenResponse,
   PluginCanvasRequest,
   PluginLauncherRequest,
   PluginStorageChangeEvent,
@@ -61,6 +63,7 @@ const api: CanvasTTYApi = {
     ),
     openWindow: (pluginId: string, contributionId: string) => ipcRenderer.invoke(IPC.pluginsOpenWindow, pluginId, contributionId),
     openExternal: (pluginId: string, url: string) => ipcRenderer.invoke(IPC.pluginsOpenExternal, pluginId, url),
+    openBrowser: (pluginId: string, url: string) => ipcRenderer.invoke(IPC.pluginsOpenBrowser, pluginId, url),
     storageGet: (pluginId: string, key: string) => ipcRenderer.invoke(IPC.pluginsStorageGet, pluginId, key),
     storageSet: (pluginId: string, key: string, value: unknown) => ipcRenderer.invoke(IPC.pluginsStorageSet, pluginId, key, value),
     secretsGet: (pluginId: string, key: string) => ipcRenderer.invoke(IPC.pluginsSecretsGet, pluginId, key),
@@ -75,6 +78,12 @@ const api: CanvasTTYApi = {
     playlistsWrite: (pluginId: string, libraryId: string, name: string, content: string) => ipcRenderer.invoke(IPC.pluginsPlaylistsWrite, pluginId, libraryId, name, content),
     onOpenLauncher: (listener: (event: PluginLauncherRequest) => void) => subscribe(IPC.pluginsLauncherRequested, listener),
     onOpenCanvas: (listener: (event: PluginCanvasRequest) => void) => subscribe(IPC.pluginsCanvasRequested, listener),
+    onBrowserOpenRequested: (listener: (event: PluginBrowserOpenRequest) => void) => (
+      subscribe(IPC.pluginsBrowserOpenRequested, listener)
+    ),
+    completeBrowserOpen: (response: PluginBrowserOpenResponse) => (
+      ipcRenderer.invoke(IPC.pluginsBrowserOpenResponded, response)
+    ),
     onStorageChanged: (listener: (event: PluginStorageChangeEvent) => void) => subscribe(IPC.pluginsStorageChanged, listener)
   },
   browser: {
